@@ -113,6 +113,9 @@ importers:
 
   packages/output:
     dependencies:
+      '@treeline/acquire':
+        specifier: workspace:*
+        version: link:../acquire
       '@treeline/core':
         specifier: workspace:*
         version: link:../core

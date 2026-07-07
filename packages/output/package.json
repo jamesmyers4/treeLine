@@ -8,6 +8,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@treeline/acquire": "workspace:*",
     "@treeline/core": "workspace:*",
     "@treeline/interpret": "workspace:*"
   },

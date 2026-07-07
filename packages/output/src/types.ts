@@ -11,3 +11,33 @@ export interface SelectorReportEntry {
   elementDescription: string
   candidates: SelectorCandidate[]
 }
+
+export interface PageSelectorReport {
+  url: string
+  entries: SelectorReportEntry[]
+}
+
+export interface SelectorReport {
+  generatedAt: string
+  pages: PageSelectorReport[]
+}
+
+export interface TestIdGapEntry {
+  url: string
+  role: string
+  accessibleName: string
+}
+
+export interface PageTestIdCoverage {
+  url: string
+  totalInteractive: number
+  withTestId: number
+  coveragePercent: number
+  gaps: TestIdGapEntry[]
+}
+
+export interface TestIdAuditReport {
+  generatedAt: string
+  pages: PageTestIdCoverage[]
+  overallCoveragePercent: number
+}
