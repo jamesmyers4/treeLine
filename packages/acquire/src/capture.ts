@@ -66,11 +66,58 @@ export async function capturePage(url: string, options?: AcquireOptions): Promis
             accessibleName = inputEl.placeholder?.trim() ?? inputEl.value?.trim() ?? ''
           }
         }
+        const computeCssPath = (target: Element): string => {
+          if (target.id && document.querySelectorAll(`#${CSS.escape(target.id)}`).length === 1) {
+            return `#${CSS.escape(target.id)}`
+          }
+          const parts: string[] = []
+          let current: Element | null = target
+          while (current && current !== document.body && current.parentElement) {
+            const currentTag = current.tagName.toLowerCase()
+            let selector = currentTag
+            const classes = Array.from(current.classList)
+            if (classes.length > 0) selector += '.' + classes.map((c) => CSS.escape(c)).join('.')
+            const parent: Element = current.parentElement
+            const siblings = Array.from(parent.children).filter((c) => c.tagName === current!.tagName)
+            if (siblings.length > 1) {
+              const index = siblings.indexOf(current) + 1
+              selector += `:nth-of-type(${index})`
+            }
+            parts.unshift(selector)
+            current = parent
+          }
+          return parts.join(' > ')
+        }
+        const computeXPath = (target: Element): string => {
+          const parts: string[] = []
+          let current: Element | null = target
+          while (current) {
+            const currentTag = current.tagName.toLowerCase()
+            const parent: Element | null = current.parentElement
+            if (currentTag === 'html' || !parent) {
+              parts.unshift(currentTag)
+              break
+            }
+            const siblings = Array.from(parent.children).filter((c) => c.tagName === current!.tagName)
+            if (siblings.length > 1) {
+              const index = siblings.indexOf(current) + 1
+              parts.unshift(`${currentTag}[${index}]`)
+            } else {
+              parts.unshift(currentTag)
+            }
+            current = parent
+          }
+          return '/' + parts.join('/')
+        }
         return {
           role,
           accessibleName,
           testId: el.getAttribute('data-testid'),
           tagName,
+          elementId: el.id || null,
+          classList: Array.from(el.classList),
+          cssPath: computeCssPath(el),
+          xpath: computeXPath(el),
         }
       }),
   )

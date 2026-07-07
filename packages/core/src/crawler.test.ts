@@ -69,6 +69,12 @@ describe('crawl', () => {
       expect(typeof el.accessibleName).toBe('string')
       expect(typeof el.tagName).toBe('string')
       expect(el.testId === null || typeof el.testId === 'string').toBe(true)
+      expect(el.elementId === null || typeof el.elementId === 'string').toBe(true)
+      expect(Array.isArray(el.classList)).toBe(true)
+      expect(typeof el.cssPath).toBe('string')
+      expect(el.cssPath.length).toBeGreaterThan(0)
+      expect(typeof el.xpath).toBe('string')
+      expect(el.xpath.startsWith('/html')).toBe(true)
     }
   }, 120_000)
 })

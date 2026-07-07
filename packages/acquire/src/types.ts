@@ -10,6 +10,10 @@ export interface DomInteractiveElement {
   accessibleName: string
   testId: string | null
   tagName: string
+  elementId: string | null
+  classList: string[]
+  cssPath: string
+  xpath: string
 }
 
 export interface PageState {
