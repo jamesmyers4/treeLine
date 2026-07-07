@@ -1,0 +1,22 @@
+{
+  "name": "@treeline/acquire",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/start.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "playwright": "^1.47.0",
+    "patchright": "^1.47.0",
+    "fastify": "^4.28.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "tsx": "^4.16.0",
+    "vitest": "^2.0.0",
+    "@types/node": "^22.0.0"
+  }
+}
