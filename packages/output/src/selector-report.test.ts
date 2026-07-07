@@ -80,6 +80,37 @@ describe('generateSelectorReport', () => {
     const xpathCandidate = report.pages[0]!.entries[0]!.candidates.find((c) => c.strategy === 'xpath')!
     expect(xpathCandidate.stable).toBe(false)
   })
+
+  it('marks role candidates as not unique when two elements share role and accessibleName', () => {
+    const aboutLinkOne = makeElement({
+      role: 'link',
+      accessibleName: 'About',
+      cssPath: 'header > a.about',
+      xpath: '/html/body/header/a[1]',
+    })
+    const aboutLinkTwo = makeElement({
+      role: 'link',
+      accessibleName: 'About',
+      cssPath: 'footer > a.about',
+      xpath: '/html/body/footer/a[1]',
+    })
+    const oneOffButton = makeElement({
+      role: 'button',
+      accessibleName: 'Submit',
+      cssPath: 'body > button',
+      xpath: '/html/body/button',
+    })
+    const report = generateSelectorReport([
+      makePage('https://example.com', [aboutLinkOne, aboutLinkTwo, oneOffButton]),
+    ])
+    const entries = report.pages[0]!.entries
+    const aboutRoleCandidateOne = entries[0]!.candidates.find((c) => c.strategy === 'role')!
+    const aboutRoleCandidateTwo = entries[1]!.candidates.find((c) => c.strategy === 'role')!
+    const submitRoleCandidate = entries[2]!.candidates.find((c) => c.strategy === 'role')!
+    expect(aboutRoleCandidateOne.uniqueOnPage).toBe(false)
+    expect(aboutRoleCandidateTwo.uniqueOnPage).toBe(false)
+    expect(submitRoleCandidate.uniqueOnPage).toBe(true)
+  })
 })
 
 describe('renderSelectorReportMarkdown', () => {
@@ -87,7 +118,7 @@ describe('renderSelectorReportMarkdown', () => {
     const el = makeElement({ testId: 'submit-btn' })
     const report = generateSelectorReport([makePage('https://example.com', [el])])
     const markdown = renderSelectorReportMarkdown(report)
-    expect(markdown).toContain('| Element | Strategy | Selector | Stable |')
+    expect(markdown).toContain('| Element | Strategy | Selector | Stable | Unique |')
     expect(markdown).toContain('https://example.com')
     const candidateCount = report.pages[0]!.entries[0]!.candidates.length
     for (const candidate of report.pages[0]!.entries[0]!.candidates) {

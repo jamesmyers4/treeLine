@@ -27,32 +27,54 @@ function describeElement(el: DomInteractiveElement): string {
   return el.tagName
 }
 
-function buildCandidates(el: DomInteractiveElement): SelectorCandidate[] {
+function isRoleUnique(el: DomInteractiveElement, allElements: DomInteractiveElement[]): boolean {
+  return !allElements.some((other) => other !== el && other.role === el.role && other.accessibleName === el.accessibleName)
+}
+
+function isTestIdUnique(el: DomInteractiveElement, allElements: DomInteractiveElement[]): boolean {
+  return !allElements.some((other) => other !== el && other.testId === el.testId)
+}
+
+function isCssUnique(el: DomInteractiveElement, allElements: DomInteractiveElement[]): boolean {
+  return !allElements.some((other) => other !== el && other.cssPath === el.cssPath)
+}
+
+function buildCandidates(el: DomInteractiveElement, allElements: DomInteractiveElement[]): SelectorCandidate[] {
   const candidates: SelectorCandidate[] = []
   const hasRealRole = !NON_ROLE_VALUES.has(el.role)
   if (hasRealRole && el.accessibleName.trim() !== '') {
-    candidates.push({ strategy: 'role', value: `role=${el.role}[name="${el.accessibleName}"]`, stable: true })
+    candidates.push({
+      strategy: 'role',
+      value: `role=${el.role}[name="${el.accessibleName}"]`,
+      stable: true,
+      uniqueOnPage: isRoleUnique(el, allElements),
+    })
   }
   if (el.testId !== null) {
-    candidates.push({ strategy: 'testid', value: `[data-testid="${el.testId}"]`, stable: true })
+    candidates.push({
+      strategy: 'testid',
+      value: `[data-testid="${el.testId}"]`,
+      stable: true,
+      uniqueOnPage: isTestIdUnique(el, allElements),
+    })
   }
-  candidates.push({ strategy: 'css', value: el.cssPath, stable: isCssStable(el) })
-  candidates.push({ strategy: 'xpath', value: el.xpath, stable: false })
+  candidates.push({ strategy: 'css', value: el.cssPath, stable: isCssStable(el), uniqueOnPage: isCssUnique(el, allElements) })
+  candidates.push({ strategy: 'xpath', value: el.xpath, stable: false, uniqueOnPage: true })
   return candidates
 }
 
-function buildEntry(url: string, el: DomInteractiveElement): SelectorReportEntry {
+function buildEntry(url: string, el: DomInteractiveElement, allElements: DomInteractiveElement[]): SelectorReportEntry {
   return {
     url,
     elementDescription: describeElement(el),
-    candidates: buildCandidates(el),
+    candidates: buildCandidates(el, allElements),
   }
 }
 
 export function generateSelectorReport(pages: CrawledPage[]): SelectorReport {
   const reportPages: PageSelectorReport[] = pages.map((page) => ({
     url: page.url,
-    entries: page.interactiveElements.map((el) => buildEntry(page.url, el)),
+    entries: page.interactiveElements.map((el) => buildEntry(page.url, el, page.interactiveElements)),
   }))
   return { generatedAt: new Date().toISOString(), pages: reportPages }
 }
@@ -60,11 +82,16 @@ export function generateSelectorReport(pages: CrawledPage[]): SelectorReport {
 export function renderSelectorReportMarkdown(report: SelectorReport): string {
   const lines: string[] = ['# Selector Stability Report', '', `Generated: ${report.generatedAt}`, '']
   for (const page of report.pages) {
-    lines.push(`## ${page.url}`, '', '| Element | Strategy | Selector | Stable |', '| --- | --- | --- | --- |')
+    lines.push(
+      `## ${page.url}`,
+      '',
+      '| Element | Strategy | Selector | Stable | Unique |',
+      '| --- | --- | --- | --- | --- |',
+    )
     for (const entry of page.entries) {
       for (const candidate of entry.candidates) {
         lines.push(
-          `| ${entry.elementDescription} | ${candidate.strategy} | ${candidate.value} | ${candidate.stable ? 'Yes' : 'No'} |`,
+          `| ${entry.elementDescription} | ${candidate.strategy} | ${candidate.value} | ${candidate.stable ? 'Yes' : 'No'} | ${candidate.uniqueOnPage ? 'Yes' : 'No'} |`,
         )
       }
     }

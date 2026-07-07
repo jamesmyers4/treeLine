@@ -4,6 +4,7 @@ export interface SelectorCandidate {
   strategy: LocatorStrategy
   value: string
   stable: boolean
+  uniqueOnPage: boolean
 }
 
 export interface SelectorReportEntry {
