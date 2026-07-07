@@ -55,11 +55,20 @@ describe('crawl', () => {
     const db = openCrawlDb(dbPath)
     const allPages = db.getAllPages()
     db.close()
-    const urls = (allPages as Array<{ url: string }>).map((p) => p.url)
+    const urls = allPages.map((p) => p.url)
     expect(urls).toContain(`${baseUrl}/`)
     expect(urls).toContain(`${baseUrl}/about`)
     expect(urls).toContain(`${baseUrl}/contact`)
     expect(urls).not.toContain(`${baseUrl}/never`)
     expect(allPages).toHaveLength(3)
+    const rootPage = allPages.find((p) => p.url === `${baseUrl}/`)!
+    expect(Array.isArray(rootPage.interactiveElements)).toBe(true)
+    expect(rootPage.interactiveElements.length).toBeGreaterThan(0)
+    for (const el of rootPage.interactiveElements) {
+      expect(typeof el.role).toBe('string')
+      expect(typeof el.accessibleName).toBe('string')
+      expect(typeof el.tagName).toBe('string')
+      expect(el.testId === null || typeof el.testId === 'string').toBe(true)
+    }
   }, 120_000)
 })

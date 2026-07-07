@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import type { PageState } from '@treeline/acquire'
+import type { DomInteractiveElement, NetworkEntry, PageState } from '@treeline/acquire'
 import type { CrawlConfig, HardPageReasonCode } from './types.js'
 
 export function openCrawlDb(dbPath: string) {
@@ -18,7 +18,8 @@ export function openCrawlDb(dbPath: string) {
       networkLog TEXT,
       screenshot TEXT,
       capturedAt TEXT,
-      status TEXT
+      status TEXT,
+      interactiveElements TEXT
     );
   `)
   return {
@@ -31,8 +32,8 @@ export function openCrawlDb(dbPath: string) {
     },
     recordPageState(pageState: PageState): void {
       db.prepare(`
-        INSERT OR REPLACE INTO pages (url, title, ariaSnapshot, links, networkLog, screenshot, capturedAt, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO pages (url, title, ariaSnapshot, links, networkLog, screenshot, capturedAt, status, interactiveElements)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         pageState.url,
         pageState.title,
@@ -42,6 +43,7 @@ export function openCrawlDb(dbPath: string) {
         pageState.screenshot,
         pageState.capturedAt,
         'ok',
+        JSON.stringify(pageState.interactiveElements),
       )
     },
     pageExists(url: string): boolean {
@@ -52,8 +54,31 @@ export function openCrawlDb(dbPath: string) {
         'INSERT OR REPLACE INTO pages (url, status, capturedAt) VALUES (?, ?, ?)',
       ).run(url, reasonCode, new Date().toISOString())
     },
-    getAllPages(): unknown[] {
-      return db.prepare('SELECT * FROM pages').all()
+    getAllPages(): Array<{
+      url: string
+      title: string | null
+      ariaSnapshot: string | null
+      links: string[]
+      networkLog: NetworkEntry[]
+      screenshot: string | null
+      capturedAt: string | null
+      interactiveElements: DomInteractiveElement[]
+      status: string
+    }> {
+      const rows = db.prepare('SELECT * FROM pages').all() as Array<Record<string, string | null>>
+      return rows.map((row) => ({
+        url: row.url ?? '',
+        title: row.title ?? null,
+        ariaSnapshot: row.ariaSnapshot ?? null,
+        links: row.links ? (JSON.parse(row.links) as string[]) : [],
+        networkLog: row.networkLog ? (JSON.parse(row.networkLog) as NetworkEntry[]) : [],
+        screenshot: row.screenshot ?? null,
+        capturedAt: row.capturedAt ?? null,
+        interactiveElements: row.interactiveElements
+          ? (JSON.parse(row.interactiveElements) as DomInteractiveElement[])
+          : [],
+        status: row.status ?? '',
+      }))
     },
     close(): void {
       db.close()

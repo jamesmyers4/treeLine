@@ -5,6 +5,13 @@ export interface NetworkEntry {
   resourceType: string
 }
 
+export interface DomInteractiveElement {
+  role: string
+  accessibleName: string
+  testId: string | null
+  tagName: string
+}
+
 export interface PageState {
   url: string
   title: string
@@ -13,6 +20,7 @@ export interface PageState {
   networkLog: NetworkEntry[]
   screenshot: string | null
   capturedAt: string
+  interactiveElements: DomInteractiveElement[]
 }
 
 export interface AcquireOptions {

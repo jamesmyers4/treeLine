@@ -1,4 +1,4 @@
-import type { AcquireOptions, CaptureHandler, NetworkEntry, PageState } from './types.js'
+import type { AcquireOptions, CaptureHandler, DomInteractiveElement, NetworkEntry, PageState } from './types.js'
 import { launchHardened } from './launch.js'
 
 export async function capturePage(url: string, options?: AcquireOptions): Promise<PageState> {
@@ -22,6 +22,58 @@ export async function capturePage(url: string, options?: AcquireOptions): Promis
   const links = await page.locator('a[href]').evaluateAll((els) =>
     (els as HTMLAnchorElement[]).map((el) => el.href).filter(Boolean),
   )
+  const interactiveElements: DomInteractiveElement[] = await page.$$eval(
+    'button, a[href], input, select, textarea, [role]',
+    (els) =>
+      els.map((el) => {
+        const tagName = el.tagName.toLowerCase()
+        const explicitRole = el.getAttribute('role')
+        let role: string
+        if (explicitRole) {
+          role = explicitRole
+        } else if (tagName === 'a') {
+          role = 'link'
+        } else if (tagName === 'button') {
+          role = 'button'
+        } else if (tagName === 'input') {
+          const inputEl = el as HTMLInputElement
+          const type = inputEl.type?.toLowerCase() ?? 'text'
+          if (type === 'submit' || type === 'button' || type === 'reset') role = 'button'
+          else if (type === 'checkbox') role = 'checkbox'
+          else if (type === 'radio') role = 'radio'
+          else if (type === 'range') role = 'slider'
+          else role = 'textbox'
+        } else if (tagName === 'select') {
+          role = 'combobox'
+        } else if (tagName === 'textarea') {
+          role = 'textbox'
+        } else {
+          role = tagName
+        }
+        const ariaLabel = el.getAttribute('aria-label')
+        let accessibleName = ''
+        if (ariaLabel) {
+          accessibleName = ariaLabel.trim()
+        } else {
+          const labelledBy = el.getAttribute('aria-labelledby')
+          if (labelledBy) {
+            const labelEl = document.getElementById(labelledBy)
+            if (labelEl) accessibleName = labelEl.textContent?.trim() ?? ''
+          }
+          if (!accessibleName) accessibleName = el.textContent?.trim() ?? ''
+          if (!accessibleName) {
+            const inputEl = el as HTMLInputElement
+            accessibleName = inputEl.placeholder?.trim() ?? inputEl.value?.trim() ?? ''
+          }
+        }
+        return {
+          role,
+          accessibleName,
+          testId: el.getAttribute('data-testid'),
+          tagName,
+        }
+      }),
+  )
   await page.close()
   await browser.close()
   return {
@@ -32,6 +84,7 @@ export async function capturePage(url: string, options?: AcquireOptions): Promis
     networkLog,
     screenshot: null,
     capturedAt: new Date().toISOString(),
+    interactiveElements,
   }
 }
 

@@ -11,5 +11,15 @@ describe('capturePage', () => {
     expect(Array.isArray(result.networkLog)).toBe(true)
     expect(result.screenshot).toBeNull()
     expect(typeof result.capturedAt).toBe('string')
+    expect(Array.isArray(result.interactiveElements)).toBe(true)
+    expect(result.interactiveElements.length).toBeGreaterThan(0)
+    for (const el of result.interactiveElements) {
+      expect(typeof el.role).toBe('string')
+      expect(typeof el.accessibleName).toBe('string')
+      expect(typeof el.tagName).toBe('string')
+      expect(el.testId === null || typeof el.testId === 'string').toBe(true)
+    }
+    const plainPage = result.interactiveElements.every((el) => el.testId === null)
+    expect(plainPage).toBe(true)
   }, 30000)
 })
