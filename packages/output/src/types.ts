@@ -42,3 +42,22 @@ export interface TestIdAuditReport {
   pages: PageTestIdCoverage[]
   overallCoveragePercent: number
 }
+
+export interface PageAtlasEntry {
+  url: string
+  title: string
+  pageType: string | null
+  purpose: string | null
+  keyDataEntities: string[]
+  confidence: number | null
+  interactiveElementCount: number
+  testIdCount: number
+  interpreted: boolean
+}
+
+export interface SiteAtlas {
+  generatedAt: string
+  pages: PageAtlasEntry[]
+  totalPagesCaptured: number
+  totalPagesInterpreted: number
+}
