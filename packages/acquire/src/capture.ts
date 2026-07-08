@@ -1,5 +1,5 @@
 import { AxeBuilder } from '@axe-core/playwright'
-import type { AcquireOptions, AxeViolation, CaptureHandler, DomInteractiveElement, NetworkEntry, PageState } from './types.js'
+import type { AcquireOptions, AxeIncompleteResult, AxeViolation, CaptureHandler, DomInteractiveElement, NetworkEntry, PageState } from './types.js'
 import { launchHardened } from './launch.js'
 
 export async function capturePage(url: string, options?: AcquireOptions): Promise<PageState> {
@@ -22,6 +22,7 @@ export async function capturePage(url: string, options?: AcquireOptions): Promis
   const title = await page.title()
   const ariaSnapshot = await page.locator('body').ariaSnapshot()
   let axeViolations: AxeViolation[] = []
+  let axeIncomplete: AxeIncompleteResult[] = []
   try {
     const axeResults = await new AxeBuilder({ page }).analyze()
     axeViolations = axeResults.violations.map((violation) => ({
@@ -31,6 +32,18 @@ export async function capturePage(url: string, options?: AcquireOptions): Promis
       help: violation.help,
       helpUrl: violation.helpUrl,
       nodes: violation.nodes.map((node) => ({
+        target: node.target as string[],
+        html: node.html,
+        failureSummary: node.failureSummary ?? null,
+      })),
+    }))
+    axeIncomplete = axeResults.incomplete.map((incomplete) => ({
+      id: incomplete.id,
+      impact: incomplete.impact ?? null,
+      description: incomplete.description,
+      help: incomplete.help,
+      helpUrl: incomplete.helpUrl,
+      nodes: incomplete.nodes.map((node) => ({
         target: node.target as string[],
         html: node.html,
         failureSummary: node.failureSummary ?? null,
@@ -153,6 +166,7 @@ export async function capturePage(url: string, options?: AcquireOptions): Promis
     capturedAt: new Date().toISOString(),
     interactiveElements,
     axeViolations,
+    axeIncomplete,
   }
 }
 

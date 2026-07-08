@@ -31,6 +31,15 @@ export interface AxeViolation {
   nodes: AxeViolationNode[]
 }
 
+export interface AxeIncompleteResult {
+  id: string
+  impact: 'minor' | 'moderate' | 'serious' | 'critical' | null
+  description: string
+  help: string
+  helpUrl: string
+  nodes: AxeViolationNode[]
+}
+
 export interface PageState {
   url: string
   title: string
@@ -41,6 +50,7 @@ export interface PageState {
   capturedAt: string
   interactiveElements: DomInteractiveElement[]
   axeViolations: AxeViolation[]
+  axeIncomplete: AxeIncompleteResult[]
 }
 
 export interface AcquireOptions {
