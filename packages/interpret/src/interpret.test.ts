@@ -167,6 +167,50 @@ describe('interpretPage', () => {
     expect(createCall.tool_choice).toEqual({ type: 'tool', name: 'interpret_page' })
   })
 
+  it('retries once and succeeds when the first call is malformed and the second is well-formed', async () => {
+    const malformedResponse = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_retry_1',
+        name: 'interpret_page',
+        input: { pageType: 'login' }
+      }]
+    }
+    const mockClient = {
+      messages: {
+        create: vi.fn()
+          .mockResolvedValueOnce(malformedResponse)
+          .mockResolvedValueOnce(mockToolUseResponse)
+      }
+    }
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    const result = await interpretPage(mockPageState)
+    expect(result.pageType).toBe('login')
+    expect(result.purpose).toBe('Authenticate users')
+    expect(mockClient.messages.create).toHaveBeenCalledTimes(2)
+  })
+
+  it('throws after exhausting retries when every call is malformed', async () => {
+    const malformedResponse = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_retry_2',
+        name: 'interpret_page',
+        input: { pageType: 'login' }
+      }]
+    }
+    const mockClient = {
+      messages: {
+        create: vi.fn().mockResolvedValue(malformedResponse)
+      }
+    }
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    await expect(interpretPage(mockPageState)).rejects.toThrow(
+      `interpret_page tool_use input has unexpected shape for URL: ${mockPageState.url}`
+    )
+    expect(mockClient.messages.create).toHaveBeenCalledTimes(2)
+  })
+
   it('declares keyDataEntities as an array schema with a string items constraint', async () => {
     const mockClient = makeMockClient(mockToolUseResponse)
     vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
