@@ -11,6 +11,8 @@ import {
   generateAtlas,
   renderAtlasMarkdown,
   generatePOMsAndSpecs,
+  generateAxeReport,
+  renderAxeReportMarkdown,
 } from '@treeline/output'
 
 export interface TreelineCrawlOptions {
@@ -31,6 +33,8 @@ export interface TreelineCrawlSummary {
   pomsGenerated: number
   specsGenerated: number
   skippedElementsCount: number
+  totalAxeViolations: number
+  totalAxeNeedsReview: number
 }
 
 function deriveOutputDir(url: string): string {
@@ -77,6 +81,8 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
     await writeFile(join(reportsDir, 'testid-audit.md'), renderTestIdAuditMarkdown(testIdAudit))
     const atlas = generateAtlas(pages, interpretations)
     await writeFile(join(reportsDir, 'atlas.md'), renderAtlasMarkdown(atlas))
+    const axeReport = generateAxeReport(pages)
+    await writeFile(join(reportsDir, 'axe-report.md'), renderAxeReportMarkdown(axeReport))
     const { poms, specs, skipped } = generatePOMsAndSpecs(pages)
     for (const pom of poms) {
       await writeFile(join(pomsDir, pom.fileName), pom.code)
@@ -94,6 +100,8 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
       pomsGenerated: poms.length,
       specsGenerated: specs.length,
       skippedElementsCount: skipped.length,
+      totalAxeViolations: axeReport.totalViolations,
+      totalAxeNeedsReview: axeReport.totalNeedsReview,
     }
   } finally {
     db?.close()

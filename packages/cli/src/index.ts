@@ -42,6 +42,8 @@ program
       console.log(`POMs generated: ${summary.pomsGenerated}`)
       console.log(`Specs generated: ${summary.specsGenerated}`)
       console.log(`Skipped elements: ${summary.skippedElementsCount}`)
+      console.log(`Axe violations: ${summary.totalAxeViolations}`)
+      console.log(`Axe needs review: ${summary.totalAxeNeedsReview}`)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.error(`Error: ${message}`)
