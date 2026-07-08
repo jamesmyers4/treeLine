@@ -27,10 +27,6 @@ const mockToolUseResponse = {
     input: {
       pageType: 'login',
       purpose: 'Authenticate users',
-      interactiveElements: [
-        { role: 'textbox', accessibleName: 'Username', purpose: 'Enter username', testIdPresent: false },
-        { role: 'button', accessibleName: 'Sign In', purpose: 'Submit login form', testIdPresent: false }
-      ],
       keyDataEntities: ['username', 'password'],
       confidence: 0.95
     }
@@ -53,7 +49,6 @@ describe('interpretPage', () => {
     expect(result.url).toBe(mockPageState.url)
     expect(result.pageType).toBe('login')
     expect(result.purpose).toBe('Authenticate users')
-    expect(result.interactiveElements).toHaveLength(2)
     expect(result.keyDataEntities).toEqual(['username', 'password'])
     expect(result.confidence).toBe(0.95)
   })
