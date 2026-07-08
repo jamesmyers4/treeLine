@@ -4,3 +4,4 @@ dist
 *.sqlite-journal
 .env
 hard-pages/*.json
+treeline-output/
