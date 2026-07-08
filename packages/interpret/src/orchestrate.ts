@@ -22,12 +22,14 @@ export async function runInterpretation(dbPath: string, hardPagesDir: string): P
         interpretedAt: new Date().toISOString(),
       }
       db.recordInterpretation(stored)
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`interpretation failed for ${page.url}: ${message}`)
       writeHardPageEntry(hardPagesDir, {
         url: page.url,
         reasonCode: 'parse-error',
         attemptedAt: new Date().toISOString(),
-        captureSnapshot: null,
+        captureSnapshot: message.slice(0, 200),
       })
     }
   }

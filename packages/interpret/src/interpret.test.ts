@@ -85,6 +85,48 @@ describe('interpretPage', () => {
     )
   })
 
+  it('throws when keyDataEntities is a comma-separated string instead of an array', async () => {
+    const badResponse = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_def',
+        name: 'interpret_page',
+        input: {
+          pageType: 'login',
+          purpose: 'Authenticate users',
+          keyDataEntities: 'username,password',
+          confidence: 0.95
+        }
+      }]
+    }
+    const mockClient = makeMockClient(badResponse)
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    await expect(interpretPage(mockPageState)).rejects.toThrow(
+      `interpret_page tool_use input has unexpected shape for URL: ${mockPageState.url}`
+    )
+  })
+
+  it('throws when confidence is a string instead of a number', async () => {
+    const badResponse = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_ghi',
+        name: 'interpret_page',
+        input: {
+          pageType: 'login',
+          purpose: 'Authenticate users',
+          keyDataEntities: ['username', 'password'],
+          confidence: '0.9'
+        }
+      }]
+    }
+    const mockClient = makeMockClient(badResponse)
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    await expect(interpretPage(mockPageState)).rejects.toThrow(
+      `interpret_page tool_use input has unexpected shape for URL: ${mockPageState.url}`
+    )
+  })
+
   it('uses haiku model for simple pages', async () => {
     const simpleState: PageState = {
       ...mockPageState,
@@ -123,5 +165,18 @@ describe('interpretPage', () => {
     await interpretPage(mockPageState)
     const createCall = mockClient.messages.create.mock.calls[0][0]
     expect(createCall.tool_choice).toEqual({ type: 'tool', name: 'interpret_page' })
+  })
+
+  it('declares keyDataEntities as an array schema with a string items constraint', async () => {
+    const mockClient = makeMockClient(mockToolUseResponse)
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    await interpretPage(mockPageState)
+    const createCall = mockClient.messages.create.mock.calls[0][0]
+    const tool = createCall.tools[0]
+    const keyDataEntitiesSchema = tool.input_schema.properties.keyDataEntities
+    expect(keyDataEntitiesSchema.type).toBe('array')
+    expect(keyDataEntitiesSchema.items).toEqual({ type: 'string' })
+    expect(typeof keyDataEntitiesSchema.description).toBe('string')
+    expect(keyDataEntitiesSchema.description.length).toBeGreaterThan(0)
   })
 })

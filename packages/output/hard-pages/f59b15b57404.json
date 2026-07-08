@@ -1,0 +1,6 @@
+{
+  "url": "https://goldenpetbrands.com/",
+  "reasonCode": "parse-error",
+  "attemptedAt": "2026-07-08T01:16:51.503Z",
+  "captureSnapshot": "interpret_page tool_use input has unexpected shape for URL: https://goldenpetbrands.com/"
+}

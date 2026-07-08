@@ -16,13 +16,19 @@ export async function interpretPage(
     tools: [
       {
         name: "interpret_page",
-        description: "Interpret a web page from its aria snapshot",
+        description:
+          "Interpret a web page from its aria snapshot. keyDataEntities must be an array of distinct entity name strings, never a single comma-separated string.",
         input_schema: {
           type: "object",
           properties: {
             pageType: { type: "string" },
             purpose: { type: "string" },
-            keyDataEntities: { type: "array", items: { type: "string" } },
+            keyDataEntities: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "An array of distinct entity name strings, never a single comma-separated string.",
+            },
             confidence: { type: "number" },
           },
           required: ["pageType", "purpose", "keyDataEntities", "confidence"],
@@ -46,11 +52,25 @@ export async function interpretPage(
     );
   }
   const input = toolUseBlock.input as Record<string, unknown>;
+  const isValidPageType =
+    typeof input.pageType === "string" && input.pageType.trim().length > 0;
+  const isValidPurpose =
+    typeof input.purpose === "string" && input.purpose.trim().length > 0;
+  const isValidKeyDataEntities =
+    Array.isArray(input.keyDataEntities) &&
+    input.keyDataEntities.every(
+      (entity) => typeof entity === "string" && entity.length > 0,
+    );
+  const isValidConfidence =
+    typeof input.confidence === "number" &&
+    Number.isFinite(input.confidence) &&
+    input.confidence >= 0 &&
+    input.confidence <= 1;
   if (
-    typeof input.pageType !== "string" ||
-    typeof input.purpose !== "string" ||
-    !Array.isArray(input.keyDataEntities) ||
-    typeof input.confidence !== "number"
+    !isValidPageType ||
+    !isValidPurpose ||
+    !isValidKeyDataEntities ||
+    !isValidConfidence
   ) {
     console.log(JSON.stringify(response, null, 2));
     throw new Error(
@@ -60,9 +80,9 @@ export async function interpretPage(
   return {
     url: pageState.url,
     tierUsed: routingDecision.tier,
-    pageType: input.pageType,
-    purpose: input.purpose,
+    pageType: input.pageType as string,
+    purpose: input.purpose as string,
     keyDataEntities: input.keyDataEntities as string[],
-    confidence: input.confidence,
+    confidence: input.confidence as number,
   };
 }
