@@ -27,6 +27,7 @@ function makePage(url: string, interactiveElements: DomInteractiveElement[]): Cr
     screenshot: null,
     capturedAt: new Date().toISOString(),
     interactiveElements,
+    axeViolations: [],
     status: 'ok',
   }
 }

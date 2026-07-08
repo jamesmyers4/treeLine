@@ -11,7 +11,8 @@ function makePageState(ariaSnapshot: string): PageState {
     networkLog: [],
     screenshot: null,
     capturedAt: new Date().toISOString(),
-    interactiveElements: []
+    interactiveElements: [],
+    axeViolations: []
   }
 }
 
