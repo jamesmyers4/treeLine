@@ -63,6 +63,14 @@ function buildCandidates(el: DomInteractiveElement, allElements: DomInteractiveE
   return candidates
 }
 
+export function computeSelectorCandidates(interactiveElements: DomInteractiveElement[]): Map<DomInteractiveElement, SelectorCandidate[]> {
+  const candidatesByElement = new Map<DomInteractiveElement, SelectorCandidate[]>()
+  for (const el of interactiveElements) {
+    candidatesByElement.set(el, buildCandidates(el, interactiveElements))
+  }
+  return candidatesByElement
+}
+
 function buildEntry(url: string, el: DomInteractiveElement, allElements: DomInteractiveElement[]): SelectorReportEntry {
   return {
     url,

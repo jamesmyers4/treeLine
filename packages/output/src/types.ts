@@ -61,3 +61,26 @@ export interface SiteAtlas {
   totalPagesCaptured: number
   totalPagesInterpreted: number
 }
+
+export interface SkippedElement {
+  url: string
+  elementDescription: string
+  reason: string
+}
+
+export interface GeneratedPOM {
+  className: string
+  fileName: string
+  code: string
+}
+
+export interface GeneratedSpec {
+  fileName: string
+  code: string
+}
+
+export interface POMGenerationResult {
+  poms: GeneratedPOM[]
+  specs: GeneratedSpec[]
+  skipped: SkippedElement[]
+}
