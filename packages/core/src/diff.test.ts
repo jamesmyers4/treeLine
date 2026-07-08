@@ -2,11 +2,11 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import type { PageState } from '@treeline/acquire'
+import type { DomInteractiveElement, PageState } from '@treeline/acquire'
 import { openCrawlDb } from './persistence.js'
-import { diffCrawls } from './diff.js'
+import { diffCrawls, diffSelectorCandidates } from './diff.js'
 
-function makePage(url: string, title: string): PageState {
+function makePage(url: string, title: string, interactiveElements: DomInteractiveElement[] = []): PageState {
   return {
     url,
     title,
@@ -15,9 +15,23 @@ function makePage(url: string, title: string): PageState {
     networkLog: [],
     screenshot: null,
     capturedAt: new Date().toISOString(),
-    interactiveElements: [],
+    interactiveElements,
     axeViolations: [],
     axeIncomplete: [],
+  }
+}
+
+function makeElement(overrides: Partial<DomInteractiveElement>): DomInteractiveElement {
+  return {
+    role: 'generic',
+    accessibleName: '',
+    testId: null,
+    tagName: 'div',
+    elementId: null,
+    classList: [],
+    cssPath: 'body > div',
+    xpath: '/html/body/div',
+    ...overrides,
   }
 }
 
@@ -133,5 +147,155 @@ describe('diffCrawls', () => {
     expect(result.pagesRemoved.sort()).toEqual(['https://example.com/', 'https://example.com/about'])
     expect(result.pagesAdded).toEqual([])
     expect(result.titleChanges).toEqual([])
+  })
+})
+
+describe('selectorCandidateChanges', () => {
+  it('reports no changes for two identical runs', () => {
+    const el = makeElement({ role: 'link', accessibleName: 'About', cssPath: 'header > a.about', xpath: '/html/body/header/a' })
+    seedDb(baselinePath, [makePage('https://example.com/', 'Home', [el])])
+    seedDb(currentPath, [makePage('https://example.com/', 'Home', [el])])
+
+    const result = diffCrawls(baselinePath, currentPath)
+
+    expect(result.selectorCandidateChanges).toEqual([])
+  })
+
+  it('reports a stable flip true to false with correct baseline/current values', () => {
+    const baselineEl = makeElement({ cssPath: 'body > div.card', xpath: '/html/body/div[1]' })
+    const currentEl = makeElement({ cssPath: 'body > div:nth-of-type(2)', xpath: '/html/body/div[1]' })
+    seedDb(baselinePath, [makePage('https://example.com/', 'Home', [baselineEl])])
+    seedDb(currentPath, [makePage('https://example.com/', 'Home', [currentEl])])
+
+    const result = diffCrawls(baselinePath, currentPath)
+
+    expect(result.selectorCandidateChanges).toEqual([
+      {
+        url: 'https://example.com/',
+        role: 'generic',
+        accessibleName: '',
+        occurrenceIndex: 0,
+        baselineStable: true,
+        baselineUniqueOnPage: true,
+        currentStable: false,
+        currentUniqueOnPage: true,
+      },
+    ])
+  })
+
+  it('reports a uniqueOnPage flip with correct baseline/current values', () => {
+    const baselineElements = [
+      makeElement({ testId: 'about-a', cssPath: 'header > a.about', xpath: '/html/body/header/a' }),
+    ]
+    const currentElements = [
+      makeElement({ testId: 'about-a', cssPath: 'header > a.about', xpath: '/html/body/header/a' }),
+      makeElement({
+        role: 'button',
+        accessibleName: 'Duplicate',
+        testId: 'about-a',
+        cssPath: 'footer > button.dup',
+        xpath: '/html/body/footer/button',
+      }),
+    ]
+    seedDb(baselinePath, [makePage('https://example.com/', 'Home', baselineElements)])
+    seedDb(currentPath, [makePage('https://example.com/', 'Home', currentElements)])
+
+    const result = diffCrawls(baselinePath, currentPath)
+
+    expect(result.selectorCandidateChanges).toEqual([
+      {
+        url: 'https://example.com/',
+        role: 'generic',
+        accessibleName: '',
+        occurrenceIndex: 0,
+        baselineStable: true,
+        baselineUniqueOnPage: true,
+        currentStable: true,
+        currentUniqueOnPage: false,
+      },
+    ])
+  })
+
+  it('excludes an element whose cssPath/xpath differs but stable/uniqueOnPage are unchanged', () => {
+    const baselineEl = makeElement({ cssPath: 'body > div.card', xpath: '/html/body/div[1]' })
+    const currentEl = makeElement({ cssPath: 'body > div.card-v2', xpath: '/html/body/div[2]' })
+    seedDb(baselinePath, [makePage('https://example.com/', 'Home', [baselineEl])])
+    seedDb(currentPath, [makePage('https://example.com/', 'Home', [currentEl])])
+
+    const result = diffCrawls(baselinePath, currentPath)
+
+    expect(result.selectorCandidateChanges).toEqual([])
+  })
+
+  it('does not report elements from a page removed in current', () => {
+    const el = makeElement({ cssPath: 'body > div:nth-of-type(2)', xpath: '/html/body/div[1]' })
+    seedDb(baselinePath, [
+      makePage('https://example.com/', 'Home', []),
+      makePage('https://example.com/old', 'Old Page', [el]),
+    ])
+    seedDb(currentPath, [makePage('https://example.com/', 'Home', [])])
+
+    const result = diffCrawls(baselinePath, currentPath)
+
+    expect(result.pagesRemoved).toEqual(['https://example.com/old'])
+    expect(result.selectorCandidateChanges).toEqual([])
+  })
+
+  it('matches duplicate role+accessibleName elements by occurrenceIndex without cross-matching', () => {
+    const baselineElements = [
+      makeElement({ cssPath: 'header > a.item', xpath: '/html/body/header/a' }),
+      makeElement({ cssPath: 'footer > a.item', xpath: '/html/body/footer/a' }),
+    ]
+    const currentElements = [
+      makeElement({ cssPath: 'header > a:nth-of-type(3)', xpath: '/html/body/header/a' }),
+      makeElement({ cssPath: 'footer > a.item', xpath: '/html/body/footer/a' }),
+    ]
+    seedDb(baselinePath, [makePage('https://example.com/', 'Home', baselineElements)])
+    seedDb(currentPath, [makePage('https://example.com/', 'Home', currentElements)])
+
+    const result = diffCrawls(baselinePath, currentPath)
+
+    expect(result.selectorCandidateChanges).toEqual([
+      {
+        url: 'https://example.com/',
+        role: 'generic',
+        accessibleName: '',
+        occurrenceIndex: 0,
+        baselineStable: true,
+        baselineUniqueOnPage: true,
+        currentStable: false,
+        currentUniqueOnPage: true,
+      },
+    ])
+  })
+
+  it('excludes an element newly added in current with no counterpart at that occurrenceIndex in baseline', () => {
+    const baselineElements = [makeElement({ cssPath: 'header > a.item', xpath: '/html/body/header/a' })]
+    const currentElements = [
+      makeElement({ cssPath: 'header > a.item', xpath: '/html/body/header/a' }),
+      makeElement({ cssPath: 'header > a.item-2', xpath: '/html/body/header/a[2]' }),
+    ]
+    seedDb(baselinePath, [makePage('https://example.com/', 'Home', baselineElements)])
+    seedDb(currentPath, [makePage('https://example.com/', 'Home', currentElements)])
+
+    const result = diffCrawls(baselinePath, currentPath)
+
+    expect(result.selectorCandidateChanges.filter((c) => c.occurrenceIndex === 1)).toEqual([])
+    expect(result.selectorCandidateChanges).toEqual([])
+  })
+})
+
+describe('diffSelectorCandidates', () => {
+  it('is independently callable and returns the same result as diffCrawls.selectorCandidateChanges', () => {
+    const baselineEl = makeElement({ cssPath: 'body > div.card', xpath: '/html/body/div[1]' })
+    const currentEl = makeElement({ cssPath: 'body > div:nth-of-type(2)', xpath: '/html/body/div[1]' })
+    seedDb(baselinePath, [makePage('https://example.com/', 'Home', [baselineEl])])
+    seedDb(currentPath, [makePage('https://example.com/', 'Home', [currentEl])])
+
+    const direct = diffSelectorCandidates(baselinePath, currentPath)
+    const viaDiffCrawls = diffCrawls(baselinePath, currentPath).selectorCandidateChanges
+
+    expect(direct).toEqual(viaDiffCrawls)
+    expect(direct).toHaveLength(1)
   })
 })

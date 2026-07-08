@@ -1,6 +1,6 @@
 import type { DomInteractiveElement } from '@treeline/acquire'
+import { computeSelectorCandidates } from '@treeline/core'
 import type { CrawledPage } from './input.js'
-import { computeSelectorCandidates } from './selector-report.js'
 import { urlToClassName, urlToFileBaseName, elementToPropertyName, deduplicatePropertyNames } from './naming.js'
 import type { GeneratedPOM, GeneratedSpec, LocatorStrategy, POMGenerationResult, SelectorCandidate, SkippedElement } from './types.js'
 

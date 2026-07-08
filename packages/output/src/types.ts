@@ -1,11 +1,5 @@
-export type LocatorStrategy = 'role' | 'testid' | 'css' | 'xpath'
-
-export interface SelectorCandidate {
-  strategy: LocatorStrategy
-  value: string
-  stable: boolean
-  uniqueOnPage: boolean
-}
+export type { LocatorStrategy, SelectorCandidate } from '@treeline/core'
+import type { SelectorCandidate } from '@treeline/core'
 
 export interface SelectorReportEntry {
   url: string
