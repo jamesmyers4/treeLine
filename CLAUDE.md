@@ -1,25 +1,32 @@
 # CLAUDE.md — treeline
 
-Full design rationale lives in `CONTEXT.md`. This file is the operational
-guide for working in this repo.
+_Last updated after sessions 1 through 10.5._
+
+Full design rationale lives in `CONTEXT.md` — read that first for the "why."
+This file is the operational guide: conventions, commands, and hard-won
+gotchas from the actual build.
 
 ## What this repo is
 
-AI-powered site comprehension engine. Crawls a site, captures aria-tree page
-state via a hardened Playwright layer, runs tiered AI interpretation, and
-emits test artifacts (POMs, selector reports) plus docs and structured data.
-Claude Code's role in this repo is escalation, not the crawl runtime — see
-"Escalation workflow" below.
+AI-powered site comprehension engine. Crawls a site, captures aria-tree +
+real DOM state via a hardened Playwright layer, runs tiered AI
+interpretation, and emits test artifacts (POMs, selector reports) plus docs,
+accessibility findings, and structured data. Claude Code's role in this repo
+is escalation (fixing `hard-pages/` entries), not the crawl runtime.
 
 ## Monorepo layout
 
-- `packages/cli` — `treeline` CLI entrypoint
-- `packages/core` — crawler, capture orchestration, SQLite persistence
-- `packages/acquire` — Patchright-hardened Playwright layer + Fastify API
-- `packages/interpret` — AI interpretation, 2-tier model routing (Haiku 4.5
-  / Sonnet 5)
-- `packages/output` — atlas generator, POM generator, selector/testid/axe/
-  diff/flow-map reports
+- `packages/cli` — the real `treeline crawl <url>` command. Has its own
+  `vitest.config.ts` — see "Operational gotchas" below for why this exists
+  and must not be removed.
+- `packages/core` — crawler, persistence (`pages` + `interpretations`
+  tables), robots/sitemap, hard-pages writer
+- `packages/acquire` — Patchright-hardened Playwright layer, axe-core
+  scanning, Fastify API
+- `packages/interpret` — 2-tier AI interpretation (Haiku 4.5 / Sonnet 5)
+  with retry, plus persistence orchestration (`runInterpretation`)
+- `packages/output` — selector report, testid audit, atlas, POM+spec
+  generation, axe report generators. Diff mode and flow map not yet added.
 
 ## Conventions
 
@@ -28,8 +35,20 @@ Claude Code's role in this repo is escalation, not the crawl runtime — see
 - No comments in code.
 - One line break after a function or major code block ends; no line breaks
   between statements within a function body.
+- **This convention applies to treeline's own source files only** — NOT to
+  the content of strings this tool generates as output (POM classes, spec
+  files). Generated code for end users should use normal, readable
+  TypeScript formatting. Don't compress generated-code templates just
+  because the generator's own source follows the compressed style.
 - Locator ranking for anything selector-related: `getByRole` → `data-testid`
   → CSS → XPath, in that order of preference.
+- **A selector candidate is only safe to bake directly into generated code
+  when BOTH `stable` (survives DOM changes) AND `uniqueOnPage` (resolves to
+  exactly one element right now) are true.** These are independent
+  properties tracked separately (session 5.5) — a role selector can be
+  perfectly stable and still throw a Playwright strict-mode violation if
+  it's not unique. If only `stable` is true, scope it (`.nth(i)`, a parent
+  locator, `.filter()`) rather than using it as-is.
 - Same-origin crawl scope is the default and should not be silently widened.
 - Stealth mode is opt-in (`--stealth` flag) — never the default posture.
 
@@ -37,24 +56,81 @@ Claude Code's role in this repo is escalation, not the crawl runtime — see
 
 ```
 pnpm install
-pnpm --filter cli dev -- crawl <url>
-pnpm --filter acquire dev
-pnpm test
+pnpm --filter @treeline/<package> build
+pnpm --filter @treeline/<package> test
+pnpm --filter @treeline/cli dev -- crawl <url> [--stealth] [--max-pages n]
+  [--max-depth n] [--throttle-ms n] [--output dir] [--skip-interpretation]
 ```
+
+Real example, from `packages/cli`:
+
+```
+pnpm exec tsx src/index.ts crawl https://example.com --max-pages 5
+```
+
+## Operational gotchas (learned the hard way — read before debugging)
+
+- **`tsx` is not hoisted to the workspace root.** Each package that needs to
+  run a script directly (throwaway sanity scripts, `dev` scripts) needs
+  `tsx` as its own devDependency: `pnpm add -D tsx --filter @treeline/<pkg>`.
+  Running `pnpm exec tsx` from a package that doesn't have it installed
+  fails with "'tsx' is not recognized," not a clearer dependency error.
+- **`ANTHROPIC_API_KEY` only persists for the current shell session.**
+  `export ANTHROPIC_API_KEY=...` is lost on a new terminal/tab. Any session
+  involving real interpretation calls should start with `echo
+$ANTHROPIC_API_KEY` to confirm it's actually set before running anything.
+  The Anthropic Console only shows a key's full value once, at creation —
+  there is no way to retrieve a lost key later, only generate a new one.
+- **`packages/cli/vitest.config.ts` exists specifically to exclude
+  `treeline-output/**`from test collection.** Every real crawl into`packages/cli`writes generated`.spec.ts`files under`treeline-output/<host>/specs/`. Without this exclusion, vitest's default
+glob picks those up as if they were real test suites and they fail
+importing `@playwright/test`(which isn't a dependency of this repo's own
+test setup). If you see a wall of unrelated-looking test failures in`packages/cli`, check this file hasn't been reverted/removed before
+  assuming something's actually broken.
+- **Re-running a crawl against the same `--output` path resumes, it doesn't
+  restart.** The crawler skips URLs already in that db's `pages` table.
+  Comparing two "identical" runs will show fewer newly-captured pages on
+  the second one — this is correct resumability behavior (CONTEXT.md), not
+  a bug, but easy to misread as one mid-debugging.
+- **`browser.newPage()` vs. `browser.newContext()` → `context.newPage()`
+  matters for axe-core.** Axe's `finishRun()` needs to open its own helper
+  page internally, which fails against an implicit single-owner context
+  from `browser.newPage()`. `capture.ts` uses the explicit context form —
+  don't revert this without re-verifying axe still runs (it will silently
+  return empty results otherwise, caught the hard way in session 9).
+- **`git add .` and `git push` both print nothing on success.** Don't
+  assume a silent terminal means a command failed — check with `git
+status` / look for the `[new branch]`-style confirmation line rather than
+  re-running the command.
 
 ## Model routing (packages/interpret)
 
 - **Haiku 4.5** — default tier for simple/structured pages.
-- **Sonnet 5** — complex/ambiguous pages, or anything Haiku flags
-  low-confidence.
-- No Opus tier. If a page fails both tiers, it goes to `hard-pages/`, not to
-  a third model.
+- **Sonnet 5** — complex/ambiguous pages.
+- No Opus tier. `MAX_INTERPRETATION_ATTEMPTS = 2` — a malformed response
+  (most commonly `keyDataEntities` coming back as a string instead of an
+  array) gets retried once before the page is sent to `hard-pages/`. This
+  is a real, observed ~1-in-3 single-attempt failure rate, not a
+  theoretical edge case — don't be surprised by `console.warn` retry lines
+  in normal operation.
+- `StoredInterpretation` is defined and persisted in `@treeline/core`, NOT
+  `@treeline/interpret`. **Do not move it or import it from
+  `@treeline/interpret`** — this split exists specifically to avoid a
+  circular workspace dependency (`core` must not depend on `interpret`).
+  `PageInterpretation` (the type `interpretPage` returns) and
+  `StoredInterpretation` (what gets persisted) intentionally share field
+  names but are separate types in separate packages.
+- `PageInterpretation` does NOT include `interactiveElements` — removed in
+  session 4.7. Per-element data belongs to `PageState.interactiveElements`
+  (real DOM capture), not AI interpretation. Do not reintroduce it to
+  `PageInterpretation`.
 
 ## Escalation workflow — `hard-pages/`
 
-This is a manual workflow. Nothing shells out to Claude Code automatically.
+Manual workflow. Nothing shells out to Claude Code automatically. Confirmed
+working end-to-end with real failures during development.
 
-Each failed page produces a manifest entry:
+Manifest entry shape (`HardPageEntry`, as actually implemented):
 
 ```
 {
@@ -66,7 +142,9 @@ Each failed page produces a manifest entry:
 ```
 
 `reasonCode` values: `empty-snapshot`, `timeout`, `auth-wall`,
-`low-confidence`, `parse-error`.
+`low-confidence`, `parse-error`. `captureSnapshot` carries a truncated real
+error message when available (session 5.97 fix) — do not hardcode this back
+to always-`null`.
 
 When invoked against `hard-pages/`, Claude Code should:
 
@@ -78,21 +156,47 @@ When invoked against `hard-pages/`, Claude Code should:
    crawl handles that pattern deterministically.
 5. Remove or mark the manifest entry resolved.
 
-`CaptureHandler` interface shape (implement, don't redesign, unless the
-pattern genuinely doesn't fit it):
+`CaptureHandler` interface (implement, don't redesign, unless the pattern
+genuinely doesn't fit it):
 
 ```
 interface CaptureHandler {
-matches(page: Page, url: string): Promise<boolean>
-capture(page: Page, url: string): Promise<PageState>
+matches(url: string, ariaSnapshot: string): Promise<boolean>
+capture(url: string, options?: AcquireOptions): Promise<PageState>
 }
 ```
+
+## Session-splitting practice (how this repo has actually been built)
+
+This codebase has been built through many small, single-package-scoped
+Claude Code sessions rather than large multi-package ones — deliberately.
+Sessions that touched 2+ packages (the crawler, POM generation) were
+noticeably higher-risk than single-package ones. Keep following this
+pattern for new work:
+
+- Scope each session to one package where possible.
+- After any session whose output feeds a later session (interpretation
+  schemas, capture data shapes, report inputs), do a manual real-data sanity
+  check — a throwaway script against a real crawl — before building the
+  next thing on top of it. This has caught real bugs unit tests missed at
+  least four separate times (AI-guessed testid unreliability, a swallowed
+  exception hiding a config error, a malformed-JSON schema issue, axe
+  silently failing on every capture).
+- When a manual check finds a real bug, fix it in its own small session
+  before continuing, even if it means backtracking. Don't build the next
+  feature on top of output you haven't verified.
 
 ## Do not
 
 - Do not make stealth the default crawl posture.
-- Do not build Phase 2 interaction-reachable discovery yet — the capture
-  schema should stay forward-compatible with it, but it is not v1 scope.
+- Do not build Phase 2 interaction-reachable discovery yet.
 - Do not add a third model tier without updating `CONTEXT.md` first.
-- Do not have the crawler pipeline invoke Claude Code automatically — the
-  escalation trigger is manual by design.
+- Do not have the crawler pipeline invoke Claude Code automatically.
+- Do not move `StoredInterpretation` into `@treeline/interpret` or import
+  it from there — circular dependency risk, see above.
+- Do not reintroduce `interactiveElements` to `PageInterpretation`.
+- Do not remove or bypass `packages/cli/vitest.config.ts`'s exclusion of
+  `treeline-output/**`.
+- Do not treat `DomInteractiveElement.accessibleName` as a complete,
+  spec-accurate accessible-name computation — it's a simplified heuristic
+  with known gaps (see CONTEXT.md).
