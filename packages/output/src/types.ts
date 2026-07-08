@@ -84,3 +84,25 @@ export interface POMGenerationResult {
   specs: GeneratedSpec[]
   skipped: SkippedElement[]
 }
+
+export interface AxeFindingSummary {
+  id: string
+  impact: string | null
+  help: string
+  helpUrl: string
+  affectedElementCount: number
+  exampleSelector: string
+}
+
+export interface PageAxeReport {
+  url: string
+  violations: AxeFindingSummary[]
+  needsReview: AxeFindingSummary[]
+}
+
+export interface AxeReport {
+  generatedAt: string
+  pages: PageAxeReport[]
+  totalViolations: number
+  totalNeedsReview: number
+}

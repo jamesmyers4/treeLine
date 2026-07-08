@@ -28,6 +28,7 @@ function makePage(overrides: Partial<CrawledPage>): CrawledPage {
     capturedAt: new Date().toISOString(),
     interactiveElements: [],
     axeViolations: [],
+    axeIncomplete: [],
     status: 'ok',
     ...overrides,
   }
