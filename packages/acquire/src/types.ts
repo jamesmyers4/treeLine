@@ -16,6 +16,21 @@ export interface DomInteractiveElement {
   xpath: string
 }
 
+export interface AxeViolationNode {
+  target: string[]
+  html: string
+  failureSummary: string | null
+}
+
+export interface AxeViolation {
+  id: string
+  impact: 'minor' | 'moderate' | 'serious' | 'critical' | null
+  description: string
+  help: string
+  helpUrl: string
+  nodes: AxeViolationNode[]
+}
+
 export interface PageState {
   url: string
   title: string
@@ -25,6 +40,7 @@ export interface PageState {
   screenshot: string | null
   capturedAt: string
   interactiveElements: DomInteractiveElement[]
+  axeViolations: AxeViolation[]
 }
 
 export interface AcquireOptions {

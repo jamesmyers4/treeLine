@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import type { DomInteractiveElement, NetworkEntry, PageState } from '@treeline/acquire'
+import type { AxeViolation, DomInteractiveElement, NetworkEntry, PageState } from '@treeline/acquire'
 import type { CrawlConfig, HardPageReasonCode, StoredInterpretation } from './types.js'
 
 export function openCrawlDb(dbPath: string) {
@@ -19,7 +19,8 @@ export function openCrawlDb(dbPath: string) {
       screenshot TEXT,
       capturedAt TEXT,
       status TEXT,
-      interactiveElements TEXT
+      interactiveElements TEXT,
+      axeViolations TEXT
     );
     CREATE TABLE IF NOT EXISTS interpretations (
       url TEXT PRIMARY KEY,
@@ -41,8 +42,8 @@ export function openCrawlDb(dbPath: string) {
     },
     recordPageState(pageState: PageState): void {
       db.prepare(`
-        INSERT OR REPLACE INTO pages (url, title, ariaSnapshot, links, networkLog, screenshot, capturedAt, status, interactiveElements)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO pages (url, title, ariaSnapshot, links, networkLog, screenshot, capturedAt, status, interactiveElements, axeViolations)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         pageState.url,
         pageState.title,
@@ -53,6 +54,7 @@ export function openCrawlDb(dbPath: string) {
         pageState.capturedAt,
         'ok',
         JSON.stringify(pageState.interactiveElements),
+        JSON.stringify(pageState.axeViolations),
       )
     },
     pageExists(url: string): boolean {
@@ -72,6 +74,7 @@ export function openCrawlDb(dbPath: string) {
       screenshot: string | null
       capturedAt: string | null
       interactiveElements: DomInteractiveElement[]
+      axeViolations: AxeViolation[]
       status: string
     }> {
       const rows = db.prepare('SELECT * FROM pages').all() as Array<Record<string, string | null>>
@@ -86,6 +89,7 @@ export function openCrawlDb(dbPath: string) {
         interactiveElements: row.interactiveElements
           ? (JSON.parse(row.interactiveElements) as DomInteractiveElement[])
           : [],
+        axeViolations: row.axeViolations ? (JSON.parse(row.axeViolations) as AxeViolation[]) : [],
         status: row.status ?? '',
       }))
     },

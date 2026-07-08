@@ -9,14 +9,15 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "playwright": "^1.47.0",
+    "@axe-core/playwright": "^4.12.1",
+    "fastify": "^4.28.0",
     "patchright": "^1.47.0",
-    "fastify": "^4.28.0"
+    "playwright": "^1.47.0"
   },
   "devDependencies": {
-    "typescript": "^5.5.0",
+    "@types/node": "^22.0.0",
     "tsx": "^4.16.0",
-    "vitest": "^2.0.0",
-    "@types/node": "^22.0.0"
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
   }
 }

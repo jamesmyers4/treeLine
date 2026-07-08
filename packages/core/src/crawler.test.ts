@@ -76,5 +76,6 @@ describe('crawl', () => {
       expect(typeof el.xpath).toBe('string')
       expect(el.xpath.startsWith('/html')).toBe(true)
     }
+    expect(Array.isArray(rootPage.axeViolations)).toBe(true)
   }, 120_000)
 })

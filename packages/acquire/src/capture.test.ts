@@ -13,6 +13,7 @@ describe('capturePage', () => {
     expect(typeof result.capturedAt).toBe('string')
     expect(Array.isArray(result.interactiveElements)).toBe(true)
     expect(result.interactiveElements.length).toBeGreaterThan(0)
+    expect(Array.isArray(result.axeViolations)).toBe(true)
     for (const el of result.interactiveElements) {
       expect(typeof el.role).toBe('string')
       expect(typeof el.accessibleName).toBe('string')

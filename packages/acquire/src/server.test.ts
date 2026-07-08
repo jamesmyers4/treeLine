@@ -17,6 +17,7 @@ const mockPageState: PageState = {
   screenshot: null,
   capturedAt: '2024-01-01T00:00:00.000Z',
   interactiveElements: [],
+  axeViolations: [],
 }
 
 describe('server', () => {

@@ -1,9 +1,11 @@
-import type { AcquireOptions, CaptureHandler, DomInteractiveElement, NetworkEntry, PageState } from './types.js'
+import { AxeBuilder } from '@axe-core/playwright'
+import type { AcquireOptions, AxeViolation, CaptureHandler, DomInteractiveElement, NetworkEntry, PageState } from './types.js'
 import { launchHardened } from './launch.js'
 
 export async function capturePage(url: string, options?: AcquireOptions): Promise<PageState> {
   const browser = await launchHardened(options)
-  const page = await browser.newPage()
+  const context = await browser.newContext()
+  const page = await context.newPage()
   const networkLog: NetworkEntry[] = []
   const pending = new Map<string, { method: string; resourceType: string }>()
   page.on('request', (req) => {
@@ -19,6 +21,24 @@ export async function capturePage(url: string, options?: AcquireOptions): Promis
   await page.waitForLoadState('networkidle').catch(() => undefined)
   const title = await page.title()
   const ariaSnapshot = await page.locator('body').ariaSnapshot()
+  let axeViolations: AxeViolation[] = []
+  try {
+    const axeResults = await new AxeBuilder({ page }).analyze()
+    axeViolations = axeResults.violations.map((violation) => ({
+      id: violation.id,
+      impact: violation.impact ?? null,
+      description: violation.description,
+      help: violation.help,
+      helpUrl: violation.helpUrl,
+      nodes: violation.nodes.map((node) => ({
+        target: node.target as string[],
+        html: node.html,
+        failureSummary: node.failureSummary ?? null,
+      })),
+    }))
+  } catch (err) {
+    console.warn(`axe-core scan failed for ${url}`, err)
+  }
   const links = await page.locator('a[href]').evaluateAll((els) =>
     (els as HTMLAnchorElement[]).map((el) => el.href).filter(Boolean),
   )
@@ -132,6 +152,7 @@ export async function capturePage(url: string, options?: AcquireOptions): Promis
     screenshot: null,
     capturedAt: new Date().toISOString(),
     interactiveElements,
+    axeViolations,
   }
 }
 
