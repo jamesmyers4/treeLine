@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import type { DomInteractiveElement, NetworkEntry, PageState } from '@treeline/acquire'
-import type { CrawlConfig, HardPageReasonCode } from './types.js'
+import type { CrawlConfig, HardPageReasonCode, StoredInterpretation } from './types.js'
 
 export function openCrawlDb(dbPath: string) {
   const db = new Database(dbPath)
@@ -20,6 +20,15 @@ export function openCrawlDb(dbPath: string) {
       capturedAt TEXT,
       status TEXT,
       interactiveElements TEXT
+    );
+    CREATE TABLE IF NOT EXISTS interpretations (
+      url TEXT PRIMARY KEY,
+      tierUsed TEXT,
+      pageType TEXT,
+      purpose TEXT,
+      keyDataEntities TEXT,
+      confidence REAL,
+      interpretedAt TEXT
     );
   `)
   return {
@@ -78,6 +87,47 @@ export function openCrawlDb(dbPath: string) {
           ? (JSON.parse(row.interactiveElements) as DomInteractiveElement[])
           : [],
         status: row.status ?? '',
+      }))
+    },
+    recordInterpretation(interp: StoredInterpretation): void {
+      db.prepare(`
+        INSERT OR REPLACE INTO interpretations (url, tierUsed, pageType, purpose, keyDataEntities, confidence, interpretedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        interp.url,
+        interp.tierUsed,
+        interp.pageType,
+        interp.purpose,
+        JSON.stringify(interp.keyDataEntities),
+        interp.confidence,
+        interp.interpretedAt,
+      )
+    },
+    getInterpretation(url: string): StoredInterpretation | null {
+      const row = db.prepare('SELECT * FROM interpretations WHERE url = ?').get(url) as
+        | Record<string, string | number | null>
+        | undefined
+      if (!row) return null
+      return {
+        url: row.url as string,
+        tierUsed: row.tierUsed as string,
+        pageType: row.pageType as string,
+        purpose: row.purpose as string,
+        keyDataEntities: row.keyDataEntities ? (JSON.parse(row.keyDataEntities as string) as string[]) : [],
+        confidence: row.confidence as number,
+        interpretedAt: row.interpretedAt as string,
+      }
+    },
+    getAllInterpretations(): StoredInterpretation[] {
+      const rows = db.prepare('SELECT * FROM interpretations').all() as Array<Record<string, string | number | null>>
+      return rows.map((row) => ({
+        url: row.url as string,
+        tierUsed: row.tierUsed as string,
+        pageType: row.pageType as string,
+        purpose: row.purpose as string,
+        keyDataEntities: row.keyDataEntities ? (JSON.parse(row.keyDataEntities as string) as string[]) : [],
+        confidence: row.confidence as number,
+        interpretedAt: row.interpretedAt as string,
       }))
     },
     close(): void {

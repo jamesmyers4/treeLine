@@ -21,3 +21,13 @@ export interface HardPageEntry {
   attemptedAt: string
   captureSnapshot: string | null
 }
+
+export interface StoredInterpretation {
+  url: string
+  tierUsed: string
+  pageType: string
+  purpose: string
+  keyDataEntities: string[]
+  confidence: number
+  interpretedAt: string
+}
