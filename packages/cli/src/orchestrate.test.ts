@@ -1,10 +1,12 @@
 import { createServer } from 'node:http'
 import type { Server } from 'node:http'
-import { mkdtempSync, rmSync, existsSync, readdirSync, readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { runTreelineCrawl } from './orchestrate.js'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
+import { openCrawlDb } from '@treeline/core'
+import type { DomInteractiveElement, PageState } from '@treeline/acquire'
+import { runTreelineCrawl, runTreelineDiff } from './orchestrate.js'
 
 const pages: Record<string, string> = {
   '/': '<html><body><a href="/about">about</a><a href="/contact">contact</a></body></html>',
@@ -71,4 +73,106 @@ describe('runTreelineCrawl', () => {
     expect(typeof summary.totalAxeViolations).toBe('number')
     expect(typeof summary.totalAxeNeedsReview).toBe('number')
   }, 120_000)
+})
+
+function makeElement(overrides: Partial<DomInteractiveElement>): DomInteractiveElement {
+  return {
+    role: 'button',
+    accessibleName: 'Submit',
+    testId: null,
+    tagName: 'button',
+    elementId: null,
+    classList: [],
+    cssPath: 'body > button',
+    xpath: '/html/body/button',
+    ...overrides,
+  }
+}
+
+function makePage(url: string, title: string, interactiveElements: DomInteractiveElement[] = []): PageState {
+  return {
+    url,
+    title,
+    ariaSnapshot: '',
+    links: [],
+    networkLog: [],
+    screenshot: null,
+    capturedAt: new Date().toISOString(),
+    interactiveElements,
+    axeViolations: [],
+    axeIncomplete: [],
+  }
+}
+
+function seedDb(dbPath: string, pages: PageState[]): void {
+  mkdirSync(join(dbPath, '..'), { recursive: true })
+  const db = openCrawlDb(dbPath)
+  for (const page of pages) {
+    db.recordPageState(page)
+  }
+  db.close()
+}
+
+describe('runTreelineDiff', () => {
+  let diffTmpDir: string
+  let baselineDir: string
+  let currentDir: string
+
+  beforeEach(() => {
+    diffTmpDir = mkdtempSync(join(tmpdir(), 'treeline-diff-cli-'))
+    baselineDir = join(diffTmpDir, 'baseline')
+    currentDir = join(diffTmpDir, 'current')
+  })
+
+  afterEach(() => {
+    rmSync(diffTmpDir, { recursive: true, force: true })
+  })
+
+  it('diffs two crawl dirs, writes a report under reports/, and returns matching counts', async () => {
+    seedDb(join(baselineDir, 'crawl.sqlite'), [
+      makePage('https://example.com/', 'Home', [makeElement({})]),
+      makePage('https://example.com/about', 'About'),
+    ])
+    seedDb(join(currentDir, 'crawl.sqlite'), [
+      makePage('https://example.com/', 'Home', [makeElement({}), makeElement({})]),
+      makePage('https://example.com/new', 'New Page'),
+    ])
+
+    const summary = await runTreelineDiff({ baselineDir, currentDir })
+
+    expect(summary.reportPath).toBe(join(currentDir, 'reports', 'diff-report.md'))
+    expect(existsSync(summary.reportPath)).toBe(true)
+    expect(summary.pagesAdded).toBe(1)
+    expect(summary.pagesRemoved).toBe(1)
+    expect(summary.selectorRegressions).toBe(1)
+    expect(summary.hasRegressions).toBe(true)
+
+    const report = readFileSync(summary.reportPath, 'utf-8')
+    expect(report).toContain(`${summary.pagesAdded} pages added`)
+    expect(report).toContain(`${summary.selectorRegressions} selector regressions`)
+  })
+
+  it('writes the report under the given --output dir instead of currentDir', async () => {
+    seedDb(join(baselineDir, 'crawl.sqlite'), [makePage('https://example.com/', 'Home')])
+    seedDb(join(currentDir, 'crawl.sqlite'), [makePage('https://example.com/', 'Home')])
+    const explicitOutputDir = join(diffTmpDir, 'diff-output')
+
+    const summary = await runTreelineDiff({ baselineDir, currentDir, outputDir: explicitOutputDir })
+
+    expect(summary.reportPath).toBe(join(explicitOutputDir, 'reports', 'diff-report.md'))
+    expect(existsSync(summary.reportPath)).toBe(true)
+  })
+
+  it('throws a specific error when the baseline dir has no crawl.sqlite', async () => {
+    seedDb(join(currentDir, 'crawl.sqlite'), [makePage('https://example.com/', 'Home')])
+
+    await expect(runTreelineDiff({ baselineDir, currentDir })).rejects.toThrow(/Baseline crawl not found.*baseline/)
+    expect(existsSync(join(currentDir, 'reports', 'diff-report.md'))).toBe(false)
+  })
+
+  it('throws a specific error when the current dir has no crawl.sqlite', async () => {
+    seedDb(join(baselineDir, 'crawl.sqlite'), [makePage('https://example.com/', 'Home')])
+
+    await expect(runTreelineDiff({ baselineDir, currentDir })).rejects.toThrow(/Current crawl not found.*current/)
+  })
 })

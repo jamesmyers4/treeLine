@@ -1,6 +1,7 @@
+import { existsSync } from 'node:fs'
 import { mkdir, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { crawl, openCrawlDb } from '@treeline/core'
+import { crawl, diffCrawls, openCrawlDb } from '@treeline/core'
 import type { CrawlConfig } from '@treeline/core'
 import { runInterpretation } from '@treeline/interpret'
 import {
@@ -13,6 +14,8 @@ import {
   generatePOMsAndSpecs,
   generateAxeReport,
   renderAxeReportMarkdown,
+  classifyChange,
+  renderDiffReportMarkdown,
 } from '@treeline/output'
 
 export interface TreelineCrawlOptions {
@@ -105,5 +108,52 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
     }
   } finally {
     db?.close()
+  }
+}
+
+export interface TreelineDiffOptions {
+  baselineDir: string
+  currentDir: string
+  outputDir?: string
+}
+
+export interface TreelineDiffSummary {
+  reportPath: string
+  pagesAdded: number
+  pagesRemoved: number
+  titleChanges: number
+  selectorRegressions: number
+  selectorImprovements: number
+  selectorOther: number
+  hasRegressions: boolean
+}
+
+export async function runTreelineDiff(options: TreelineDiffOptions): Promise<TreelineDiffSummary> {
+  const baselineDbPath = join(options.baselineDir, 'crawl.sqlite')
+  const currentDbPath = join(options.currentDir, 'crawl.sqlite')
+  if (!existsSync(baselineDbPath)) {
+    throw new Error(`Baseline crawl not found: no crawl.sqlite in ${options.baselineDir}`)
+  }
+  if (!existsSync(currentDbPath)) {
+    throw new Error(`Current crawl not found: no crawl.sqlite in ${options.currentDir}`)
+  }
+  const diff = diffCrawls(baselineDbPath, currentDbPath)
+  const regressions = diff.selectorCandidateChanges.filter((change) => classifyChange(change) === 'regression')
+  const improvements = diff.selectorCandidateChanges.filter((change) => classifyChange(change) === 'improvement')
+  const other = diff.selectorCandidateChanges.filter((change) => classifyChange(change) === 'other')
+  const resolvedOutputDir = options.outputDir ?? options.currentDir
+  const reportsDir = join(resolvedOutputDir, 'reports')
+  await mkdir(reportsDir, { recursive: true })
+  const reportPath = join(reportsDir, 'diff-report.md')
+  await writeFile(reportPath, renderDiffReportMarkdown(diff))
+  return {
+    reportPath,
+    pagesAdded: diff.pagesAdded.length,
+    pagesRemoved: diff.pagesRemoved.length,
+    titleChanges: diff.titleChanges.length,
+    selectorRegressions: regressions.length,
+    selectorImprovements: improvements.length,
+    selectorOther: other.length,
+    hasRegressions: regressions.length > 0,
   }
 }

@@ -1,6 +1,6 @@
 import { Command } from 'commander'
-import { runTreelineCrawl } from './orchestrate.js'
-import type { TreelineCrawlOptions } from './orchestrate.js'
+import { runTreelineCrawl, runTreelineDiff } from './orchestrate.js'
+import type { TreelineCrawlOptions, TreelineDiffOptions } from './orchestrate.js'
 
 interface RawCrawlOptions {
   stealth: boolean
@@ -9,6 +9,11 @@ interface RawCrawlOptions {
   throttleMs: string
   output?: string
   skipInterpretation: boolean
+}
+
+interface RawDiffOptions {
+  output?: string
+  failOnRegression: boolean
 }
 
 const program = new Command()
@@ -44,6 +49,36 @@ program
       console.log(`Skipped elements: ${summary.skippedElementsCount}`)
       console.log(`Axe violations: ${summary.totalAxeViolations}`)
       console.log(`Axe needs review: ${summary.totalAxeNeedsReview}`)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`Error: ${message}`)
+      process.exitCode = 1
+    }
+  })
+
+program
+  .command('diff <baselineDir> <currentDir>')
+  .description('Compare two crawl output directories and generate a diff report')
+  .option('--output <dir>', 'output directory for the diff report')
+  .option('--fail-on-regression', 'exit with code 1 if selector regressions are found', false)
+  .action(async (baselineDir: string, currentDir: string, rawOptions: RawDiffOptions) => {
+    const options: TreelineDiffOptions = {
+      baselineDir,
+      currentDir,
+      outputDir: rawOptions.output,
+    }
+    try {
+      const summary = await runTreelineDiff(options)
+      console.log(`Pages added: ${summary.pagesAdded}`)
+      console.log(`Pages removed: ${summary.pagesRemoved}`)
+      console.log(`Title changes: ${summary.titleChanges}`)
+      console.log(`Selector regressions: ${summary.selectorRegressions}`)
+      console.log(`Selector improvements: ${summary.selectorImprovements}`)
+      console.log(`Other selector changes: ${summary.selectorOther}`)
+      console.log(`Report: ${summary.reportPath}`)
+      if (rawOptions.failOnRegression && summary.hasRegressions) {
+        process.exitCode = 1
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.error(`Error: ${message}`)
