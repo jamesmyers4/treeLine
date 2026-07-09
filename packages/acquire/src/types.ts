@@ -40,6 +40,24 @@ export interface AxeIncompleteResult {
   nodes: AxeViolationNode[]
 }
 
+export interface CapturedFormField {
+  role: string
+  accessibleName: string
+  tagName: string
+  inputType: string | null
+  required: boolean
+  pattern: string | null
+  testId: string | null
+  cssPath: string
+}
+
+export interface CapturedForm {
+  formIndex: number
+  action: string
+  method: string
+  fields: CapturedFormField[]
+}
+
 export interface PageState {
   url: string
   title: string
@@ -51,6 +69,7 @@ export interface PageState {
   interactiveElements: DomInteractiveElement[]
   axeViolations: AxeViolation[]
   axeIncomplete: AxeIncompleteResult[]
+  forms: CapturedForm[]
 }
 
 export interface AcquireOptions {

@@ -1,6 +1,86 @@
 import { AxeBuilder } from '@axe-core/playwright'
-import type { AcquireOptions, AxeIncompleteResult, AxeViolation, CaptureHandler, DomInteractiveElement, NetworkEntry, PageState } from './types.js'
+import type { Page } from 'playwright'
+import type { AcquireOptions, AxeIncompleteResult, AxeViolation, CapturedForm, CaptureHandler, DomInteractiveElement, NetworkEntry, PageState } from './types.js'
 import { launchHardened } from './launch.js'
+
+export async function extractForms(page: Page): Promise<CapturedForm[]> {
+  return page.$$eval('form', (formEls) => {
+    const computeCssPath = (target: Element): string => {
+      if (target.id && document.querySelectorAll(`#${CSS.escape(target.id)}`).length === 1) {
+        return `#${CSS.escape(target.id)}`
+      }
+      const parts: string[] = []
+      let current: Element | null = target
+      while (current && current !== document.body && current.parentElement) {
+        const currentTag = current.tagName.toLowerCase()
+        let selector = currentTag
+        const classes = Array.from(current.classList)
+        if (classes.length > 0) selector += '.' + classes.map((c) => CSS.escape(c)).join('.')
+        const parent: Element = current.parentElement
+        const siblings = Array.from(parent.children).filter((c) => c.tagName === current!.tagName)
+        if (siblings.length > 1) {
+          const index = siblings.indexOf(current) + 1
+          selector += `:nth-of-type(${index})`
+        }
+        parts.unshift(selector)
+        current = parent
+      }
+      return parts.join(' > ')
+    }
+    return formEls.map((formEl, formIndex) => {
+      const formElement = formEl as HTMLFormElement
+      const action = formElement.action
+      const method = (formElement.method || 'get').toUpperCase()
+      const fieldEls = Array.from(formElement.querySelectorAll('input, select, textarea'))
+      const fields = fieldEls.map((el) => {
+        const tagName = el.tagName.toLowerCase()
+        let role: string
+        if (tagName === 'input') {
+          const inputEl = el as HTMLInputElement
+          const type = inputEl.type?.toLowerCase() ?? 'text'
+          if (type === 'submit' || type === 'button' || type === 'reset') role = 'button'
+          else if (type === 'checkbox') role = 'checkbox'
+          else if (type === 'radio') role = 'radio'
+          else if (type === 'range') role = 'slider'
+          else role = 'textbox'
+        } else if (tagName === 'select') {
+          role = 'combobox'
+        } else {
+          role = 'textbox'
+        }
+        const ariaLabel = el.getAttribute('aria-label')
+        let accessibleName = ''
+        if (ariaLabel) {
+          accessibleName = ariaLabel.trim()
+        } else {
+          const labelledBy = el.getAttribute('aria-labelledby')
+          if (labelledBy) {
+            const labelEl = document.getElementById(labelledBy)
+            if (labelEl) accessibleName = labelEl.textContent?.trim() ?? ''
+          }
+          if (!accessibleName) accessibleName = el.textContent?.trim() ?? ''
+          if (!accessibleName) {
+            const inputEl = el as HTMLInputElement
+            accessibleName = inputEl.placeholder?.trim() ?? inputEl.value?.trim() ?? ''
+          }
+        }
+        const inputType = tagName === 'input' ? ((el as HTMLInputElement).type?.toLowerCase() ?? 'text') : null
+        const required = (el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).required
+        return {
+          role,
+          accessibleName,
+          tagName,
+          inputType,
+          required,
+          pattern: el.getAttribute('pattern'),
+          testId: el.getAttribute('data-testid'),
+          cssPath: computeCssPath(el),
+        }
+      })
+      return { formIndex, action, method, fields }
+    })
+  })
+}
 
 export async function capturePage(url: string, options?: AcquireOptions): Promise<PageState> {
   const browser = await launchHardened(options)
@@ -154,6 +234,7 @@ export async function capturePage(url: string, options?: AcquireOptions): Promis
         }
       }),
   )
+  const forms = await extractForms(page)
   await page.close()
   await browser.close()
   return {
@@ -167,6 +248,7 @@ export async function capturePage(url: string, options?: AcquireOptions): Promis
     interactiveElements,
     axeViolations,
     axeIncomplete,
+    forms,
   }
 }
 

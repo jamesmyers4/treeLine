@@ -19,6 +19,7 @@ const mockPageState: PageState = {
   interactiveElements: [],
   axeViolations: [],
   axeIncomplete: [],
+  forms: [],
 }
 
 describe('server', () => {
