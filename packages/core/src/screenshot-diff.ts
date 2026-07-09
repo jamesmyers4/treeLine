@@ -11,6 +11,7 @@ export interface VisualChange {
   status: 'changed' | 'unchanged' | 'dimensions-changed' | 'baseline-missing' | 'current-missing'
   diffPixelCount: number | null
   diffPixelPercent: number | null
+  diffImageBuffer: Buffer | null
 }
 
 export interface PageScreenshotRecord {
@@ -40,29 +41,32 @@ function compareScreenshots(
   const currentFile = resolveScreenshotPath(currentDbPath, currentScreenshotPath)
 
   if (!baselineFile) {
-    return { url, method: 'pixel-diff', status: 'baseline-missing', diffPixelCount: null, diffPixelPercent: null }
+    return { url, method: 'pixel-diff', status: 'baseline-missing', diffPixelCount: null, diffPixelPercent: null, diffImageBuffer: null }
   }
   if (!currentFile) {
-    return { url, method: 'pixel-diff', status: 'current-missing', diffPixelCount: null, diffPixelPercent: null }
+    return { url, method: 'pixel-diff', status: 'current-missing', diffPixelCount: null, diffPixelPercent: null, diffImageBuffer: null }
   }
 
   const baselineImg = PNG.sync.read(readFileSync(baselineFile))
   const currentImg = PNG.sync.read(readFileSync(currentFile))
 
   if (baselineImg.width !== currentImg.width || baselineImg.height !== currentImg.height) {
-    return { url, method: 'pixel-diff', status: 'dimensions-changed', diffPixelCount: null, diffPixelPercent: null }
+    return { url, method: 'pixel-diff', status: 'dimensions-changed', diffPixelCount: null, diffPixelPercent: null, diffImageBuffer: null }
   }
 
   const { width, height } = baselineImg
-  const diffPixelCount = pixelmatch(baselineImg.data, currentImg.data, null, width, height, { threshold: 0.1 })
+  const diffOutput = new PNG({ width, height })
+  const diffPixelCount = pixelmatch(baselineImg.data, currentImg.data, diffOutput.data, width, height, { threshold: 0.1 })
   const diffPixelPercent = (diffPixelCount / (width * height)) * 100
+  const status = diffPixelPercent > CHANGED_THRESHOLD_PERCENT ? 'changed' : 'unchanged'
 
   return {
     url,
     method: 'pixel-diff',
-    status: diffPixelPercent > CHANGED_THRESHOLD_PERCENT ? 'changed' : 'unchanged',
+    status,
     diffPixelCount,
     diffPixelPercent,
+    diffImageBuffer: status === 'changed' ? PNG.sync.write(diffOutput) : null,
   }
 }
 

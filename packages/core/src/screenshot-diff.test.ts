@@ -84,11 +84,11 @@ describe('diffScreenshots', () => {
     const result = diffScreenshots(baselinePath, currentPath)
 
     expect(result).toEqual([
-      { url: 'https://example.com/', method: 'pixel-diff', status: 'unchanged', diffPixelCount: 0, diffPixelPercent: 0 },
+      { url: 'https://example.com/', method: 'pixel-diff', status: 'unchanged', diffPixelCount: 0, diffPixelPercent: 0, diffImageBuffer: null },
     ])
   })
 
-  it('reports changed for two meaningfully different screenshots', () => {
+  it('reports changed for two meaningfully different screenshots, with a decodable diff image matching input dimensions', () => {
     seedDb(baselinePath, [makePage('https://example.com/', solidPng(20, 20, [255, 255, 255]))])
     seedDb(currentPath, [makePage('https://example.com/', solidPng(20, 20, [0, 0, 0]))])
 
@@ -98,6 +98,11 @@ describe('diffScreenshots', () => {
     expect(result[0]!.status).toBe('changed')
     expect(result[0]!.diffPixelCount).toBe(400)
     expect(result[0]!.diffPixelPercent).toBe(100)
+    expect(result[0]!.diffImageBuffer).not.toBeNull()
+
+    const decoded = PNG.sync.read(result[0]!.diffImageBuffer!)
+    expect(decoded.width).toBe(20)
+    expect(decoded.height).toBe(20)
   })
 
   it('stays unchanged for an anti-aliasing-only difference', () => {
@@ -107,8 +112,19 @@ describe('diffScreenshots', () => {
     const result = diffScreenshots(baselinePath, currentPath)
 
     expect(result).toEqual([
-      { url: 'https://example.com/', method: 'pixel-diff', status: 'unchanged', diffPixelCount: 0, diffPixelPercent: 0 },
+      { url: 'https://example.com/', method: 'pixel-diff', status: 'unchanged', diffPixelCount: 0, diffPixelPercent: 0, diffImageBuffer: null },
     ])
+  })
+
+  it('discards the diff image when the screenshots are unchanged', () => {
+    const png = solidPng(20, 20, [10, 20, 30])
+    seedDb(baselinePath, [makePage('https://example.com/', png)])
+    seedDb(currentPath, [makePage('https://example.com/', png)])
+
+    const result = diffScreenshots(baselinePath, currentPath)
+
+    expect(result[0]!.status).toBe('unchanged')
+    expect(result[0]!.diffImageBuffer).toBeNull()
   })
 
   it('reports baseline-missing when the baseline screenshot is null', () => {
@@ -118,7 +134,7 @@ describe('diffScreenshots', () => {
     const result = diffScreenshots(baselinePath, currentPath)
 
     expect(result).toEqual([
-      { url: 'https://example.com/', method: 'pixel-diff', status: 'baseline-missing', diffPixelCount: null, diffPixelPercent: null },
+      { url: 'https://example.com/', method: 'pixel-diff', status: 'baseline-missing', diffPixelCount: null, diffPixelPercent: null, diffImageBuffer: null },
     ])
   })
 
@@ -129,7 +145,7 @@ describe('diffScreenshots', () => {
     const result = diffScreenshots(baselinePath, currentPath)
 
     expect(result).toEqual([
-      { url: 'https://example.com/', method: 'pixel-diff', status: 'current-missing', diffPixelCount: null, diffPixelPercent: null },
+      { url: 'https://example.com/', method: 'pixel-diff', status: 'current-missing', diffPixelCount: null, diffPixelPercent: null, diffImageBuffer: null },
     ])
   })
 
@@ -140,7 +156,7 @@ describe('diffScreenshots', () => {
     const result = diffScreenshots(baselinePath, currentPath)
 
     expect(result).toEqual([
-      { url: 'https://example.com/', method: 'pixel-diff', status: 'dimensions-changed', diffPixelCount: null, diffPixelPercent: null },
+      { url: 'https://example.com/', method: 'pixel-diff', status: 'dimensions-changed', diffPixelCount: null, diffPixelPercent: null, diffImageBuffer: null },
     ])
   })
 
