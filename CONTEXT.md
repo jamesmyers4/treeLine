@@ -1,8 +1,8 @@
 # treeline — CONTEXT.md
 
-_Last updated after sessions 1 through 10.5. This file reflects what's
-actually built and verified, not just the original plan — see the "Status"
-section for what's done vs. remaining._
+_Last updated after session 20. This file reflects what's actually built and
+verified, not just the original plan — see the "Status" section for what's
+done vs. remaining._
 
 ## What it is
 
@@ -17,7 +17,15 @@ Not "just a scraper." The differentiator is that it turns a live website into
 executable QA tooling (Page Object Models, selector inventories), not just
 prose or JSON.
 
-## Status (as of session 10.5)
+## Status (as of session 20)
+
+**v1 is complete.** All 8 items from the original v1 output list are now
+built, tested, and verified against real crawls: selector stability report,
+data-testid coverage audit, network/API capture (folded into flow map),
+markdown site atlas, POM generation, axe-core accessibility findings, diff
+mode (sessions 11-14), and form & flow map (sessions 16-19). This is a real
+milestone, not another incremental update — see "v1 core output set" below
+for the full per-item breakdown.
 
 **Fully built, tested, and verified against real crawls (goldenpetbrands.com):**
 
@@ -28,8 +36,8 @@ prose or JSON.
   truth, axe-core scanning
 - Network-callable Fastify API on `@treeline/acquire` (API key auth)
 - 2-tier AI interpretation with retry (`@treeline/interpret`)
-- Four reports: selector stability, testid coverage audit, markdown site
-  atlas, axe-core accessibility findings
+- Five reports: selector stability, testid coverage audit, markdown site
+  atlas, axe-core accessibility findings, form & flow map
 - POM generation + skeleton Playwright specs
 - Full CLI (`treeline crawl <url>`) wiring everything above into one command
 - `hard-pages/` escalation queue, proven working end-to-end with real
@@ -41,15 +49,13 @@ prose or JSON.
   occurrenceIndex), a markdown diff report with regressions surfaced first,
   and the `treeline diff <baselineDir> <currentDir> [--output dir]
   [--fail-on-regression]` CLI command
+- **Form & flow map** (sessions 16-19) — forms captured as grouped
+  structures in `@treeline/acquire` (session 16), persisted in
+  `@treeline/core` (session 17), rendered as `flow-map.md` combining forms
+  and API surface in `packages/output` (session 18), wired into `treeline
+  crawl` as a fifth automatic report in `packages/cli` (session 19)
 
-**Not yet built (remaining from the original v1 output list):**
-
-- **Form & flow map** — every form, its fields, validation, submit target
-- **Network/API surface report** — the raw data (`networkLog`) has been
-  captured and persisted since session 1/3, but nothing in `packages/output`
-  renders it into a report yet. This was originally v1-list item #3 and got
-  skipped over in practice — worth deciding whether it's still wanted as its
-  own report or folds into flow map.
+Nothing structural remains from the original v1 plan.
 
 **Backlog (Phase 2, intentionally not started):**
 
@@ -63,7 +69,7 @@ prose or JSON.
 2. **Human-readable site documentation** (markdown site atlas) — done.
 3. **Structured extracted data** (SQLite) — the persistence layer everything
    else is built on. Done; this is what makes resumability and diff mode
-   (once built) possible.
+   possible.
 
 ## Architecture — three loops
 
@@ -92,7 +98,9 @@ and 9.5:
 
 - `url`, `title`, `ariaSnapshot`, `links`, `capturedAt`, `screenshot`
 - `networkLog: NetworkEntry[]` — request/response url, method, status,
-  resourceType. **Captured since session 1, not yet rendered as a report.**
+  resourceType. Captured since session 1; rendered as the API surface half
+  of `flow-map.md` since session 18 (see "Open items" for two known dedup/
+  filter gaps in that rendering).
 - `interactiveElements: DomInteractiveElement[]` — real DOM ground truth
   per element: `role`, `accessibleName`, `testId`, `tagName`, `elementId`,
   `classList`, `cssPath`, `xpath`. This exists specifically because AI
@@ -194,8 +202,9 @@ Built as both a library and a network-callable API from day one.
    candidate as safe to bake into generated code directly when both
    `stable` and `uniqueOnPage` are true.**
 2. **data-testid coverage audit** — ✅ done.
-3. **Network/API capture** — ⚠️ data captured and persisted, no report
-   renders it yet.
+3. **Network/API capture** — ✅ done. Captured and persisted since session
+   1/3; folded into flow map's API surface table (session 18) rather than
+   becoming its own standalone report — see item 8.
 4. **Markdown site atlas** — ✅ done. Handles pages with no interpretation
    gracefully (shows a "not yet interpreted" note rather than omitting the
    page) — though note this message doesn't currently distinguish "skipped
@@ -228,7 +237,12 @@ Built as both a library and a network-callable API from day one.
    between two crawl output directories, rendered as a markdown report with
    regressions surfaced first. Exposed via `treeline diff <baselineDir>
    <currentDir> [--output dir] [--fail-on-regression]`.
-8. **Form & flow map** — ❌ not built.
+8. **Form & flow map** — ✅ done. Forms captured as grouped structures
+   (fields, `action`, `method`) in `@treeline/acquire` (session 16),
+   persisted in `@treeline/core` (session 17), rendered as `flow-map.md`
+   combining a forms table and the API surface (from `networkLog`) in
+   `packages/output` (session 18), and wired into `treeline crawl` as a
+   fifth automatic report in `packages/cli` (session 19).
 
 ## Storage / resume model
 
@@ -270,7 +284,8 @@ pnpm workspaces monorepo:
 - `packages/interpret` — 2-tier AI interpretation with retry + persistence
   orchestration
 - `packages/output` — selector report, testid audit, atlas, POM+spec
-  generation, axe report, diff report renderer. Flow map not yet added here.
+  generation, axe report, diff report renderer, `flow-map.ts` (forms + API
+  surface)
 
 ## Stack
 
@@ -280,14 +295,33 @@ playwright`, pnpm workspaces, Vitest, commander (CLI).
 
 ## Open items
 
-**Remaining v1 work:** form/flow map. The network/API capture report
-question is resolved — it folds into the flow map rather than becoming its
-own report.
+**Remaining v1 work:** none. All 8 v1 output-set items are done — see
+"Status" above.
 
 **Known gaps worth fixing eventually, not blocking:**
 
-- `accessibleName` heuristic misses `<img alt>` and `<label for>` — see
-  PageState shape section above.
+- `accessibleName` heuristic gap has broader real-world impact than
+  previously documented. A real crawl of httpbin.org/forms/post showed 12
+  out of 12 form fields with a blank accessible name in the rendered
+  `flow-map.md` forms table — not an occasional edge case, a near-total
+  miss on that page. Confirmed to affect `selector-report.md`,
+  `testid-audit.md`, and now `flow-map.md`. Promoted to the top of this
+  list given the now-confirmed scope (see PageState shape section above for
+  the underlying heuristic detail: misses `<img alt>` and `<label for>`).
+- The API surface filter (`isApiSurfaceCandidate` in flow map) is
+  technically correct per its resourceType-based rule, but can surface
+  third-party resource-loading calls that aren't really part of a site's
+  business API — confirmed via a real crawl where a Google Fonts request
+  was genuinely tagged `resourceType: 'xhr'` by the capture layer and
+  correctly included per the rule, even though it isn't meaningfully an
+  "API endpoint" in the spirit of the original pitch.
+- The API surface dedup logic groups by exact `(method, url)` string match,
+  which doesn't collapse URLs carrying per-request tokens — confirmed via a
+  real crawl of goldenpetbrands.com where Cloudflare's bot-challenge
+  mechanism (a single conceptual thing, hit once per page) was reported as
+  5 separate endpoint rows because each request's URL path embeds a unique
+  hash. What's actually 2 distinct mechanisms (Cloudflare's challenge,
+  Google Fonts) was reported as 6 rows.
 - POM property naming doesn't disambiguate same-text/different-destination
   links.
 - Axe report's `exampleSelector` doesn't show all affected elements.

@@ -1,6 +1,6 @@
 # CLAUDE.md — treeline
 
-_Last updated after sessions 1 through 10.5._
+_Last updated after session 20._
 
 Full design rationale lives in `CONTEXT.md` — read that first for the "why."
 This file is the operational guide: conventions, commands, and hard-won
@@ -26,7 +26,7 @@ is escalation (fixing `hard-pages/` entries), not the crawl runtime.
 - `packages/interpret` — 2-tier AI interpretation (Haiku 4.5 / Sonnet 5)
   with retry, plus persistence orchestration (`runInterpretation`)
 - `packages/output` — selector report, testid audit, atlas, POM+spec
-  generation, axe report, diff report generators. Flow map not yet added.
+  generation, axe report, diff report, flow map (`flow-map.ts`) generators
 
 ## Conventions
 
@@ -70,6 +70,68 @@ Real example, from `packages/cli`:
 pnpm exec tsx src/index.ts crawl https://example.com --max-pages 5
 ```
 
+`crawl` generates five reports per run, under `<output>/reports/`:
+`selector-report.md`, `testid-audit.md`, `atlas.md`, `axe-report.md`,
+`flow-map.md`.
+
+### Verify the repo is actually in the state described
+
+Don't assume — confirm, especially before starting a new session on top of
+prior work. Run, in order:
+
+```
+pnpm install
+pnpm --filter @treeline/acquire build && pnpm --filter @treeline/acquire test
+pnpm --filter @treeline/core build && pnpm --filter @treeline/core test
+pnpm --filter @treeline/interpret build && pnpm --filter @treeline/interpret test
+pnpm --filter @treeline/output build && pnpm --filter @treeline/output test
+pnpm --filter @treeline/cli build && pnpm --filter @treeline/cli test
+```
+
+All five packages should build and pass cleanly. If `packages/cli`'s test
+run shows a wall of unrelated failures importing `@playwright/test`, check
+that `packages/cli/vitest.config.ts` exists and excludes
+`treeline-output/**` — see "Operational gotchas" below.
+
+Then confirm the real end-to-end crawl command still works:
+
+```
+cd packages/cli
+echo $ANTHROPIC_API_KEY
+```
+
+If that's blank, set it (`export ANTHROPIC_API_KEY=sk-ant-...`) before the
+next command, or add `--skip-interpretation` to run for free without it.
+
+```
+pnpm exec tsx src/index.ts crawl https://example.com --max-pages 2 --output treeline-output/verify
+```
+
+Should complete with a summary showing pages captured, POMs/specs
+generated, and (if interpretation wasn't skipped) an axe violations/
+needs-review count. Check `treeline-output/verify/reports/` for all five
+report files: `selector-report.md`, `testid-audit.md`, `atlas.md`,
+`axe-report.md`, `flow-map.md`. For the flow-map check specifically,
+confirm against a real site with an actual form (e.g.
+httpbin.org/forms/post) that the forms table is populated and the API
+surface table lists at least one endpoint — an empty flow-map.md on a site
+known to have forms/network activity means something regressed.
+
+Then confirm diff mode still works — run a second small crawl into a
+different `--output` path, then:
+
+```
+pnpm exec tsx src/index.ts diff treeline-output/verify treeline-output/verify-2
+```
+
+Should write `reports/diff-report.md` into the second directory and print a
+summary of pages added/removed, title changes, and selector regressions/
+improvements/other. Try it once with `--fail-on-regression` too and confirm
+with `echo $?` that the exit code behaves as documented above.
+
+If any of this doesn't match what CONTEXT.md's "Status" section claims,
+stop and figure out why before writing new code — something regressed.
+
 ## Operational gotchas (learned the hard way — read before debugging)
 
 - **`tsx` is not hoisted to the workspace root.** Each package that needs to
@@ -110,6 +172,16 @@ status` / look for the `[new branch]`-style confirmation line rather than
   reflects the config difference, not real site drift — came up during
   manual sanity-checking in sessions 13-14. Before trusting a diff report,
   confirm both runs used matching flags.
+- **`vitest` does not type-check.** Changing a field on a shared type used
+  in test fixtures across multiple packages (e.g. `PageState`) can silently
+  break other packages' fixtures without `vitest` ever failing, because
+  fixture objects satisfy the old shape at the type level as far as the
+  test file itself is concerned but no longer match what real code
+  constructs. This happened twice in this build — first with
+  `axeIncomplete`, then with `forms` — both times only caught by running an
+  actual package `build`, not `test`. After changing a shared type, run
+  `build` for every package that could plausibly construct that type as
+  test data, not just the package where the type changed.
 
 ## Model routing (packages/interpret)
 
@@ -182,14 +254,18 @@ Sessions that touched 2+ packages (the crawler, POM generation) were
 noticeably higher-risk than single-package ones. Keep following this
 pattern for new work:
 
-- Scope each session to one package where possible.
+- Scope each session to one package where possible, with a detailed,
+  explicit prompt (types spelled out field-by-field, exact function
+  signatures, exact test cases to write) rather than an open-ended ask.
 - After any session whose output feeds a later session (interpretation
   schemas, capture data shapes, report inputs), do a manual real-data sanity
-  check — a throwaway script against a real crawl — before building the
-  next thing on top of it. This has caught real bugs unit tests missed at
-  least four separate times (AI-guessed testid unreliability, a swallowed
-  exception hiding a config error, a malformed-JSON schema issue, axe
-  silently failing on every capture).
+  check — a throwaway script against a real crawl, read by a human, then
+  deleted — before building the next thing on top of it. This has caught
+  real bugs unit tests missed at least four separate times (AI-guessed
+  testid unreliability, a swallowed exception hiding a config error, a
+  malformed-JSON schema issue, axe silently failing on every capture), plus
+  three more real-data limitations found this way during flow map's
+  verification (session 19-20) — see CONTEXT.md's "Open items".
 - When a manual check finds a real bug, fix it in its own small session
   before continuing, even if it means backtracking. Don't build the next
   feature on top of output you haven't verified.
