@@ -30,6 +30,11 @@ And **diff mode**: crawl a site twice and treeline tells you exactly which
 selectors regressed between runs — "did this deploy break my locators" as
 an actual command, with `--fail-on-regression` for CI.
 
+This isn't just a CI capability in theory: a `workflow_dispatch` GitHub
+Action (`.github/workflows/crawl.yml`) runs `crawl` end-to-end in CI and
+has been proven against live sites, including a run with real AI
+interpretation — a genuinely demoable regression gate, not a diagram.
+
 ## Quick start
 
 ```
@@ -67,6 +72,8 @@ workspaces, Vitest, commander.
 
 ## Status
 
-v1 is complete — all core reports, POM generation, diff mode, and flow map
-are built, tested, and verified against real sites. See `CONTEXT.md`'s
-Status section for exact scope and known limitations.
+v1 is complete, and the GitHub Action (Stage A) is complete and proven
+against live sites, as of session 32 — all core reports, POM generation,
+diff mode, flow map, and CI-based crawling are built, tested, and verified
+against real sites. See `CONTEXT.md`'s Status section for exact scope and
+known limitations.

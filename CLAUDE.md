@@ -1,6 +1,6 @@
 # CLAUDE.md — treeline
 
-_Last updated after session 26._
+_Last updated after session 32._
 
 Full design rationale lives in `CONTEXT.md` — read that first for the "why."
 This file is the operational guide: conventions, commands, and hard-won
@@ -77,6 +77,17 @@ pnpm exec tsx src/index.ts crawl https://example.com --max-pages 5
 `diff` writes `reports/diff-report.md` into the current-run output
 directory, plus `reports/visual-diffs/*.png` — one pixel-diff image per
 page with a genuine visual change — automatically, with no new CLI flag.
+
+### GitHub Action
+
+`.github/workflows/crawl.yml` runs a real `crawl` in CI via
+`workflow_dispatch` — trigger it from the repo's Actions tab (or `gh
+workflow run crawl.yml -f url=https://example.com`). Three inputs: `url`
+(required), `max_pages` (default `20`), `skip_interpretation` (default
+`true`, so it runs without a stored `ANTHROPIC_API_KEY` secret unless you
+explicitly turn interpretation on). Output lands as a downloadable
+`actions/upload-artifact` artifact named `treeline-crawl-<run_id>`,
+containing the same `reports/` directory a local crawl produces.
 
 ### Verify the repo is actually in the state described
 
@@ -210,6 +221,37 @@ status` / look for the `[new branch]`-style confirmation line rather than
   actual package `build`, not `test`. After changing a shared type, run
   `build` for every package that could plausibly construct that type as
   test data, not just the package where the type changed.
+- **Browser cleanup must be in a `finally` block, always.** A real CI run
+  once hung for ~1.5 hours after finishing all its actual work because
+  `capturePage` only closed its browser on the happy path — a page-level
+  error (caught and swallowed by the crawler's own per-page resilience
+  logic) orphaned the browser process and kept Node's event loop alive
+  indefinitely (session 29). If you're touching capture code, confirm the
+  browser/context genuinely closes on every path, including error paths —
+  don't assume the happy-path close is sufficient.
+- **The GitHub Actions crawl workflow needs Xvfb.** Default (non-stealth)
+  capture launches headed (`headless: false`); there's no flag to change
+  this. `.github/workflows/crawl.yml` installs Xvfb and runs the crawl
+  under `xvfb-run` — any future CI-related session touching the crawl
+  workflow needs to know this or the run fails outright on a GitHub-hosted
+  runner.
+- **Crawl origin must be resolved from the post-redirect URL**, not the
+  originally-typed seed URL. `fetch()` (used for `sitemap.xml`) follows
+  redirects transparently; `page.goto()`'s origin-scope check needs to
+  match that behavior or same-origin filtering silently rejects real,
+  legitimate site content (`packages/core/src/origin-scope.ts`, session
+  32 — caught via a real crawl of `www.goldenpetbrands.com`, which
+  redirects).
+- **`packages/output/src/naming.ts` is the single source of truth for
+  POM/spec filenames.** Never derive a filename independently in a second
+  place — that's exactly what caused a real silent-data-loss bug (sessions
+  30-31): two different URLs slugifying to the same filename silently
+  overwrote each other's generated POM/spec files.
+- **This repo is public.** Actions history, logs, and artifacts from any
+  crawl run are visible to anyone. The API key itself is masked
+  automatically in logs, but the actual crawled content (reports, POMs,
+  real business content) is not — worth a moment's thought before crawling
+  any new target through the Action.
 
 ## Model routing (packages/interpret)
 

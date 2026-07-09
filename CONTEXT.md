@@ -1,6 +1,6 @@
 # treeline — CONTEXT.md
 
-_Last updated after session 26. This file reflects what's actually built and
+_Last updated after session 32. This file reflects what's actually built and
 verified, not just the original plan — see the "Status" section for what's
 done vs. remaining._
 
@@ -102,6 +102,59 @@ candidate roadmap this was picked from.
     code. Deliberately guarded in session 26; a test in
     `packages/cli/src/orchestrate.test.ts` asserts a visual change is
     reported without setting `hasRegressions`.
+- **GitHub Action, Stage A, plus real-world hardening** (sessions 28-32) —
+  packaging `crawl` behind a `workflow_dispatch` trigger, then three real
+  bugs found and fixed by actually operating it against live sites, not
+  just building it.
+  - **Stage A** (session 28) — `.github/workflows/crawl.yml`:
+    `workflow_dispatch` trigger with `url` (required), `max_pages` (default
+    `20`), `skip_interpretation` (default `true`) inputs. Builds all 5
+    packages in dependency order, runs under Xvfb — the default
+    (non-stealth) capture path launches headed (`headless: false`) with no
+    CLI override, so a GitHub-hosted runner needs a virtual display or
+    nothing works at all — and uploads the output directory via
+    `actions/upload-artifact`. `timeout-minutes: 25` safety net. Verified
+    with two successful real runs (hgwllc.com, goldenpetbrands.com),
+    including one with real AI interpretation and a real
+    `ANTHROPIC_API_KEY` secret. Stage B (GitHub Pages auto-publish) not
+    started — see `V2.md` item 2.
+  - **Process-lifecycle fix** (session 29) — a real CI run hung for ~1.5
+    hours after finishing all its actual work. Root cause: `capturePage`
+    only closed its browser on the happy path, so any page-level error
+    (caught and swallowed by the crawler's own per-page resilience logic)
+    orphaned that browser process and kept Node's event loop alive
+    indefinitely. Fixed with a `finally` block in
+    `packages/acquire/src/capture.ts` guaranteeing closure on every path,
+    plus a `process.exit()` backstop in `packages/cli/src/index.ts`, plus
+    the workflow's `timeout-minutes: 25` as a second safety net. Verified
+    against the exact site/settings that originally hung — now completes
+    in about 2 minutes.
+  - **Filename collision bug** (found session 30, fixed session 31) — a
+    real-output review of two GitHub Actions crawl outputs found a genuine
+    silent-data-loss bug: POM/spec generation overwrote files when two
+    different URLs slugified to the same filename (root `/` vs `/home`;
+    bare paths vs `.html`-suffixed duplicates). Every other report showed
+    correct page counts — only POM/spec output was affected, which is why
+    it went unnoticed by build/test alone. Fixed with deterministic
+    collision detection and numeric-suffix disambiguation, new file
+    `packages/output/src/naming.ts` — mirrors the existing `.nth(i)`-style
+    disambiguation already used for duplicate elements within a page (see
+    "v1 core output set" item 5 above). **`naming.ts` is now the single
+    source of truth for filename assignment** — do not derive a POM/spec
+    filename independently anywhere else.
+  - **Redirect-origin scope bug** (session 32) — `www.goldenpetbrands.com`
+    issues a real 301 redirect, but the crawler was establishing
+    same-origin scope from the pre-redirect seed URL and never updating
+    it. `sitemap.xml` (fetched via `fetch()`, which follows redirects
+    transparently) returned entries on the real post-redirect hostname,
+    all of which got filtered out against the stale origin. Fixed in new
+    file `packages/core/src/origin-scope.ts`: origin is now resolved from
+    the post-redirect URL. Also added detection (sitemap + `rel=canonical`
+    signals) for genuine non-redirected hostname mismatches, which warns
+    with the specific alternate URL rather than silently auto-widening
+    scope — same-origin enforcement stays strict by design; auto-widening
+    was considered and rejected (different `robots.txt` per hostname,
+    genuinely different content sometimes living at each hostname).
 
 ## Primary deliverable priority
 
@@ -336,19 +389,24 @@ pnpm workspaces monorepo:
 - `packages/core` — crawler, persistence (pages + interpretations tables),
   robots/sitemap, hard-pages writer, `diff.ts` (page + selector-candidate
   diffing), `selector-candidates.ts` (candidate computation),
-  `screenshot-diff.ts` (pixel-diff visual comparison, session 23) and
-  `urlHash` in `url-utils.ts` (deterministic per-URL hash used to name
-  screenshot and diff-image files, session 22/26)
+  `screenshot-diff.ts` (pixel-diff visual comparison, session 23),
+  `origin-scope.ts` (post-redirect origin resolution + hostname-mismatch
+  detection, session 32), and `urlHash` in `url-utils.ts` (deterministic
+  per-URL hash used to name screenshot and diff-image files, session
+  22/26)
 - `packages/acquire` — hardened Playwright/Patchright capture layer +
   axe-core scanning + Fastify API
 - `packages/interpret` — 2-tier AI interpretation with retry + persistence
   orchestration
 - `packages/output` — selector report, testid audit, atlas, POM+spec
-  generation, axe report, diff report renderer (now includes the Visual
+  generation (via `naming.ts`'s collision-safe filename assignment,
+  session 31), axe report, diff report renderer (now includes the Visual
   Changes section, session 25), `flow-map.ts` (forms + API surface)
 - `packages/cli`'s `orchestrate.ts` — in addition to crawl orchestration,
   now writes `reports/visual-diffs/*.png` diff images for pages with a
   visual change (session 26)
+- `.github/workflows/crawl.yml` — `workflow_dispatch` CI crawl trigger
+  (session 28), see "V2 additions" above
 
 ## Stack
 
