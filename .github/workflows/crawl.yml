@@ -1,0 +1,86 @@
+name: Crawl
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: URL to crawl
+        required: true
+        type: string
+      max_pages:
+        description: Maximum number of pages to crawl
+        required: false
+        type: string
+        default: '20'
+      skip_interpretation:
+        description: Skip AI interpretation (no ANTHROPIC_API_KEY required)
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright browser (chromium)
+        run: pnpm --filter @treeline/acquire exec playwright install --with-deps chromium
+
+      - name: Install Xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Build packages
+        run: |
+          pnpm --filter @treeline/acquire build && \
+          pnpm --filter @treeline/core build && \
+          pnpm --filter @treeline/interpret build && \
+          pnpm --filter @treeline/output build && \
+          pnpm --filter @treeline/cli build
+
+      - name: Run crawl
+        working-directory: packages/cli
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CRAWL_URL: ${{ inputs.url }}
+          MAX_PAGES: ${{ inputs.max_pages }}
+          SKIP_INTERPRETATION: ${{ inputs.skip_interpretation }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          SKIP_FLAG=""
+          if [ "$SKIP_INTERPRETATION" = "true" ]; then
+            SKIP_FLAG="--skip-interpretation"
+          fi
+          xvfb-run -a pnpm exec tsx src/index.ts crawl "$CRAWL_URL" \
+            --max-pages "$MAX_PAGES" \
+            --output "treeline-output/run-$RUN_ID" \
+            $SKIP_FLAG
+
+      - name: Upload crawl output
+        uses: actions/upload-artifact@v4
+        with:
+          name: treeline-crawl-${{ github.run_id }}
+          path: packages/cli/treeline-output/run-${{ github.run_id }}
+          if-no-files-found: error
