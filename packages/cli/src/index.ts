@@ -54,6 +54,7 @@ program
       console.error(`Error: ${message}`)
       process.exitCode = 1
     }
+    process.exit(process.exitCode ?? 0)
   })
 
 program
@@ -85,6 +86,7 @@ program
       console.error(`Error: ${message}`)
       process.exitCode = 1
     }
+    process.exit(process.exitCode ?? 0)
   })
 
 program.parse()

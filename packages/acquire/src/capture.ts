@@ -1,5 +1,5 @@
 import { AxeBuilder } from '@axe-core/playwright'
-import type { Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import type { AcquireOptions, AxeIncompleteResult, AxeViolation, CapturedForm, CaptureHandler, DomInteractiveElement, NetworkEntry, PageState } from './types.js'
 import { launchHardened } from './launch.js'
 
@@ -84,6 +84,14 @@ export async function extractForms(page: Page): Promise<CapturedForm[]> {
 
 export async function capturePage(url: string, options?: AcquireOptions): Promise<PageState> {
   const browser = await launchHardened(options)
+  try {
+    return await capturePageWithBrowser(url, browser)
+  } finally {
+    await browser.close()
+  }
+}
+
+async function capturePageWithBrowser(url: string, browser: Browser): Promise<PageState> {
   const context = await browser.newContext()
   const page = await context.newPage()
   const networkLog: NetworkEntry[] = []
@@ -241,8 +249,6 @@ export async function capturePage(url: string, options?: AcquireOptions): Promis
   } catch (err) {
     console.warn(`screenshot capture failed for ${url}`, err)
   }
-  await page.close()
-  await browser.close()
   return {
     url,
     title,
