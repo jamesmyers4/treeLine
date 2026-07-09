@@ -1,4 +1,5 @@
-import type { CrawlDiff, SelectorCandidateChange } from '@treeline/core'
+import type { CrawlDiff, SelectorCandidateChange, VisualChange } from '@treeline/core'
+import { urlHash } from '@treeline/core'
 
 export type SelectorChangeClassification = 'regression' | 'improvement' | 'other'
 
@@ -48,39 +49,17 @@ function renderTitleChangesTable(titleChanges: CrawlDiff['titleChanges']): strin
   return lines
 }
 
-export function renderDiffReportMarkdown(diff: CrawlDiff): string {
-  const regressions = diff.selectorCandidateChanges.filter((change) => classifyChange(change) === 'regression')
-  const improvements = diff.selectorCandidateChanges.filter((change) => classifyChange(change) === 'improvement')
-  const otherChanges = diff.selectorCandidateChanges.filter((change) => classifyChange(change) === 'other')
+function renderSelectorCandidateSection(selectorCandidateChanges: SelectorCandidateChange[]): string[] {
+  const lines: string[] = ['## Selector Candidate Changes', '']
 
-  const lines: string[] = [
-    '# Crawl Diff Report',
-    '',
-    `Baseline: ${diff.baselineDbPath}`,
-    `Current: ${diff.currentDbPath}`,
-    `Generated: ${new Date().toISOString()}`,
-    '',
-    '## Summary',
-    '',
-    `${diff.pagesAdded.length} pages added, ${diff.pagesRemoved.length} pages removed, ${diff.titleChanges.length} title changes, ${regressions.length} selector regressions, ${improvements.length} selector improvements, ${otherChanges.length} other selector changes`,
-    '',
-    '## Pages Added',
-    '',
-    ...renderUrlList(diff.pagesAdded, 'No pages added.'),
-    '## Pages Removed',
-    '',
-    ...renderUrlList(diff.pagesRemoved, 'No pages removed.'),
-    '## Title Changes',
-    '',
-    ...renderTitleChangesTable(diff.titleChanges),
-    '## Selector Candidate Changes',
-    '',
-  ]
-
-  if (diff.selectorCandidateChanges.length === 0) {
+  if (selectorCandidateChanges.length === 0) {
     lines.push('No selector candidate changes found.', '')
-    return lines.join('\n')
+    return lines
   }
+
+  const regressions = selectorCandidateChanges.filter((change) => classifyChange(change) === 'regression')
+  const improvements = selectorCandidateChanges.filter((change) => classifyChange(change) === 'improvement')
+  const otherChanges = selectorCandidateChanges.filter((change) => classifyChange(change) === 'other')
 
   lines.push(
     '### Regressions',
@@ -93,6 +72,83 @@ export function renderDiffReportMarkdown(diff: CrawlDiff): string {
     '',
     ...renderChangesTable(otherChanges, 'No other selector changes found.'),
   )
+
+  return lines
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10
+}
+
+function renderVisualChangedTable(changed: VisualChange[]): string[] {
+  if (changed.length === 0) return ['No pages with a visual change.', '']
+  const lines: string[] = ['| URL | Diff % | Image |', '| --- | --- | --- |']
+  for (const change of changed) {
+    lines.push(`| ${change.url} | ${round1(change.diffPixelPercent!)}% | ![Visual diff](visual-diffs/${urlHash(change.url)}.png) |`)
+  }
+  lines.push('')
+  return lines
+}
+
+function renderVisualUncomparableList(uncomparable: VisualChange[]): string[] {
+  if (uncomparable.length === 0) return ['No pages failed comparison.', '']
+  const lines = uncomparable.map((change) => `- ${change.url} (${change.status})`)
+  lines.push('')
+  return lines
+}
+
+function renderVisualChangesSection(visualChanges: VisualChange[]): string[] {
+  const changed = visualChanges.filter((change) => change.status === 'changed')
+  const uncomparable = visualChanges.filter((change) => change.status !== 'changed' && change.status !== 'unchanged')
+
+  const lines: string[] = ['## Visual Changes', '']
+
+  if (changed.length === 0 && uncomparable.length === 0) {
+    lines.push('No visual changes found.', '')
+    return lines
+  }
+
+  lines.push(
+    '### Changed',
+    '',
+    ...renderVisualChangedTable(changed),
+    '### Could Not Compare',
+    '',
+    ...renderVisualUncomparableList(uncomparable),
+  )
+
+  return lines
+}
+
+export function renderDiffReportMarkdown(diff: CrawlDiff): string {
+  const regressions = diff.selectorCandidateChanges.filter((change) => classifyChange(change) === 'regression')
+  const improvements = diff.selectorCandidateChanges.filter((change) => classifyChange(change) === 'improvement')
+  const otherChanges = diff.selectorCandidateChanges.filter((change) => classifyChange(change) === 'other')
+  const visualChangedCount = diff.visualChanges.filter((change) => change.status === 'changed').length
+
+  const lines: string[] = [
+    '# Crawl Diff Report',
+    '',
+    `Baseline: ${diff.baselineDbPath}`,
+    `Current: ${diff.currentDbPath}`,
+    `Generated: ${new Date().toISOString()}`,
+    '',
+    '## Summary',
+    '',
+    `${diff.pagesAdded.length} pages added, ${diff.pagesRemoved.length} pages removed, ${diff.titleChanges.length} title changes, ${regressions.length} selector regressions, ${improvements.length} selector improvements, ${otherChanges.length} other selector changes, ${visualChangedCount} visual changes`,
+    '',
+    '## Pages Added',
+    '',
+    ...renderUrlList(diff.pagesAdded, 'No pages added.'),
+    '## Pages Removed',
+    '',
+    ...renderUrlList(diff.pagesRemoved, 'No pages removed.'),
+    '## Title Changes',
+    '',
+    ...renderTitleChangesTable(diff.titleChanges),
+    ...renderSelectorCandidateSection(diff.selectorCandidateChanges),
+    ...renderVisualChangesSection(diff.visualChanges),
+  ]
 
   return lines.join('\n')
 }

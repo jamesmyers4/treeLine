@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+
 export function normalizeUrl(url: string): string {
   const parsed = new URL(url)
   parsed.hash = ''
@@ -6,6 +8,10 @@ export function normalizeUrl(url: string): string {
     parsed.pathname = parsed.pathname.slice(0, -1)
   }
   return parsed.toString()
+}
+
+export function urlHash(url: string): string {
+  return createHash('sha1').update(normalizeUrl(url)).digest('hex').slice(0, 12)
 }
 
 export function isSameOrigin(seedUrl: string, candidateUrl: string): boolean {

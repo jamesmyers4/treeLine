@@ -1,14 +1,12 @@
-import { createHash } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import Database from 'better-sqlite3'
 import type { AxeIncompleteResult, AxeViolation, CapturedForm, DomInteractiveElement, NetworkEntry, PageState } from '@treeline/acquire'
 import type { CrawlConfig, HardPageReasonCode, StoredInterpretation } from './types.js'
-import { normalizeUrl } from './url-utils.js'
+import { urlHash } from './url-utils.js'
 
 function screenshotFileName(url: string): string {
-  const hash = createHash('sha1').update(normalizeUrl(url)).digest('hex').slice(0, 12)
-  return `${hash}.png`
+  return `${urlHash(url)}.png`
 }
 
 export function openCrawlDb(dbPath: string) {
