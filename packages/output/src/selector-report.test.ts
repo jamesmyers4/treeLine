@@ -24,7 +24,7 @@ function makePage(url: string, interactiveElements: DomInteractiveElement[]): Cr
     ariaSnapshot: '',
     links: [],
     networkLog: [],
-    screenshot: null,
+    screenshotPath: null,
     capturedAt: new Date().toISOString(),
     interactiveElements,
     axeViolations: [],

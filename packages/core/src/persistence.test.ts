@@ -1,18 +1,20 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import type { CapturedForm, PageState } from '@treeline/acquire'
 import { openCrawlDb } from './persistence.js'
 
-function makePage(url: string, forms: CapturedForm[] = []): PageState {
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+
+function makePage(url: string, forms: CapturedForm[] = [], screenshot: Buffer | null = null): PageState {
   return {
     url,
     title: 'Title',
     ariaSnapshot: '',
     links: [],
     networkLog: [],
-    screenshot: null,
+    screenshot,
     capturedAt: new Date().toISOString(),
     interactiveElements: [],
     axeViolations: [],
@@ -96,6 +98,79 @@ describe('forms persistence', () => {
     const db = openCrawlDb(dbPath)
     expect(db.pageExists('https://example.com/')).toBe(false)
     db.recordPageState(makePage('https://example.com/', [makeForm()]))
+    expect(db.pageExists('https://example.com/')).toBe(true)
+    expect(db.pageExists('https://example.com/other')).toBe(false)
+    db.close()
+  })
+})
+
+describe('screenshot persistence', () => {
+  const fakePng = Buffer.concat([PNG_SIGNATURE, Buffer.from('fake-png-bytes-for-testing')])
+
+  it('writes a non-null screenshot to disk and stores its path, not the buffer', () => {
+    const db = openCrawlDb(dbPath)
+    db.recordPageState(makePage('https://example.com/', [], fakePng))
+    const pages = db.getAllPages()
+    db.close()
+    expect(pages).toHaveLength(1)
+    expect(typeof pages[0].screenshotPath).toBe('string')
+    const onDiskPath = join(tmpDir, pages[0].screenshotPath!)
+    expect(existsSync(onDiskPath)).toBe(true)
+  })
+
+  it('writes no file and stores a null screenshotPath when screenshot is null', () => {
+    const db = openCrawlDb(dbPath)
+    db.recordPageState(makePage('https://example.com/failed', [], null))
+    const pages = db.getAllPages()
+    db.close()
+    expect(pages[0].screenshotPath).toBeNull()
+    expect(existsSync(join(tmpDir, 'screenshots'))).toBe(false)
+  })
+
+  it('getAllPages returns a screenshotPath matching what was actually written to disk', () => {
+    const db = openCrawlDb(dbPath)
+    db.recordPageState(makePage('https://example.com/', [], fakePng))
+    const pages = db.getAllPages()
+    db.close()
+    const onDiskPath = join(tmpDir, pages[0].screenshotPath!)
+    expect(existsSync(onDiskPath)).toBe(true)
+    expect(readFileSync(onDiskPath).equals(fakePng)).toBe(true)
+  })
+
+  it('produces separate, non-colliding screenshot files for the same URL across two output directories', () => {
+    const tmpDirB = mkdtempSync(join(tmpdir(), 'treeline-persistence-test-'))
+    const dbPathB = join(tmpDirB, 'crawl.db')
+    const dbA = openCrawlDb(dbPath)
+    dbA.recordPageState(makePage('https://example.com/', [], fakePng))
+    const pagesA = dbA.getAllPages()
+    dbA.close()
+    const dbB = openCrawlDb(dbPathB)
+    dbB.recordPageState(makePage('https://example.com/', [], fakePng))
+    const pagesB = dbB.getAllPages()
+    dbB.close()
+    expect(pagesA[0].screenshotPath).toBe(pagesB[0].screenshotPath)
+    const pathA = join(tmpDir, pagesA[0].screenshotPath!)
+    const pathB = join(tmpDirB, pagesB[0].screenshotPath!)
+    expect(pathA).not.toBe(pathB)
+    expect(existsSync(pathA)).toBe(true)
+    expect(existsSync(pathB)).toBe(true)
+    rmSync(tmpDirB, { recursive: true, force: true })
+  })
+
+  it('round-trips the exact captured buffer bytes, not just "a file exists"', () => {
+    const db = openCrawlDb(dbPath)
+    db.recordPageState(makePage('https://example.com/', [], fakePng))
+    const pages = db.getAllPages()
+    db.close()
+    const onDisk = readFileSync(join(tmpDir, pages[0].screenshotPath!))
+    expect(onDisk.subarray(0, 8).equals(PNG_SIGNATURE)).toBe(true)
+    expect(onDisk.equals(fakePng)).toBe(true)
+  })
+
+  it('does not affect pageExists resumability once a screenshotPath is present', () => {
+    const db = openCrawlDb(dbPath)
+    expect(db.pageExists('https://example.com/')).toBe(false)
+    db.recordPageState(makePage('https://example.com/', [], fakePng))
     expect(db.pageExists('https://example.com/')).toBe(true)
     expect(db.pageExists('https://example.com/other')).toBe(false)
     db.close()

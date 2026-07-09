@@ -1,9 +1,19 @@
+import { createHash } from 'node:crypto'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import Database from 'better-sqlite3'
 import type { AxeIncompleteResult, AxeViolation, CapturedForm, DomInteractiveElement, NetworkEntry, PageState } from '@treeline/acquire'
 import type { CrawlConfig, HardPageReasonCode, StoredInterpretation } from './types.js'
+import { normalizeUrl } from './url-utils.js'
+
+function screenshotFileName(url: string): string {
+  const hash = createHash('sha1').update(normalizeUrl(url)).digest('hex').slice(0, 12)
+  return `${hash}.png`
+}
 
 export function openCrawlDb(dbPath: string) {
   const db = new Database(dbPath)
+  const outputDir = dirname(dbPath)
   db.exec(`
     CREATE TABLE IF NOT EXISTS crawl_meta (
       seedUrl TEXT,
@@ -16,7 +26,7 @@ export function openCrawlDb(dbPath: string) {
       ariaSnapshot TEXT,
       links TEXT,
       networkLog TEXT,
-      screenshot TEXT,
+      screenshotPath TEXT,
       capturedAt TEXT,
       status TEXT,
       interactiveElements TEXT,
@@ -43,8 +53,16 @@ export function openCrawlDb(dbPath: string) {
       )
     },
     recordPageState(pageState: PageState): void {
+      let screenshotPath: string | null = null
+      if (pageState.screenshot) {
+        const fileName = screenshotFileName(pageState.url)
+        const screenshotsDir = join(outputDir, 'screenshots')
+        mkdirSync(screenshotsDir, { recursive: true })
+        writeFileSync(join(screenshotsDir, fileName), pageState.screenshot)
+        screenshotPath = join('screenshots', fileName)
+      }
       db.prepare(`
-        INSERT OR REPLACE INTO pages (url, title, ariaSnapshot, links, networkLog, screenshot, capturedAt, status, interactiveElements, axeViolations, axeIncomplete, forms)
+        INSERT OR REPLACE INTO pages (url, title, ariaSnapshot, links, networkLog, screenshotPath, capturedAt, status, interactiveElements, axeViolations, axeIncomplete, forms)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         pageState.url,
@@ -52,7 +70,7 @@ export function openCrawlDb(dbPath: string) {
         pageState.ariaSnapshot,
         JSON.stringify(pageState.links),
         JSON.stringify(pageState.networkLog),
-        pageState.screenshot,
+        screenshotPath,
         pageState.capturedAt,
         'ok',
         JSON.stringify(pageState.interactiveElements),
@@ -75,7 +93,7 @@ export function openCrawlDb(dbPath: string) {
       ariaSnapshot: string | null
       links: string[]
       networkLog: NetworkEntry[]
-      screenshot: Buffer | null
+      screenshotPath: string | null
       capturedAt: string | null
       interactiveElements: DomInteractiveElement[]
       axeViolations: AxeViolation[]
@@ -90,7 +108,7 @@ export function openCrawlDb(dbPath: string) {
         ariaSnapshot: (row.ariaSnapshot as string) ?? null,
         links: row.links ? (JSON.parse(row.links as string) as string[]) : [],
         networkLog: row.networkLog ? (JSON.parse(row.networkLog as string) as NetworkEntry[]) : [],
-        screenshot: (row.screenshot as Buffer) ?? null,
+        screenshotPath: (row.screenshotPath as string) ?? null,
         capturedAt: (row.capturedAt as string) ?? null,
         interactiveElements: row.interactiveElements
           ? (JSON.parse(row.interactiveElements as string) as DomInteractiveElement[])

@@ -14,6 +14,7 @@ export async function runInterpretation(dbPath: string, hardPagesDir: string): P
       title: page.title!,
       ariaSnapshot: page.ariaSnapshot!,
       capturedAt: page.capturedAt!,
+      screenshot: null,
     }
     try {
       const result = await interpretPage(pageState)

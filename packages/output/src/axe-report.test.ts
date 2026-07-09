@@ -34,7 +34,7 @@ function makePage(overrides: Partial<CrawledPage>): CrawledPage {
     ariaSnapshot: '',
     links: [],
     networkLog: [],
-    screenshot: null,
+    screenshotPath: null,
     capturedAt: new Date().toISOString(),
     interactiveElements: [],
     axeViolations: [],
