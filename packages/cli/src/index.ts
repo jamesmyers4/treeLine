@@ -75,6 +75,7 @@ program
       console.log(`Selector regressions: ${summary.selectorRegressions}`)
       console.log(`Selector improvements: ${summary.selectorImprovements}`)
       console.log(`Other selector changes: ${summary.selectorOther}`)
+      console.log(`Visual changes: ${summary.visualChanges}`)
       console.log(`Report: ${summary.reportPath}`)
       if (rawOptions.failOnRegression && summary.hasRegressions) {
         process.exitCode = 1

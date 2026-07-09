@@ -4,9 +4,24 @@ import { mkdtempSync, mkdirSync, rmSync, existsSync, readdirSync, readFileSync }
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
-import { openCrawlDb } from '@treeline/core'
+import { PNG } from 'pngjs'
+import { openCrawlDb, urlHash } from '@treeline/core'
 import type { DomInteractiveElement, PageState } from '@treeline/acquire'
 import { runTreelineCrawl, runTreelineDiff } from './orchestrate.js'
+
+function solidPng(width: number, height: number, color: [number, number, number]): Buffer {
+  const png = new PNG({ width, height })
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (width * y + x) * 4
+      png.data[idx] = color[0]
+      png.data[idx + 1] = color[1]
+      png.data[idx + 2] = color[2]
+      png.data[idx + 3] = 255
+    }
+  }
+  return PNG.sync.write(png)
+}
 
 const pages: Record<string, string> = {
   '/': '<html><body><a href="/about">about</a><a href="/contact">contact</a><form action="/submit" method="post"><input aria-label="Email" type="email" required /></form><script>fetch("/api/ping")</script></body></html>',
@@ -93,14 +108,19 @@ function makeElement(overrides: Partial<DomInteractiveElement>): DomInteractiveE
   }
 }
 
-function makePage(url: string, title: string, interactiveElements: DomInteractiveElement[] = []): PageState {
+function makePage(
+  url: string,
+  title: string,
+  interactiveElements: DomInteractiveElement[] = [],
+  screenshot: Buffer | null = null,
+): PageState {
   return {
     url,
     title,
     ariaSnapshot: '',
     links: [],
     networkLog: [],
-    screenshot: null,
+    screenshot,
     capturedAt: new Date().toISOString(),
     interactiveElements,
     axeViolations: [],
@@ -179,5 +199,99 @@ describe('runTreelineDiff', () => {
     seedDb(join(baselineDir, 'crawl.sqlite'), [makePage('https://example.com/', 'Home')])
 
     await expect(runTreelineDiff({ baselineDir, currentDir })).rejects.toThrow(/Current crawl not found.*current/)
+  })
+
+  it('writes a visual diff PNG to disk at the path the report references, matching the original buffer', async () => {
+    seedDb(join(baselineDir, 'crawl.sqlite'), [
+      makePage('https://example.com/', 'Home', [], solidPng(20, 20, [255, 255, 255])),
+    ])
+    seedDb(join(currentDir, 'crawl.sqlite'), [
+      makePage('https://example.com/', 'Home', [], solidPng(20, 20, [0, 0, 0])),
+    ])
+
+    const summary = await runTreelineDiff({ baselineDir, currentDir })
+
+    expect(summary.visualChanges).toBe(1)
+    const imagePath = join(currentDir, 'reports', 'visual-diffs', `${urlHash('https://example.com/')}.png`)
+    expect(existsSync(imagePath)).toBe(true)
+    const report = readFileSync(summary.reportPath, 'utf-8')
+    expect(report).toContain(`visual-diffs/${urlHash('https://example.com/')}.png`)
+    expect(report).toContain(`${summary.visualChanges} visual changes`)
+  })
+
+  it('does not create a visual-diffs directory when there are no changed pages', async () => {
+    const png = solidPng(20, 20, [10, 20, 30])
+    seedDb(join(baselineDir, 'crawl.sqlite'), [makePage('https://example.com/', 'Home', [], png)])
+    seedDb(join(currentDir, 'crawl.sqlite'), [makePage('https://example.com/', 'Home', [], png)])
+
+    const summary = await runTreelineDiff({ baselineDir, currentDir })
+
+    expect(summary.visualChanges).toBe(0)
+    expect(existsSync(join(currentDir, 'reports', 'visual-diffs'))).toBe(false)
+  })
+
+  it('writes multiple visual diff PNGs, each at its own correct path', async () => {
+    seedDb(join(baselineDir, 'crawl.sqlite'), [
+      makePage('https://example.com/', 'Home', [], solidPng(20, 20, [255, 255, 255])),
+      makePage('https://example.com/about', 'About', [], solidPng(20, 20, [255, 0, 0])),
+    ])
+    seedDb(join(currentDir, 'crawl.sqlite'), [
+      makePage('https://example.com/', 'Home', [], solidPng(20, 20, [0, 0, 0])),
+      makePage('https://example.com/about', 'About', [], solidPng(20, 20, [0, 255, 0])),
+    ])
+
+    const summary = await runTreelineDiff({ baselineDir, currentDir })
+
+    expect(summary.visualChanges).toBe(2)
+    const visualDiffsDir = join(currentDir, 'reports', 'visual-diffs')
+    expect(existsSync(join(visualDiffsDir, `${urlHash('https://example.com/')}.png`))).toBe(true)
+    expect(existsSync(join(visualDiffsDir, `${urlHash('https://example.com/about')}.png`))).toBe(true)
+    expect(readdirSync(visualDiffsDir)).toHaveLength(2)
+  })
+
+  it('overwrites cleanly when run twice against the same output dir', async () => {
+    seedDb(join(baselineDir, 'crawl.sqlite'), [
+      makePage('https://example.com/', 'Home', [], solidPng(20, 20, [255, 255, 255])),
+    ])
+    seedDb(join(currentDir, 'crawl.sqlite'), [
+      makePage('https://example.com/', 'Home', [], solidPng(20, 20, [0, 0, 0])),
+    ])
+
+    await runTreelineDiff({ baselineDir, currentDir })
+    const summary = await runTreelineDiff({ baselineDir, currentDir })
+
+    expect(summary.visualChanges).toBe(1)
+    const imagePath = join(currentDir, 'reports', 'visual-diffs', `${urlHash('https://example.com/')}.png`)
+    expect(existsSync(imagePath)).toBe(true)
+  })
+
+  it('reports a visual change without marking hasRegressions, keeping --fail-on-regression exit behavior tied only to selector regressions', async () => {
+    seedDb(join(baselineDir, 'crawl.sqlite'), [
+      makePage('https://example.com/', 'Home', [], solidPng(20, 20, [255, 255, 255])),
+    ])
+    seedDb(join(currentDir, 'crawl.sqlite'), [
+      makePage('https://example.com/', 'Home', [], solidPng(20, 20, [0, 0, 0])),
+    ])
+
+    const summary = await runTreelineDiff({ baselineDir, currentDir })
+
+    expect(summary.visualChanges).toBe(1)
+    expect(summary.selectorRegressions).toBe(0)
+    expect(summary.hasRegressions).toBe(false)
+  })
+
+  it('still reports hasRegressions=true for a real selector regression, unaffected by this session (existing behavior)', async () => {
+    seedDb(join(baselineDir, 'crawl.sqlite'), [
+      makePage('https://example.com/', 'Home', [makeElement({})]),
+    ])
+    seedDb(join(currentDir, 'crawl.sqlite'), [
+      makePage('https://example.com/', 'Home', [makeElement({}), makeElement({})]),
+    ])
+
+    const summary = await runTreelineDiff({ baselineDir, currentDir })
+
+    expect(summary.selectorRegressions).toBe(1)
+    expect(summary.hasRegressions).toBe(true)
+    expect(summary.visualChanges).toBe(0)
   })
 })

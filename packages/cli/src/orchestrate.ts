@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { crawl, diffCrawls, openCrawlDb } from '@treeline/core'
+import { crawl, diffCrawls, openCrawlDb, urlHash } from '@treeline/core'
 import type { CrawlConfig } from '@treeline/core'
 import { runInterpretation } from '@treeline/interpret'
 import {
@@ -130,6 +130,7 @@ export interface TreelineDiffSummary {
   selectorImprovements: number
   selectorOther: number
   hasRegressions: boolean
+  visualChanges: number
 }
 
 export async function runTreelineDiff(options: TreelineDiffOptions): Promise<TreelineDiffSummary> {
@@ -150,6 +151,14 @@ export async function runTreelineDiff(options: TreelineDiffOptions): Promise<Tre
   await mkdir(reportsDir, { recursive: true })
   const reportPath = join(reportsDir, 'diff-report.md')
   await writeFile(reportPath, renderDiffReportMarkdown(diff))
+  const changedVisuals = diff.visualChanges.filter((change) => change.status === 'changed' && change.diffImageBuffer !== null)
+  if (changedVisuals.length > 0) {
+    const visualDiffsDir = join(reportsDir, 'visual-diffs')
+    await mkdir(visualDiffsDir, { recursive: true })
+    for (const change of changedVisuals) {
+      await writeFile(join(visualDiffsDir, `${urlHash(change.url)}.png`), change.diffImageBuffer!)
+    }
+  }
   return {
     reportPath,
     pagesAdded: diff.pagesAdded.length,
@@ -159,5 +168,6 @@ export async function runTreelineDiff(options: TreelineDiffOptions): Promise<Tre
     selectorImprovements: improvements.length,
     selectorOther: other.length,
     hasRegressions: regressions.length > 0,
+    visualChanges: changedVisuals.length,
   }
 }
