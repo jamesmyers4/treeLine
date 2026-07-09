@@ -4,6 +4,15 @@ export interface RenderedPage {
   outputPath: string
 }
 
+export type RunMode = 'crawl' | 'diff'
+
+export interface RunMeta {
+  targetUrl: string | null
+  mode: RunMode
+  renderedAt: string
+  pageCount: number | null
+}
+
 export interface RenderResult {
   outputDir: string
   targetDir: string
@@ -12,4 +21,5 @@ export interface RenderResult {
   poms: RenderedPage[]
   specs: RenderedPage[]
   visualDiffImages: string[]
+  meta: RunMeta
 }

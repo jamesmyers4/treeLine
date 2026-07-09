@@ -8,6 +8,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@treeline/core": "workspace:*",
     "markdown-it": "^14.1.0",
     "shiki": "^1.24.0"
   },

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import type { CapturedForm, PageState } from '@treeline/acquire'
+import type { CrawlConfig } from './types.js'
 import { openCrawlDb } from './persistence.js'
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
@@ -101,6 +102,35 @@ describe('forms persistence', () => {
     expect(db.pageExists('https://example.com/')).toBe(true)
     expect(db.pageExists('https://example.com/other')).toBe(false)
     db.close()
+  })
+})
+
+describe('crawl_meta persistence', () => {
+  it('returns null when no meta has been inserted', () => {
+    const db = openCrawlDb(dbPath)
+    const meta = db.getMeta()
+    db.close()
+    expect(meta).toBeNull()
+  })
+
+  it('round-trips seedUrl, startedAt, and config', () => {
+    const config: CrawlConfig = {
+      seedUrl: 'https://example.com/',
+      sameOriginOnly: true,
+      maxDepth: 2,
+      maxPages: 20,
+      stealth: false,
+      respectRobotsTxt: true,
+      throttleMs: 500,
+    }
+    const db = openCrawlDb(dbPath)
+    db.insertMeta('https://example.com/', config)
+    const meta = db.getMeta()
+    db.close()
+    expect(meta).not.toBeNull()
+    expect(meta!.seedUrl).toBe('https://example.com/')
+    expect(typeof meta!.startedAt).toBe('string')
+    expect(meta!.config).toEqual(config)
   })
 })
 

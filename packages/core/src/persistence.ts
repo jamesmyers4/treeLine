@@ -80,6 +80,17 @@ export function openCrawlDb(dbPath: string) {
     pageExists(url: string): boolean {
       return db.prepare('SELECT 1 FROM pages WHERE url = ?').get(url) !== undefined
     },
+    getMeta(): { seedUrl: string; startedAt: string; config: CrawlConfig } | null {
+      const row = db.prepare('SELECT * FROM crawl_meta ORDER BY startedAt DESC LIMIT 1').get() as
+        | Record<string, string | null>
+        | undefined
+      if (!row) return null
+      return {
+        seedUrl: row.seedUrl as string,
+        startedAt: row.startedAt as string,
+        config: row.config ? (JSON.parse(row.config as string) as CrawlConfig) : ({} as CrawlConfig),
+      }
+    },
     markFailed(url: string, reasonCode: HardPageReasonCode): void {
       db.prepare(
         'INSERT OR REPLACE INTO pages (url, status, capturedAt) VALUES (?, ?, ?)',

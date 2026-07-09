@@ -5,6 +5,7 @@ import { extractTitle, renderMarkdownFragment } from './markdown.js'
 import { renderTypeScriptFragment } from './code.js'
 import { htmlPage } from './template.js'
 import { renderIndexHtml } from './index-page.js'
+import { buildRunMeta } from './meta.js'
 import type { RenderedPage, RenderResult } from './types.js'
 
 async function renderReports(outputDir: string, targetDir: string): Promise<RenderedPage[]> {
@@ -71,5 +72,9 @@ export async function renderOutputToHtml(outputDir: string, targetDir: string): 
   const indexPath = path.join(targetDir, 'index.html')
   await fs.writeFile(indexPath, renderIndexHtml(targetDir, reports, poms, specs))
 
-  return { outputDir, targetDir, indexPath, reports, poms, specs, visualDiffImages }
+  const mode = reports.some((r) => path.basename(r.sourcePath) === 'diff-report.md') ? 'diff' : 'crawl'
+  const meta = buildRunMeta(outputDir, mode)
+  await fs.writeFile(path.join(targetDir, 'meta.json'), JSON.stringify(meta, null, 2))
+
+  return { outputDir, targetDir, indexPath, reports, poms, specs, visualDiffImages, meta }
 }
