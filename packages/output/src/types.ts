@@ -1,5 +1,6 @@
 export type { LocatorStrategy, SelectorCandidate } from '@treeline/core'
 import type { SelectorCandidate } from '@treeline/core'
+import type { CapturedForm } from '@treeline/acquire'
 
 export interface SelectorReportEntry {
   url: string
@@ -99,4 +100,26 @@ export interface AxeReport {
   pages: PageAxeReport[]
   totalViolations: number
   totalNeedsReview: number
+}
+
+export interface PageFormsEntry {
+  url: string
+  forms: CapturedForm[]
+}
+
+export interface ApiSurfaceEntry {
+  method: string
+  url: string
+  occurrenceCount: number
+  samplePages: string[]
+  totalPageCount: number
+}
+
+export interface FlowMap {
+  generatedAt: string
+  pagesWithForms: number
+  totalForms: number
+  distinctApiEndpoints: number
+  forms: PageFormsEntry[]
+  apiSurface: ApiSurfaceEntry[]
 }
