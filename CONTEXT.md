@@ -1,6 +1,6 @@
 # treeline — CONTEXT.md
 
-_Last updated after session 20. This file reflects what's actually built and
+_Last updated after session 26. This file reflects what's actually built and
 verified, not just the original plan — see the "Status" section for what's
 done vs. remaining._
 
@@ -62,6 +62,47 @@ Nothing structural remains from the original v1 plan.
 - Interaction-reachable page discovery (crawling states only reachable via
   click/form-submit)
 
+## V2 additions
+
+Work here was never part of the original v1 output list — v1 was already
+complete and closed out (see "Status" above) before any of this started. It's
+tracked separately so the historical record stays honest about what was
+originally scoped vs. what got added afterward. See `V2.md` for the full
+candidate roadmap this was picked from.
+
+- **Visual diffing in `treeline diff`** (sessions 21-26, the first completed
+  V2 initiative) — `V2.md` originally estimated this at "2-3 sessions"; it
+  took 6. Worth recording as a real data point on estimate accuracy, not
+  glossed over — treat other `V2.md` session estimates as floors, not
+  ceilings.
+  - Real screenshot capture: full-page PNG via Playwright's `page.screenshot`
+    (session 21) — previously only a `null` placeholder existed on
+    `PageState`.
+  - Disk persistence with directory-independent, deterministic naming
+    (session 22) — see "PageState shape" below for the `screenshot` vs.
+    `screenshotPath` split this introduced.
+  - Pixel-diff comparison via `pixelmatch`/`pngjs`, `packages/core/src/
+    screenshot-diff.ts` (session 23). Uses a 0.1% changed-pixel threshold —
+    empirically determined, not guessed: two independent real crawls of
+    unchanged pages (example.com and the more visually complex httpbin.org/
+    forms/post) both showed a 0% noise floor after pixelmatch's own
+    anti-aliasing filtering, so 0.1% keeps a margin above that observed
+    floor while staying far below any genuine visual change.
+  - Diff-image generation — a rendered pixel-diff PNG buffer produced only
+    for pages whose status is `'changed'` (session 24).
+  - Rendered into `diff-report.md`'s "Visual Changes" section in
+    `packages/output/src/diff-report.ts` (session 25).
+  - Automatic file-writing wired into `treeline diff` in
+    `packages/cli/src/orchestrate.ts` — writes `reports/visual-diffs/
+    <urlHash>.png` for each changed page, no new CLI flag required
+    (session 26).
+  - **Guarantee preserved:** `--fail-on-regression` remains driven solely by
+    selector-candidate regressions (`summary.hasRegressions` in
+    `packages/cli/src/index.ts`) — visual changes never affect its exit
+    code. Deliberately guarded in session 26; a test in
+    `packages/cli/src/orchestrate.test.ts` asserts a visual change is
+    reported without setting `hasRegressions`.
+
 ## Primary deliverable priority
 
 1. **Generated test artifacts** (POMs, selector stability reports, testid
@@ -96,7 +137,23 @@ Nothing structural remains from the original v1 plan.
 Grew significantly beyond the original plan through sessions 1, 4.5, 4.6, 9,
 and 9.5:
 
-- `url`, `title`, `ariaSnapshot`, `links`, `capturedAt`, `screenshot`
+- `url`, `title`, `ariaSnapshot`, `links`, `capturedAt`
+- `screenshot: Buffer | null` — a real full-page PNG captured via
+  Playwright's `page.screenshot` (session 21). This field was previously
+  documented here as "captured" when it was actually a hardcoded `null`
+  placeholder — that claim was stale and is corrected here. The in-memory
+  `Buffer` itself is never persisted directly: `@treeline/core`'s
+  persistence layer writes it to disk and stores the relative path instead.
+  See `screenshotPath` below — these are deliberately two different names
+  for two different representations (session 22), not a naming
+  inconsistency.
+- `screenshotPath: string | null` — NOT part of the in-memory `PageState`
+  captured by `@treeline/acquire`. This is the persisted/read-back field on
+  the stored page row in `@treeline/core` (`persistence.ts`): a path to the
+  screenshot file on disk, relative to the crawl's SQLite db so it stays
+  valid regardless of which directory the tool is invoked from (session
+  22). Visual diffing (see "V2 additions" below) reads this field, not
+  `screenshot`, when comparing two crawls.
 - `networkLog: NetworkEntry[]` — request/response url, method, status,
   resourceType. Captured since session 1; rendered as the API surface half
   of `flow-map.md` since session 18 (see "Open items" for two known dedup/
@@ -278,20 +335,27 @@ pnpm workspaces monorepo:
   `vitest.config.ts` excluding `treeline-output/` — see CLAUDE.md.
 - `packages/core` — crawler, persistence (pages + interpretations tables),
   robots/sitemap, hard-pages writer, `diff.ts` (page + selector-candidate
-  diffing), `selector-candidates.ts` (candidate computation)
+  diffing), `selector-candidates.ts` (candidate computation),
+  `screenshot-diff.ts` (pixel-diff visual comparison, session 23) and
+  `urlHash` in `url-utils.ts` (deterministic per-URL hash used to name
+  screenshot and diff-image files, session 22/26)
 - `packages/acquire` — hardened Playwright/Patchright capture layer +
   axe-core scanning + Fastify API
 - `packages/interpret` — 2-tier AI interpretation with retry + persistence
   orchestration
 - `packages/output` — selector report, testid audit, atlas, POM+spec
-  generation, axe report, diff report renderer, `flow-map.ts` (forms + API
-  surface)
+  generation, axe report, diff report renderer (now includes the Visual
+  Changes section, session 25), `flow-map.ts` (forms + API surface)
+- `packages/cli`'s `orchestrate.ts` — in addition to crawl orchestration,
+  now writes `reports/visual-diffs/*.png` diff images for pages with a
+  visual change (session 26)
 
 ## Stack
 
 TypeScript, Playwright + Patchright, Fastify, SQLite (better-sqlite3),
 Anthropic API (Haiku 4.5 / Sonnet 5) via `@anthropic-ai/sdk`, `@axe-core/
-playwright`, pnpm workspaces, Vitest, commander (CLI).
+playwright`, `pixelmatch` + `pngjs` (visual diff comparison), pnpm
+workspaces, Vitest, commander (CLI).
 
 ## Open items
 

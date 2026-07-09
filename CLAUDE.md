@@ -1,6 +1,6 @@
 # CLAUDE.md — treeline
 
-_Last updated after session 20._
+_Last updated after session 26._
 
 Full design rationale lives in `CONTEXT.md` — read that first for the "why."
 This file is the operational guide: conventions, commands, and hard-won
@@ -74,6 +74,10 @@ pnpm exec tsx src/index.ts crawl https://example.com --max-pages 5
 `selector-report.md`, `testid-audit.md`, `atlas.md`, `axe-report.md`,
 `flow-map.md`.
 
+`diff` writes `reports/diff-report.md` into the current-run output
+directory, plus `reports/visual-diffs/*.png` — one pixel-diff image per
+page with a genuine visual change — automatically, with no new CLI flag.
+
 ### Verify the repo is actually in the state described
 
 Don't assume — confirm, especially before starting a new session on top of
@@ -124,10 +128,15 @@ different `--output` path, then:
 pnpm exec tsx src/index.ts diff treeline-output/verify treeline-output/verify-2
 ```
 
-Should write `reports/diff-report.md` into the second directory and print a
+Should write `reports/diff-report.md` into the second directory — alongside
+`reports/visual-diffs/*.png` diff images for any page with a genuine visual
+change, written automatically with no new CLI flag required — and print a
 summary of pages added/removed, title changes, and selector regressions/
 improvements/other. Try it once with `--fail-on-regression` too and confirm
-with `echo $?` that the exit code behaves as documented above.
+with `echo $?` that the exit code behaves as documented above. **Guarantee:**
+`--fail-on-regression`'s exit code is driven solely by selector-candidate
+regressions — a visual change alone, however large, never trips it. Confirm
+this holds if you touch diff mode again.
 
 If any of this doesn't match what CONTEXT.md's "Status" section claims,
 stop and figure out why before writing new code — something regressed.
@@ -172,6 +181,25 @@ status` / look for the `[new branch]`-style confirmation line rather than
   reflects the config difference, not real site drift — came up during
   manual sanity-checking in sessions 13-14. Before trusting a diff report,
   confirm both runs used matching flags.
+- **`packages/core/src/url-utils.ts` has two related exports, described
+  together since they're used together.** `normalizeUrl(url)` — strips
+  fragments, sorts query params, used for crawl dedup and for matching a
+  page across two crawl runs in diff mode. `urlHash(url)` — a deterministic
+  per-URL hash (session 22, extended for diff images in session 26), used
+  to name both a page's screenshot file on disk and its visual diff-image
+  file (`reports/visual-diffs/<urlHash>.png`) so the same URL always maps
+  to the same filename across separate crawl runs.
+- **Real visual-diff test scenarios can't be induced against a live
+  site** — same category of constraint diff mode itself already had before
+  visual diffing existed. A live site won't reliably re-render a genuine
+  pixel-level change on demand between two crawls. The technique proven
+  across sessions 23-26: run one real crawl, then manually swap the
+  on-disk screenshot file for a *different* image of the *same pixel
+  dimensions* before running `diff` a second time — this forces a genuine
+  `'changed'` status (as opposed to `'dimensions-changed'`, which is a
+  different code path) so the comparison, threshold, and report-rendering
+  logic can all be exercised for real. Worth remembering for any future
+  visual-diff-adjacent work rather than re-deriving it.
 - **`vitest` does not type-check.** Changing a field on a shared type used
   in test fixtures across multiple packages (e.g. `PageState`) can silently
   break other packages' fixtures without `vitest` ever failing, because
