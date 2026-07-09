@@ -235,6 +235,12 @@ export async function capturePage(url: string, options?: AcquireOptions): Promis
       }),
   )
   const forms = await extractForms(page)
+  let screenshot: Buffer | null = null
+  try {
+    screenshot = await page.screenshot({ type: 'png', fullPage: true })
+  } catch (err) {
+    console.warn(`screenshot capture failed for ${url}`, err)
+  }
   await page.close()
   await browser.close()
   return {
@@ -243,7 +249,7 @@ export async function capturePage(url: string, options?: AcquireOptions): Promis
     ariaSnapshot,
     links,
     networkLog,
-    screenshot: null,
+    screenshot,
     capturedAt: new Date().toISOString(),
     interactiveElements,
     axeViolations,

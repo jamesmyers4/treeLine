@@ -64,7 +64,7 @@ export interface PageState {
   ariaSnapshot: string
   links: string[]
   networkLog: NetworkEntry[]
-  screenshot: string | null
+  screenshot: Buffer | null
   capturedAt: string
   interactiveElements: DomInteractiveElement[]
   axeViolations: AxeViolation[]

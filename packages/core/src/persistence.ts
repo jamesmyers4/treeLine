@@ -75,7 +75,7 @@ export function openCrawlDb(dbPath: string) {
       ariaSnapshot: string | null
       links: string[]
       networkLog: NetworkEntry[]
-      screenshot: string | null
+      screenshot: Buffer | null
       capturedAt: string | null
       interactiveElements: DomInteractiveElement[]
       axeViolations: AxeViolation[]
@@ -83,22 +83,22 @@ export function openCrawlDb(dbPath: string) {
       forms: CapturedForm[]
       status: string
     }> {
-      const rows = db.prepare('SELECT * FROM pages').all() as Array<Record<string, string | null>>
+      const rows = db.prepare('SELECT * FROM pages').all() as Array<Record<string, string | Buffer | null>>
       return rows.map((row) => ({
-        url: row.url ?? '',
-        title: row.title ?? null,
-        ariaSnapshot: row.ariaSnapshot ?? null,
-        links: row.links ? (JSON.parse(row.links) as string[]) : [],
-        networkLog: row.networkLog ? (JSON.parse(row.networkLog) as NetworkEntry[]) : [],
-        screenshot: row.screenshot ?? null,
-        capturedAt: row.capturedAt ?? null,
+        url: (row.url as string) ?? '',
+        title: (row.title as string) ?? null,
+        ariaSnapshot: (row.ariaSnapshot as string) ?? null,
+        links: row.links ? (JSON.parse(row.links as string) as string[]) : [],
+        networkLog: row.networkLog ? (JSON.parse(row.networkLog as string) as NetworkEntry[]) : [],
+        screenshot: (row.screenshot as Buffer) ?? null,
+        capturedAt: (row.capturedAt as string) ?? null,
         interactiveElements: row.interactiveElements
-          ? (JSON.parse(row.interactiveElements) as DomInteractiveElement[])
+          ? (JSON.parse(row.interactiveElements as string) as DomInteractiveElement[])
           : [],
-        axeViolations: row.axeViolations ? (JSON.parse(row.axeViolations) as AxeViolation[]) : [],
-        axeIncomplete: row.axeIncomplete ? (JSON.parse(row.axeIncomplete) as AxeIncompleteResult[]) : [],
-        forms: row.forms ? (JSON.parse(row.forms) as CapturedForm[]) : [],
-        status: row.status ?? '',
+        axeViolations: row.axeViolations ? (JSON.parse(row.axeViolations as string) as AxeViolation[]) : [],
+        axeIncomplete: row.axeIncomplete ? (JSON.parse(row.axeIncomplete as string) as AxeIncompleteResult[]) : [],
+        forms: row.forms ? (JSON.parse(row.forms as string) as CapturedForm[]) : [],
+        status: (row.status as string) ?? '',
       }))
     },
     recordInterpretation(interp: StoredInterpretation): void {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { capturePage } from './capture.js'
 
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+
 describe('capturePage', () => {
   it('returns a valid PageState for example.com', async () => {
     const result = await capturePage('https://example.com')
@@ -9,7 +11,7 @@ describe('capturePage', () => {
     expect(result.ariaSnapshot).toBeTruthy()
     expect(Array.isArray(result.links)).toBe(true)
     expect(Array.isArray(result.networkLog)).toBe(true)
-    expect(result.screenshot).toBeNull()
+    expect(Buffer.isBuffer(result.screenshot)).toBe(true)
     expect(typeof result.capturedAt).toBe('string')
     expect(Array.isArray(result.interactiveElements)).toBe(true)
     expect(result.interactiveElements.length).toBeGreaterThan(0)
@@ -32,5 +34,13 @@ describe('capturePage', () => {
     }
     const plainPage = result.interactiveElements.every((el) => el.testId === null)
     expect(plainPage).toBe(true)
+  }, 30000)
+
+  it('captures a valid, non-empty PNG screenshot', async () => {
+    const result = await capturePage('https://example.com')
+    expect(Buffer.isBuffer(result.screenshot)).toBe(true)
+    const screenshot = result.screenshot as Buffer
+    expect(screenshot.length).toBeGreaterThan(0)
+    expect(screenshot.subarray(0, 8).equals(PNG_SIGNATURE)).toBe(true)
   }, 30000)
 })
