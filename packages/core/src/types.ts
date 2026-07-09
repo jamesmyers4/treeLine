@@ -22,6 +22,16 @@ export interface HardPageEntry {
   captureSnapshot: string | null
 }
 
+export interface HostnameMismatch {
+  source: 'sitemap' | 'canonical'
+  hostname: string
+  url: string
+}
+
+export interface CrawlResult {
+  hostnameMismatches: HostnameMismatch[]
+}
+
 export interface StoredInterpretation {
   url: string
   tierUsed: string

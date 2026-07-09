@@ -1,8 +1,9 @@
 import { capturePage } from '@treeline/acquire'
-import type { CrawlConfig, HardPageReasonCode } from './types.js'
+import type { CrawlConfig, CrawlResult, HardPageReasonCode } from './types.js'
 import { normalizeUrl, isSameOrigin } from './url-utils.js'
 import { fetchRobotsRules } from './robots.js'
 import { fetchSitemapUrls } from './sitemap.js'
+import { fetchSeedPage, findCanonicalHref, detectHostnameMismatches } from './origin-scope.js'
 import { openCrawlDb } from './persistence.js'
 import { writeHardPageEntry } from './hard-pages.js'
 
@@ -10,13 +11,29 @@ export async function crawl(
   config: CrawlConfig,
   dbPath: string,
   hardPagesDir: string,
-): Promise<void> {
+): Promise<CrawlResult> {
   const db = openCrawlDb(dbPath)
   db.insertMeta(config.seedUrl, config)
-  const seedNorm = normalizeUrl(config.seedUrl)
+  const { resolvedUrl, html } = await fetchSeedPage(config.seedUrl)
+  const seedNorm = normalizeUrl(resolvedUrl)
   const seedOrigin = new URL(seedNorm).origin
   const isAllowed = config.respectRobotsTxt ? await fetchRobotsRules(seedOrigin) : () => true
   const sitemapUrls = await fetchSitemapUrls(seedOrigin)
+  const canonicalHref = html ? findCanonicalHref(html) : null
+  let canonicalUrl: string | null = null
+  if (canonicalHref) {
+    try {
+      canonicalUrl = new URL(canonicalHref, seedNorm).toString()
+    } catch {
+      canonicalUrl = null
+    }
+  }
+  const hostnameMismatches = detectHostnameMismatches(seedNorm, sitemapUrls, canonicalUrl)
+  for (const mismatch of hostnameMismatches) {
+    console.warn(
+      `[treeline] Possible hostname mismatch: seed resolved to ${new URL(seedNorm).hostname}, but ${mismatch.source} references ${mismatch.hostname} (${mismatch.url}). This crawl will not automatically follow it.`,
+    )
+  }
   const frontier: Array<{ url: string; depth: number }> = [{ url: seedNorm, depth: 0 }]
   for (const sUrl of sitemapUrls) {
     try {
@@ -78,4 +95,5 @@ export async function crawl(
     }
   }
   db.close()
+  return { hostnameMismatches }
 }
