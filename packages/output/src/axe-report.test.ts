@@ -39,6 +39,7 @@ function makePage(overrides: Partial<CrawledPage>): CrawledPage {
     interactiveElements: [],
     axeViolations: [],
     axeIncomplete: [],
+    forms: [],
     status: 'ok',
     ...overrides,
   }

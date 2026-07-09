@@ -101,6 +101,7 @@ function makePage(url: string, title: string, interactiveElements: DomInteractiv
     interactiveElements,
     axeViolations: [],
     axeIncomplete: [],
+    forms: [],
   }
 }
 

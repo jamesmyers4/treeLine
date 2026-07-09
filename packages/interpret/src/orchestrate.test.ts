@@ -23,7 +23,9 @@ function makePageState(url: string): PageState {
     screenshot: null,
     capturedAt: '2026-01-01T00:00:00.000Z',
     interactiveElements: [],
-    axeViolations: []
+    axeViolations: [],
+    axeIncomplete: [],
+    forms: []
   }
 }
 

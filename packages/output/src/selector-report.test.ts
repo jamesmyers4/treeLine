@@ -29,6 +29,7 @@ function makePage(url: string, interactiveElements: DomInteractiveElement[]): Cr
     interactiveElements,
     axeViolations: [],
     axeIncomplete: [],
+    forms: [],
     status: 'ok',
   }
 }

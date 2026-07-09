@@ -12,7 +12,9 @@ function makePageState(ariaSnapshot: string): PageState {
     screenshot: null,
     capturedAt: new Date().toISOString(),
     interactiveElements: [],
-    axeViolations: []
+    axeViolations: [],
+    axeIncomplete: [],
+    forms: []
   }
 }
 
