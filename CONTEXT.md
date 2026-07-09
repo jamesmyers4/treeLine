@@ -34,10 +34,16 @@ prose or JSON.
 - Full CLI (`treeline crawl <url>`) wiring everything above into one command
 - `hard-pages/` escalation queue, proven working end-to-end with real
   failures
+- **Diff mode** (sessions 11-14) — page-level diff between two crawl output
+  directories (pages added/removed, title changes), selector-candidate
+  regression/improvement/other classification (diffs each element's
+  top-ranked candidate, matched across runs by role + accessibleName +
+  occurrenceIndex), a markdown diff report with regressions surfaced first,
+  and the `treeline diff <baselineDir> <currentDir> [--output dir]
+  [--fail-on-regression]` CLI command
 
 **Not yet built (remaining from the original v1 output list):**
 
-- **Diff mode** — crawl twice, diff structure/content/selectors between runs
 - **Form & flow map** — every form, its fields, validation, submit target
 - **Network/API surface report** — the raw data (`networkLog`) has been
   captured and persisted since session 1/3, but nothing in `packages/output`
@@ -159,6 +165,11 @@ Built as both a library and a network-callable API from day one.
   capture, skips pages that already have a stored interpretation
   (idempotent — safe to re-run), retries once on a malformed response
   before giving up, and routes final failures to `hard-pages/`.
+- **Same category of split, session 12:** `computeSelectorCandidates` moved
+  from `packages/output` into `packages/core` (as `selector-candidates.ts`),
+  since `diff.ts` (also in `core`) needed it and `core` must not depend on
+  `output`. Same reasoning as the `StoredInterpretation` placement above —
+  keep the dependency direction one-way.
 - **Retry:** `MAX_INTERPRETATION_ATTEMPTS = 2` (session 5.99). Real-world
   data across multiple live runs showed roughly a 1-in-3 single-attempt
   failure rate on `keyDataEntities` coming back as a comma-separated string
@@ -212,7 +223,11 @@ Built as both a library and a network-callable API from day one.
    report currently shows only one `exampleSelector`, not the full list —
    fine for a portfolio artifact, not yet sufficient for real remediation
    triage at scale.
-7. **Diff mode** — ❌ not built.
+7. **Diff mode** — ✅ done. Page-level diff (added/removed/title changes)
+   plus selector-candidate regression/improvement/other classification
+   between two crawl output directories, rendered as a markdown report with
+   regressions surfaced first. Exposed via `treeline diff <baselineDir>
+   <currentDir> [--output dir] [--fail-on-regression]`.
 8. **Form & flow map** — ❌ not built.
 
 ## Storage / resume model
@@ -248,13 +263,14 @@ pnpm workspaces monorepo:
   `--skip-interpretation`), orchestrating everything below. Has its own
   `vitest.config.ts` excluding `treeline-output/` — see CLAUDE.md.
 - `packages/core` — crawler, persistence (pages + interpretations tables),
-  robots/sitemap, hard-pages writer
+  robots/sitemap, hard-pages writer, `diff.ts` (page + selector-candidate
+  diffing), `selector-candidates.ts` (candidate computation)
 - `packages/acquire` — hardened Playwright/Patchright capture layer +
   axe-core scanning + Fastify API
 - `packages/interpret` — 2-tier AI interpretation with retry + persistence
   orchestration
 - `packages/output` — selector report, testid audit, atlas, POM+spec
-  generation, axe report. Diff mode and flow map not yet added here.
+  generation, axe report, diff report renderer. Flow map not yet added here.
 
 ## Stack
 
@@ -264,8 +280,9 @@ playwright`, pnpm workspaces, Vitest, commander (CLI).
 
 ## Open items
 
-**Remaining v1 work:** diff mode, form/flow map, and a decision on whether
-network/API capture gets its own report.
+**Remaining v1 work:** form/flow map. The network/API capture report
+question is resolved — it folds into the flow map rather than becoming its
+own report.
 
 **Known gaps worth fixing eventually, not blocking:**
 

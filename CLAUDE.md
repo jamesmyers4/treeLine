@@ -26,7 +26,7 @@ is escalation (fixing `hard-pages/` entries), not the crawl runtime.
 - `packages/interpret` — 2-tier AI interpretation (Haiku 4.5 / Sonnet 5)
   with retry, plus persistence orchestration (`runInterpretation`)
 - `packages/output` — selector report, testid audit, atlas, POM+spec
-  generation, axe report generators. Diff mode and flow map not yet added.
+  generation, axe report, diff report generators. Flow map not yet added.
 
 ## Conventions
 
@@ -60,6 +60,8 @@ pnpm --filter @treeline/<package> build
 pnpm --filter @treeline/<package> test
 pnpm --filter @treeline/cli dev -- crawl <url> [--stealth] [--max-pages n]
   [--max-depth n] [--throttle-ms n] [--output dir] [--skip-interpretation]
+pnpm --filter @treeline/cli dev -- diff <baselineDir> <currentDir>
+  [--output dir] [--fail-on-regression]
 ```
 
 Real example, from `packages/cli`:
@@ -102,6 +104,12 @@ test setup). If you see a wall of unrelated-looking test failures in`packages/cl
   assume a silent terminal means a command failed — check with `git
 status` / look for the `[new branch]`-style confirmation line rather than
   re-running the command.
+- **`treeline diff` only produces a meaningful result if both crawls used
+  the same crawl config** (`--max-pages`, `--max-depth`, etc.). A config
+  mismatch between the baseline and current run produces a diff that
+  reflects the config difference, not real site drift — came up during
+  manual sanity-checking in sessions 13-14. Before trusting a diff report,
+  confirm both runs used matching flags.
 
 ## Model routing (packages/interpret)
 
@@ -200,3 +208,4 @@ pattern for new work:
 - Do not treat `DomInteractiveElement.accessibleName` as a complete,
   spec-accurate accessible-name computation — it's a simplified heuristic
   with known gaps (see CONTEXT.md).
+- Do not default `treeline diff --fail-on-regression` to on.
