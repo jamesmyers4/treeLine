@@ -74,10 +74,16 @@ export interface GeneratedSpec {
   code: string
 }
 
+export interface PomFileNameCollision {
+  baseFileName: string
+  urls: string[]
+}
+
 export interface POMGenerationResult {
   poms: GeneratedPOM[]
   specs: GeneratedSpec[]
   skipped: SkippedElement[]
+  collisions: PomFileNameCollision[]
 }
 
 export interface AxeFindingSummary {

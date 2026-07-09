@@ -118,5 +118,51 @@ describe('generatePOMsAndSpecs', () => {
     expect(result.poms).toHaveLength(1)
     expect(result.specs).toHaveLength(1)
     expect(result.poms[0]!.className).toBe('AboutPage')
+    expect(result.collisions).toEqual([])
+  })
+
+  it('does not silently drop a page when two URLs collide on the same base file name (hgwllc.com root vs /home)', () => {
+    const rootPage = makePage({ url: 'https://hgwllc.com/', title: 'Home' })
+    const homePage = makePage({ url: 'https://hgwllc.com/home', title: 'Home' })
+    const result = generatePOMsAndSpecs([homePage, rootPage])
+    expect(result.poms).toHaveLength(2)
+    expect(result.specs).toHaveLength(2)
+    const fileNames = result.poms.map((p) => p.fileName).sort()
+    expect(fileNames).toEqual(['home1.page.ts', 'home2.page.ts'])
+    const classNames = result.poms.map((p) => p.className).sort()
+    expect(classNames).toEqual(['HomePage1', 'HomePage2'])
+    expect(result.specs.map((s) => s.fileName).sort()).toEqual(['home1.spec.ts', 'home2.spec.ts'])
+    expect(result.collisions).toHaveLength(1)
+    expect(result.collisions[0]).toEqual({ baseFileName: 'home', urls: ['https://hgwllc.com/', 'https://hgwllc.com/home'] })
+  })
+
+  it('does not silently drop a page when a bare path collides with its .html-suffixed duplicate (goldenpetbrands.com pattern)', () => {
+    const barePage = makePage({ url: 'https://goldenpetbrands.com/about', title: 'About' })
+    const htmlPage = makePage({ url: 'https://goldenpetbrands.com/about.html', title: 'About' })
+    const result = generatePOMsAndSpecs([htmlPage, barePage])
+    expect(result.poms).toHaveLength(2)
+    expect(result.specs).toHaveLength(2)
+    expect(result.poms.map((p) => p.fileName).sort()).toEqual(['about1.page.ts', 'about2.page.ts'])
+    expect(result.collisions).toHaveLength(1)
+  })
+
+  it('produces identical file names across repeated runs regardless of input order', () => {
+    const pages = [
+      makePage({ url: 'https://hgwllc.com/home', title: 'Home' }),
+      makePage({ url: 'https://hgwllc.com/', title: 'Home' }),
+    ]
+    const firstRun = generatePOMsAndSpecs(pages)
+    const secondRun = generatePOMsAndSpecs([...pages].reverse())
+    const firstMap = new Map(firstRun.poms.map((p) => [p.className, p.fileName]))
+    const secondMap = new Map(secondRun.poms.map((p) => [p.className, p.fileName]))
+    expect([...firstMap.entries()].sort()).toEqual([...secondMap.entries()].sort())
+  })
+
+  it('leaves behavior unchanged when there are no collisions', () => {
+    const aboutPage = makePage({ url: 'https://example.com/about', title: 'About' })
+    const contactPage = makePage({ url: 'https://example.com/contact', title: 'Contact' })
+    const result = generatePOMsAndSpecs([aboutPage, contactPage])
+    expect(result.collisions).toEqual([])
+    expect(result.poms.map((p) => p.fileName).sort()).toEqual(['about.page.ts', 'contact.page.ts'])
   })
 })

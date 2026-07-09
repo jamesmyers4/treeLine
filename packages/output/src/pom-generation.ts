@@ -1,7 +1,7 @@
 import type { DomInteractiveElement } from '@treeline/acquire'
 import { computeSelectorCandidates } from '@treeline/core'
 import type { CrawledPage } from './input.js'
-import { urlToClassName, urlToFileBaseName, elementToPropertyName, deduplicatePropertyNames } from './naming.js'
+import { urlToClassName, urlToFileBaseName, elementToPropertyName, deduplicatePropertyNames, assignUniqueNames } from './naming.js'
 import type { GeneratedPOM, GeneratedSpec, LocatorStrategy, POMGenerationResult, SelectorCandidate, SkippedElement } from './types.js'
 
 const STRATEGY_PRIORITY: LocatorStrategy[] = ['role', 'testid', 'css', 'xpath']
@@ -52,7 +52,7 @@ ${assignments}
 `
 }
 
-export function generatePOM(page: CrawledPage): { pom: GeneratedPOM; skipped: SkippedElement[] } {
+function buildPOM(page: CrawledPage, className: string, fileName: string): { pom: GeneratedPOM; skipped: SkippedElement[] } {
   const candidatesByElement = computeSelectorCandidates(page.interactiveElements)
   const skipped: SkippedElement[] = []
   const chosen: { element: DomInteractiveElement; candidate: SelectorCandidate; propertyName: string }[] = []
@@ -74,16 +74,18 @@ export function generatePOM(page: CrawledPage): { pom: GeneratedPOM; skipped: Sk
     const nth = c.candidate.uniqueOnPage ? null : matching.indexOf(c.element)
     return { propertyName: dedupedNames[index]!, locator: buildLocatorExpression(c.element, c.candidate, nth) }
   })
-  const className = urlToClassName(page.url)
-  const fileName = `${urlToFileBaseName(page.url)}.page.ts`
   const code = renderPOMCode(className, page.url, fields)
   return { pom: { className, fileName, code }, skipped }
+}
+
+export function generatePOM(page: CrawledPage): { pom: GeneratedPOM; skipped: SkippedElement[] } {
+  return buildPOM(page, urlToClassName(page.url), `${urlToFileBaseName(page.url)}.page.ts`)
 }
 
 export function generateSpec(pom: GeneratedPOM, pageUrl: string): GeneratedSpec {
   const importPath = `./${pom.fileName.replace(/\.ts$/, '')}`
   const instanceName = lowerFirst(pom.className)
-  const fileName = `${urlToFileBaseName(pageUrl)}.spec.ts`
+  const fileName = `${pom.fileName.replace(/\.page\.ts$/, '')}.spec.ts`
   const code = `import { test, expect } from '@playwright/test'
 import { ${pom.className} } from '${importPath}'
 
@@ -98,14 +100,22 @@ test('${pom.className} loads', async ({ page }) => {
 
 export function generatePOMsAndSpecs(pages: CrawledPage[]): POMGenerationResult {
   const capturedPages = pages.filter((p) => p.title !== null && p.ariaSnapshot !== null && p.capturedAt !== null)
+  const { assignments, collisions } = assignUniqueNames(capturedPages.map((p) => p.url))
   const poms: GeneratedPOM[] = []
   const specs: GeneratedSpec[] = []
   const skipped: SkippedElement[] = []
   for (const page of capturedPages) {
-    const result = generatePOM(page)
+    const assigned = assignments.get(page.url)!
+    const result = buildPOM(page, assigned.className, `${assigned.fileBaseName}.page.ts`)
     poms.push(result.pom)
     specs.push(generateSpec(result.pom, page.url))
     skipped.push(...result.skipped)
   }
-  return { poms, specs, skipped }
+  for (const collision of collisions) {
+    const disambiguated = collision.urls.map((url, index) => `${collision.baseFileName}${index + 1}`).join(', ')
+    console.warn(
+      `[treeline] POM/spec filename collision: ${collision.urls.length} pages would all generate "${collision.baseFileName}.page.ts" — disambiguated as ${disambiguated}. URLs: ${collision.urls.join(', ')}`,
+    )
+  }
+  return { poms, specs, skipped, collisions }
 }

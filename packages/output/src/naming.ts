@@ -1,4 +1,6 @@
 import type { DomInteractiveElement } from '@treeline/acquire'
+import { normalizeUrl } from '@treeline/core'
+import type { PomFileNameCollision } from './types.js'
 
 function capitalize(word: string): string {
   if (word.length === 0) return word
@@ -47,6 +49,38 @@ export function elementToPropertyName(element: DomInteractiveElement): string {
     return `${camelName}${capitalize(element.role)}`
   }
   return `${lowerFirst(element.role)}${capitalize(element.tagName)}`
+}
+
+export interface AssignedPageName {
+  url: string
+  className: string
+  fileBaseName: string
+}
+
+export function assignUniqueNames(urls: string[]): { assignments: Map<string, AssignedPageName>; collisions: PomFileNameCollision[] } {
+  const groups = new Map<string, string[]>()
+  for (const url of urls) {
+    const base = urlToFileBaseName(url)
+    const group = groups.get(base)
+    if (group) group.push(url)
+    else groups.set(base, [url])
+  }
+  const collisions: PomFileNameCollision[] = []
+  const assignments = new Map<string, AssignedPageName>()
+  for (const [base, groupUrls] of groups) {
+    if (groupUrls.length === 1) {
+      const url = groupUrls[0]!
+      assignments.set(url, { url, className: urlToClassName(url), fileBaseName: base })
+      continue
+    }
+    const sortedUrls = [...groupUrls].sort((a, b) => normalizeUrl(a).localeCompare(normalizeUrl(b)))
+    collisions.push({ baseFileName: base, urls: sortedUrls })
+    sortedUrls.forEach((url, index) => {
+      const suffix = index + 1
+      assignments.set(url, { url, className: `${urlToClassName(url)}${suffix}`, fileBaseName: `${base}${suffix}` })
+    })
+  }
+  return { assignments, collisions }
 }
 
 export function deduplicatePropertyNames(names: string[]): string[] {
