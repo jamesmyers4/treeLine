@@ -9,7 +9,7 @@ import type { DomInteractiveElement, PageState } from '@treeline/acquire'
 import { runTreelineCrawl, runTreelineDiff } from './orchestrate.js'
 
 const pages: Record<string, string> = {
-  '/': '<html><body><a href="/about">about</a><a href="/contact">contact</a></body></html>',
+  '/': '<html><body><a href="/about">about</a><a href="/contact">contact</a><form action="/submit" method="post"><input aria-label="Email" type="email" required /></form><script>fetch("/api/ping")</script></body></html>',
   '/about': '<html><body><a href="/">home</a><a href="/contact">contact</a></body></html>',
   '/contact': '<html><body><a href="/">home</a><a href="/about">about</a></body></html>',
 }
@@ -64,6 +64,10 @@ describe('runTreelineCrawl', () => {
     expect(atlas).toContain('has not yet been interpreted')
     const axeReport = readFileSync(join(outputDir, 'reports', 'axe-report.md'), 'utf-8')
     expect(axeReport.length).toBeGreaterThan(0)
+    const flowMap = readFileSync(join(outputDir, 'reports', 'flow-map.md'), 'utf-8')
+    expect(flowMap.length).toBeGreaterThan(0)
+    expect(flowMap).toContain('Email')
+    expect(flowMap).toContain('/api/ping')
     const pomFiles = readdirSync(join(outputDir, 'poms'))
     const specFiles = readdirSync(join(outputDir, 'specs'))
     expect(pomFiles).toHaveLength(Object.keys(pages).length)

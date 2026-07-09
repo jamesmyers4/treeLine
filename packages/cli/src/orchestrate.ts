@@ -14,6 +14,8 @@ import {
   generatePOMsAndSpecs,
   generateAxeReport,
   renderAxeReportMarkdown,
+  generateFlowMap,
+  renderFlowMapMarkdown,
   classifyChange,
   renderDiffReportMarkdown,
 } from '@treeline/output'
@@ -86,6 +88,8 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
     await writeFile(join(reportsDir, 'atlas.md'), renderAtlasMarkdown(atlas))
     const axeReport = generateAxeReport(pages)
     await writeFile(join(reportsDir, 'axe-report.md'), renderAxeReportMarkdown(axeReport))
+    const flowMap = generateFlowMap(pages)
+    await writeFile(join(reportsDir, 'flow-map.md'), renderFlowMapMarkdown(flowMap))
     const { poms, specs, skipped } = generatePOMsAndSpecs(pages)
     for (const pom of poms) {
       await writeFile(join(pomsDir, pom.fileName), pom.code)
