@@ -127,6 +127,11 @@ jobs:
         run: |
           pnpm exec tsx scripts/publish.ts index "$GITHUB_WORKSPACE/gh-pages-worktree/runs"
 
+      - name: Write root redirect
+        if: inputs.publish_to_pages
+        run: |
+          cp packages/pages/static/root-redirect.html gh-pages-worktree/index.html
+
       - name: Commit gh-pages changes
         if: inputs.publish_to_pages
         working-directory: gh-pages-worktree
