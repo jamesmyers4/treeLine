@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>leadership2.spec.ts</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif; margin: 0; background: #f4f6f9; color: #1a2744; }
+  header { background: #1a2744; color: white; padding: 16px 24px; }
+  header a { color: #aac4ff; text-decoration: none; }
+  header a:hover { text-decoration: underline; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px; background: white; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; font-size: 14px; }
+  th { background: #eef1f6; }
+  img { max-width: 100%; }
+  pre { overflow-x: auto; padding: 16px; border-radius: 6px; }
+  code { font-family: 'SF Mono', Consolas, Menlo, monospace; }
+  h1, h2, h3 { color: #1a2744; }
+  a { color: #1a5fd6; }
+</style>
+</head>
+<body>
+<header><a href="../index.html">&larr; treeline run</a></header>
+<main>
+<pre class="shiki github-dark" style="background-color:#24292e;color:#e1e4e8" tabindex="0"><code><span class="line"><span style="color:#F97583">import</span><span style="color:#E1E4E8"> { test, expect } </span><span style="color:#F97583">from</span><span style="color:#9ECBFF"> '@playwright/test'</span></span>
+<span class="line"><span style="color:#F97583">import</span><span style="color:#E1E4E8"> { LeadershipPage2 } </span><span style="color:#F97583">from</span><span style="color:#9ECBFF"> './leadership2.page'</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">test</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">'LeadershipPage2 loads'</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">async</span><span style="color:#E1E4E8"> ({ </span><span style="color:#FFAB70">page</span><span style="color:#E1E4E8"> }) </span><span style="color:#F97583">=></span><span style="color:#E1E4E8"> {</span></span>
+<span class="line"><span style="color:#F97583">  const</span><span style="color:#79B8FF"> leadershipPage2</span><span style="color:#F97583"> =</span><span style="color:#F97583"> new</span><span style="color:#B392F0"> LeadershipPage2</span><span style="color:#E1E4E8">(page)</span></span>
+<span class="line"><span style="color:#F97583">  await</span><span style="color:#E1E4E8"> leadershipPage2.</span><span style="color:#B392F0">goto</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"><span style="color:#F97583">  await</span><span style="color:#B392F0"> expect</span><span style="color:#E1E4E8">(page).</span><span style="color:#B392F0">toHaveURL</span><span style="color:#E1E4E8">(</span><span style="color:#9ECBFF">"https://goldenpetbrands.com/leadership.html"</span><span style="color:#E1E4E8">)</span></span>
+<span class="line"><span style="color:#E1E4E8">})</span></span>
+<span class="line"></span></code></pre>
+</main>
+</body>
+</html>
