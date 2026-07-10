@@ -1,5 +1,5 @@
 export type { LocatorStrategy, SelectorCandidate } from '@treeline/core'
-import type { SelectorCandidate } from '@treeline/core'
+import type { HardPageEntry, SelectorCandidate } from '@treeline/core'
 import type { CapturedForm } from '@treeline/acquire'
 
 export interface SelectorReportEntry {
@@ -128,4 +128,28 @@ export interface FlowMap {
   distinctApiEndpoints: number
   forms: PageFormsEntry[]
   apiSurface: ApiSurfaceEntry[]
+}
+
+export interface PageCoverageEntry {
+  url: string
+  totalInteractive: number
+  skippedCount: number
+  skipPercent: number
+}
+
+export interface FormTestGap {
+  url: string
+  formIndex: number
+  action: string
+  method: string
+  fieldCount: number
+}
+
+export interface CoverageReport {
+  generatedAt: string
+  zeroCoveragePages: PageCoverageEntry[]
+  highSkipPages: PageCoverageEntry[]
+  formsWithoutTest: FormTestGap[]
+  unresolvedHardPages: HardPageEntry[]
+  pagesExcludedFromCoverage: string[]
 }

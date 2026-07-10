@@ -5,7 +5,7 @@ const BASE_STYLE = `
   header a:hover { text-decoration: underline; }
   main { max-width: 960px; margin: 0 auto; padding: 24px; background: white; }
   table { border-collapse: collapse; width: 100%; margin: 16px 0; }
-  th, td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; font-size: 14px; }
+  th, td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; font-size: 14px; overflow-wrap: anywhere; word-break: break-word; }
   th { background: #eef1f6; }
   img { max-width: 100%; }
   pre { overflow-x: auto; padding: 16px; border-radius: 6px; }

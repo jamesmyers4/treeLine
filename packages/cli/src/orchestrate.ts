@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { crawl, diffCrawls, openCrawlDb, urlHash } from '@treeline/core'
-import type { CrawlConfig } from '@treeline/core'
+import type { CrawlConfig, HardPageEntry } from '@treeline/core'
 import { runInterpretation } from '@treeline/interpret'
 import {
   generateSelectorReport,
@@ -16,9 +16,22 @@ import {
   renderAxeReportMarkdown,
   generateFlowMap,
   renderFlowMapMarkdown,
+  generateCoverageReport,
+  renderCoverageReportMarkdown,
   classifyChange,
   renderDiffReportMarkdown,
 } from '@treeline/output'
+
+async function readHardPageEntries(hardPagesDir: string): Promise<HardPageEntry[]> {
+  const files = await readdir(hardPagesDir)
+  const entries: HardPageEntry[] = []
+  for (const file of files) {
+    if (!file.endsWith('.json')) continue
+    const raw = await readFile(join(hardPagesDir, file), 'utf-8')
+    entries.push(JSON.parse(raw) as HardPageEntry)
+  }
+  return entries
+}
 
 export interface TreelineCrawlOptions {
   url: string
@@ -98,12 +111,14 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
       await writeFile(join(specsDir, spec.fileName), spec.code)
     }
     await writeFile(join(outputDir, 'skipped-elements.json'), JSON.stringify(skipped, null, 2))
-    const hardPageFiles = await readdir(hardPagesDir)
+    const hardPageEntries = await readHardPageEntries(hardPagesDir)
+    const coverageReport = generateCoverageReport(pages, skipped, hardPageEntries)
+    await writeFile(join(reportsDir, 'coverage-report.md'), renderCoverageReportMarkdown(coverageReport))
     return {
       outputDir,
       pagesCaptured: capturedPages.length,
       pagesInterpreted: interpretations.length,
-      hardPagesCount: hardPageFiles.length,
+      hardPagesCount: hardPageEntries.length,
       pomsGenerated: poms.length,
       specsGenerated: specs.length,
       skippedElementsCount: skipped.length,
