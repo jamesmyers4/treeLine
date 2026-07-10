@@ -95,7 +95,7 @@ jobs:
           if-no-files-found: error
 
       - name: Render run to HTML
-        if: inputs.publish_to_pages == 'true'
+        if: inputs.publish_to_pages
         working-directory: packages/pages
         run: |
           pnpm exec tsx scripts/publish.ts render \
@@ -103,7 +103,7 @@ jobs:
             "$GITHUB_WORKSPACE/rendered-run"
 
       - name: Prepare gh-pages worktree
-        if: inputs.publish_to_pages == 'true'
+        if: inputs.publish_to_pages
         run: |
           set -e
           if git ls-remote --exit-code --heads origin gh-pages > /dev/null 2>&1; then
@@ -116,19 +116,19 @@ jobs:
           fi
 
       - name: Copy rendered run into gh-pages
-        if: inputs.publish_to_pages == 'true'
+        if: inputs.publish_to_pages
         run: |
           mkdir -p "gh-pages-worktree/runs/${{ github.run_number }}"
           cp -r rendered-run/. "gh-pages-worktree/runs/${{ github.run_number }}/"
 
       - name: Rebuild runs index
-        if: inputs.publish_to_pages == 'true'
+        if: inputs.publish_to_pages
         working-directory: packages/pages
         run: |
           pnpm exec tsx scripts/publish.ts index "$GITHUB_WORKSPACE/gh-pages-worktree/runs"
 
       - name: Commit gh-pages changes
-        if: inputs.publish_to_pages == 'true'
+        if: inputs.publish_to_pages
         working-directory: gh-pages-worktree
         run: |
           git add -A
@@ -136,7 +136,7 @@ jobs:
             commit -m "Publish run ${{ github.run_number }} (${{ inputs.url }}) to gh-pages"
 
       - name: Push to gh-pages
-        if: inputs.publish_to_pages == 'true'
+        if: inputs.publish_to_pages
         working-directory: gh-pages-worktree
         run: |
           if ! git push origin HEAD:gh-pages; then
