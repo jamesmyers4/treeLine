@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Selector Stability Report</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif; margin: 0; background: #f4f6f9; color: #1a2744; }
+  header { background: #1a2744; color: white; padding: 16px 24px; }
+  header a { color: #aac4ff; text-decoration: none; }
+  header a:hover { text-decoration: underline; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px; background: white; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; font-size: 14px; }
+  th { background: #eef1f6; }
+  img { max-width: 100%; }
+  pre { overflow-x: auto; padding: 16px; border-radius: 6px; }
+  code { font-family: 'SF Mono', Consolas, Menlo, monospace; }
+  h1, h2, h3 { color: #1a2744; }
+  a { color: #1a5fd6; }
+</style>
+</head>
+<body>
+<header><a href="../index.html">&larr; treeline run</a></header>
+<main>
+<h1>Selector Stability Report</h1>
+<p>Generated: 2026-07-10T01:00:41.876Z</p>
+<h2><a href="https://example.com/">https://example.com/</a></h2>
+<table>
+<thead>
+<tr>
+<th>Element</th>
+<th>Strategy</th>
+<th>Selector</th>
+<th>Stable</th>
+<th>Unique</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>link 'Learn more'</td>
+<td>role</td>
+<td>role=link[name=&quot;Learn more&quot;]</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>link 'Learn more'</td>
+<td>css</td>
+<td>div &gt; p:nth-of-type(2) &gt; a</td>
+<td>No</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>link 'Learn more'</td>
+<td>xpath</td>
+<td>/html/body/div/p[2]/a</td>
+<td>No</td>
+<td>Yes</td>
+</tr>
+</tbody>
+</table>
+
+</main>
+</body>
+</html>
