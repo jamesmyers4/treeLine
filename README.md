@@ -33,7 +33,13 @@ an actual command, with `--fail-on-regression` for CI.
 This isn't just a CI capability in theory: a `workflow_dispatch` GitHub
 Action (`.github/workflows/crawl.yml`) runs `crawl` end-to-end in CI and
 has been proven against live sites, including a run with real AI
-interpretation — a genuinely demoable regression gate, not a diagram.
+interpretation — a genuinely demoable regression gate, not a diagram. The
+same workflow can optionally publish a run's rendered reports, POMs, and
+specs as static HTML to the `gh-pages` branch (opt-in `publish_to_pages`
+input, off by default since this is a public repo) — the publish
+mechanism is proven against two real runs, though GitHub Pages serving
+itself still needs a one-time repo-settings step turned on before the
+result is reachable at a public URL (see CLAUDE.md).
 
 ## Quick start
 
@@ -72,8 +78,11 @@ workspaces, Vitest, commander.
 
 ## Status
 
-v1 is complete, and the GitHub Action (Stage A) is complete and proven
-against live sites, as of session 32 — all core reports, POM generation,
-diff mode, flow map, and CI-based crawling are built, tested, and verified
-against real sites. See `CONTEXT.md`'s Status section for exact scope and
-known limitations.
+v1 is complete, and the GitHub Action — both crawl-in-CI (Stage A) and
+static-HTML publish to GitHub Pages (Stage B) — is complete and proven
+against live sites and real runs, as of session 36. All core reports, POM
+generation, diff mode, flow map, CI-based crawling, and Pages publish are
+built, tested, and verified against real sites; enabling GitHub Pages
+serving itself for this specific repo is a one-time Settings step still
+pending (see CLAUDE.md). See `CONTEXT.md`'s Status section for exact scope
+and known limitations.

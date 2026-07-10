@@ -1,6 +1,6 @@
 # treeline — CONTEXT.md
 
-_Last updated after session 32. This file reflects what's actually built and
+_Last updated after session 36. This file reflects what's actually built and
 verified, not just the original plan — see the "Status" section for what's
 done vs. remaining._
 
@@ -155,6 +155,118 @@ candidate roadmap this was picked from.
     scope — same-origin enforcement stays strict by design; auto-widening
     was considered and rejected (different `robots.txt` per hostname,
     genuinely different content sometimes living at each hostname).
+- **GitHub Pages publish, Stage B (sessions 34-35b)** — `crawl.yml`'s Stage
+  A (see above) already produced a downloadable artifact; Stage B turns
+  that into a shareable, browsable link with no local unzip required.
+  - **`packages/pages`** — new package, static HTML renderer for a
+    treeline output directory. `renderOutputToHtml(outputDir, targetDir)`
+    (`render.ts`) is the entry point: renders every `reports/*.md` file to
+    HTML via `markdown-it` (`markdown.ts` — `extractTitle` pulls the first
+    `# heading` as the page title, falling back to the filename), renders
+    every `poms/*.ts` and `specs/*.ts` file to syntax-highlighted HTML via
+    `shiki` (`code.ts`, `github-dark` theme), copies
+    `reports/visual-diffs/*.png` through unchanged, and writes a per-run
+    `index.html` (`index-page.ts`) linking all of it. All rendered pages
+    share one inline stylesheet (`template.ts`) that deliberately reuses
+    treeline's own `#1a2744`/`#f4f6f9`/`#aac4ff` palette rather than
+    inventing a second look for generated output. `discover.ts` orders
+    reports by a fixed known list (atlas, selector-report, testid-audit,
+    axe-report, flow-map, diff-report) before falling back to alphabetical
+    for anything unrecognized.
+  - **`meta.json` capture** (`meta.ts`) — `buildRunMeta(outputDir, mode)`
+    opens the run's `crawl.sqlite` (if present) via `@treeline/core`'s
+    `openCrawlDb`, reads `db.getMeta()?.seedUrl` and
+    `db.getAllPages().length`, and closes the db in a `finally` — same
+    "always close in finally" discipline as session 29's browser-lifecycle
+    fix, applied here to a db handle instead of a browser. `RunMode` is
+    inferred, not passed by the caller with certainty: `render.ts` checks
+    whether any rendered report is `diff-report.md` and sets `mode:
+    'diff'` if so, `'crawl'` otherwise. This relies on `getMeta()`, a new
+    read accessor added to `packages/core/src/persistence.ts` alongside
+    the existing `insertMeta` — `crawl_meta` was already written on every
+    crawl, but nothing previously read it back out.
+  - **Multi-run index** (`runs-index.ts`) — `buildRunsIndex(runsRootDir)`
+    scans immediate subdirectories of a `runs/` root, reads each one's
+    `meta.json` (skipping any directory that doesn't have one — e.g. a
+    non-run file that ended up in the same directory), sorts by
+    `renderedAt` descending, and writes a `runs/index.html` table of every
+    published run (target URL, mode, rendered timestamp, page count) — the
+    landing page for browsing historical runs, not just the latest one.
+  - **`scripts/publish.ts`** — the two-subcommand entry point the workflow
+    actually shells out to: `render <outputDir> <targetDir>` (wraps
+    `renderOutputToHtml`) and `index <runsRootDir>` (wraps
+    `buildRunsIndex`). Not a general CLI — just enough surface for the two
+    workflow steps that need it.
+  - **Workflow wiring** (`.github/workflows/crawl.yml`) — new
+    `publish_to_pages` boolean input, **default `false`** (opt-in, not
+    opt-out). Reasoning: this repo is public (see the "This repo is
+    public" gotcha in CLAUDE.md), and prior real runs (sessions 28-32)
+    already crawled live third-party sites the repo owner doesn't own —
+    publishing every run's actual content to a public URL by default would
+    compound that without a deliberate choice each time. `permissions:
+    contents: write` (needed to push to the `gh-pages` branch) and
+    `fetch-depth: 0` on checkout (needed so the later `git worktree
+    add`/`rebase` steps against `origin/gh-pages` have real history to
+    work with, not a shallow clone) were both added alongside this input.
+    `@treeline/pages` was added to the build-order step, between
+    `@treeline/core` and `@treeline/interpret`. Six subsequent steps are
+    all gated on the same condition: render the run to HTML
+    (`scripts/publish.ts render`), prepare a `gh-pages` worktree (checks
+    out the existing `origin/gh-pages` branch if it exists, otherwise
+    creates it fresh as an orphan branch via `git worktree add --detach` +
+    `checkout --orphan gh-pages` + `rm -rf .`), copy the rendered run into
+    `runs/<github.run_number>/` inside that worktree (deliberately
+    `run_number`, the short per-repo incrementing counter, not
+    `run_id`/`github.run_id` — much friendlier as a URL path than the long
+    globally-unique ID already used for the artifact name), rebuild the
+    runs index (`scripts/publish.ts index`), commit, and push — with a
+    fetch/rebase/retry fallback if the push is rejected (another run
+    landed on `gh-pages` first).
+  - **The boolean-input type-coercion bug** (introduced in the session
+    34-35b "Wire GitHub Pages publish into crawl workflow" commit, fixed
+    the same session) — every one of the six gated steps above originally
+    read `if: inputs.publish_to_pages == 'true'`. This silently evaluated
+    **false on every run, regardless of what the user actually selected**,
+    so triggering the workflow with `publish_to_pages: true` produced an
+    artifact but never touched `gh-pages` at all — no error, no visible
+    signal, just steps quietly skipped. Root cause: GitHub Actions'
+    `inputs.*` context (workflow_dispatch only) preserves the real
+    declared type of an input — a `type: boolean` input is a genuine
+    boolean there, not a string. `github.event.inputs.*`, by contrast,
+    stringifies every input unconditionally. `inputs.publish_to_pages ==
+    'true'` therefore compares a real boolean against a string; GitHub
+    Actions' expression syntax resolves `==` between mismatched types by
+    coercing both sides to numbers, and `true`/`'true'` do not coerce to
+    the same number, so the comparison is false whether the underlying
+    input was `true` or `false`. Fixed by comparing the boolean directly —
+    `if: inputs.publish_to_pages` — with no string comparison at all. This
+    is the same class of gotcha as `SKIP_INTERPRETATION` a few lines above
+    it in the same workflow, which is safe **only** because that one is
+    consumed inside a bash `run:` step (`env: SKIP_INTERPRETATION:
+    ${{ inputs.skip_interpretation }}`, then bash's `[ "$SKIP_INTERPRETATION"
+    = "true" ]`) — env vars are always strings by the time bash sees them,
+    so the string comparison there is correct. The bug only exists in a
+    YAML-level `if:` expression, where `inputs.*` is not a string. Verified
+    fixed for real, not just by inspection: two real workflow runs after
+    the fix (`Publish run 7 (https://example.com)`, `Publish run 9
+    (https://httpbin.org/forms/post)`, both 2026-07-10) landed real commits
+    on `origin/gh-pages` under `runs/7/` and `runs/9/`, each with a
+    correct `meta.json`, rendered reports, POMs, and specs.
+  - **Known gap, not yet resolved:** the `gh-pages` branch as it exists on
+    the real remote today has `runs/7/`, `runs/9/`, and `runs/index.html`,
+    but **no root-level `index.html`** — `scripts/publish.ts index` only
+    ever writes `<runsRootDir>/index.html` (i.e. `runs/index.html`), and
+    nothing in the workflow creates a landing page at the branch root.
+    Combined with this: hitting the repo's actual GitHub Pages URL as of
+    this writing 404s, both at the root and at `/runs/index.html` —
+    consistent with GitHub Pages serving not actually being turned on yet
+    in this repo's Settings (Pages source = `gh-pages` branch root is a
+    one-time manual step, see CLAUDE.md, and doesn't happen automatically
+    just because the branch exists and has content). Until Pages is
+    enabled *and* a root `index.html` exists (or redirects to `runs/`),
+    there is no working public URL yet, even though the publish mechanism
+    itself is proven. Flagged for an owner decision, not silently fixed
+    here — this session is docs-only.
 
 ## Primary deliverable priority
 
@@ -402,18 +514,23 @@ pnpm workspaces monorepo:
   generation (via `naming.ts`'s collision-safe filename assignment,
   session 31), axe report, diff report renderer (now includes the Visual
   Changes section, session 25), `flow-map.ts` (forms + API surface)
+- `packages/pages` — static HTML renderer for a treeline output directory
+  (markdown-it + shiki), `meta.json` capture, multi-run index generation
+  (sessions 34-35b, see "V2 additions" above)
 - `packages/cli`'s `orchestrate.ts` — in addition to crawl orchestration,
   now writes `reports/visual-diffs/*.png` diff images for pages with a
   visual change (session 26)
 - `.github/workflows/crawl.yml` — `workflow_dispatch` CI crawl trigger
-  (session 28), see "V2 additions" above
+  (session 28) plus opt-in `gh-pages` publish (sessions 34-35b), see "V2
+  additions" above
 
 ## Stack
 
 TypeScript, Playwright + Patchright, Fastify, SQLite (better-sqlite3),
 Anthropic API (Haiku 4.5 / Sonnet 5) via `@anthropic-ai/sdk`, `@axe-core/
-playwright`, `pixelmatch` + `pngjs` (visual diff comparison), pnpm
-workspaces, Vitest, commander (CLI).
+playwright`, `pixelmatch` + `pngjs` (visual diff comparison), `markdown-it`
++ `shiki` (GitHub Pages HTML rendering), pnpm workspaces, Vitest,
+commander (CLI).
 
 ## Open items
 

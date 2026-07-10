@@ -1,6 +1,6 @@
 # CLAUDE.md — treeline
 
-_Last updated after session 32._
+_Last updated after session 36._
 
 Full design rationale lives in `CONTEXT.md` — read that first for the "why."
 This file is the operational guide: conventions, commands, and hard-won
@@ -88,6 +88,59 @@ workflow run crawl.yml -f url=https://example.com`). Three inputs: `url`
 explicitly turn interpretation on). Output lands as a downloadable
 `actions/upload-artifact` artifact named `treeline-crawl-<run_id>`,
 containing the same `reports/` directory a local crawl produces.
+
+### Publishing to GitHub Pages
+
+Same `crawl.yml` workflow, opt-in via the `publish_to_pages` boolean input
+(default `false`). Trigger from the Actions tab (or `gh workflow run
+crawl.yml -f url=https://example.com -f publish_to_pages=true`). When
+enabled, the run's output is rendered to static HTML by `@treeline/pages`
+(markdown reports → HTML via markdown-it, `.ts` POMs/specs →
+syntax-highlighted HTML via shiki) and pushed to the `gh-pages` branch
+under `runs/<run_number>/`, with `runs/index.html` regenerated to list
+every published run. `false` by default because this repo is public and
+prior real crawls (sessions 28-32) already targeted live third-party
+sites the repo owner doesn't own — publishing every run's content to a
+public URL should be a deliberate per-run choice, not automatic.
+
+A fresh clone/fork needs two one-time repo-settings changes before this
+works at all, neither of which the workflow can set for you:
+
+1. **Settings → Actions → General → Workflow permissions** — must allow
+   "Read and write permissions," or the workflow's `permissions: contents:
+   write` block still gets rejected when it tries to push to `gh-pages`.
+2. **Settings → Pages → Build and deployment → Source** — must be set to
+   "Deploy from a branch," branch `gh-pages`, folder `/ (root)`. This does
+   not happen automatically just because the branch exists and has
+   content pushed to it — a `gh-pages` branch with real HTML on it and no
+   Pages source configured still 404s on the public Pages URL. Confirmed
+   the hard way in session 36: two real published runs landed on
+   `gh-pages` with correct content, and the public URL still 404'd because
+   this setting hadn't been turned on. Also note `scripts/publish.ts
+   index` only ever writes `runs/index.html`, not a root-level
+   `index.html` — the effective landing page is `/runs/index.html`, not
+   `/`, until/unless a root redirect is added.
+
+### Pruning a published run from GitHub Pages
+
+Not automated — a manual recipe, proven for real once the two prerequisites
+above are met:
+
+```
+git fetch origin gh-pages
+git worktree add gh-pages-worktree origin/gh-pages
+git -C gh-pages-worktree rm -rf runs/<run-number-to-remove>
+cd packages/pages
+pnpm exec tsx scripts/publish.ts index "$(realpath ../../gh-pages-worktree/runs)"
+cd ../..
+git -C gh-pages-worktree add -A
+git -C gh-pages-worktree commit -m "Prune run <run-number-to-remove> from gh-pages"
+git -C gh-pages-worktree push origin HEAD:gh-pages
+git worktree remove gh-pages-worktree
+```
+
+The `index` regeneration step is not optional — skipping it leaves a
+`runs/index.html` that still links to the now-deleted run directory.
 
 ### Verify the repo is actually in the state described
 
@@ -252,6 +305,28 @@ status` / look for the `[new branch]`-style confirmation line rather than
   automatically in logs, but the actual crawled content (reports, POMs,
   real business content) is not — worth a moment's thought before crawling
   any new target through the Action.
+- **`inputs.*` vs `github.event.inputs.*` — a boolean input compared with
+  `== 'true'` in a workflow-level `if:` silently always evaluates false.**
+  For a `workflow_dispatch` trigger, the `inputs` context preserves each
+  input's real declared type — a `type: boolean` input is a genuine
+  boolean there. `github.event.inputs`, by contrast, stringifies every
+  input unconditionally. `if: inputs.someBoolInput == 'true'` therefore
+  compares a real boolean against a string; GitHub Actions' `==` between
+  mismatched types coerces both sides to numbers, and `true`/`'true'`
+  don't coerce to the same number, so the condition is false regardless of
+  what the user actually selected — no error, the gated step just quietly
+  never runs. This exact bug shipped in `crawl.yml`'s six
+  `publish_to_pages`-gated steps (session 34-35b) and was only caught by
+  actually triggering the workflow with the input set to `true` and
+  noticing `gh-pages` never changed — not by reading the YAML. Fix: never
+  string-equate a boolean input in an `if:` expression — compare it
+  directly (`if: inputs.someBoolInput`). This is unrelated to
+  `SKIP_INTERPRETATION`'s existing `[ "$SKIP_INTERPRETATION" = "true" ]`
+  bash check elsewhere in the same file, which is correct as written — by
+  the time an input reaches a bash `run:` step via `env:`, it's already a
+  string, so the string comparison there is the right tool. The bug is
+  specific to comparing a boolean against a string inside a YAML-level
+  `if:` expression.
 
 ## Model routing (packages/interpret)
 
