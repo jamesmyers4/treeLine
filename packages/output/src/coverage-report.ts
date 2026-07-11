@@ -1,6 +1,7 @@
 import type { HardPageEntry } from '@treeline/core'
 import type { CrawledPage } from './input.js'
 import type { CoverageReport, FormTestGap, PageCoverageEntry, SkippedElement } from './types.js'
+import { sanitizeMarkdownTableCell, sanitizeMarkdownText } from './markdown-safety.js'
 
 const HIGH_SKIP_THRESHOLD_PERCENT = 50
 
@@ -55,7 +56,7 @@ function renderPageCoverageTable(entries: PageCoverageEntry[]): string[] {
   if (entries.length === 0) return ['None found.', '']
   const lines: string[] = ['| URL | Interactive Elements | Skipped | Skip % |', '| --- | --- | --- | --- |']
   for (const entry of entries) {
-    lines.push(`| ${entry.url} | ${entry.totalInteractive} | ${entry.skippedCount} | ${entry.skipPercent}% |`)
+    lines.push(`| ${sanitizeMarkdownTableCell(entry.url)} | ${entry.totalInteractive} | ${entry.skippedCount} | ${entry.skipPercent}% |`)
   }
   lines.push('')
   return lines
@@ -77,7 +78,8 @@ function renderFormsWithoutTestSection(gaps: FormTestGap[]): string[] {
   }
   lines.push('| URL | Form # | Action | Method | Fields |', '| --- | --- | --- | --- | --- |')
   for (const gap of gaps) {
-    lines.push(`| ${gap.url} | ${gap.formIndex} | ${gap.action || '(none)'} | ${gap.method.toUpperCase()} | ${gap.fieldCount} |`)
+    const action = gap.action ? sanitizeMarkdownTableCell(gap.action) : '(none)'
+    lines.push(`| ${sanitizeMarkdownTableCell(gap.url)} | ${gap.formIndex} | ${action} | ${sanitizeMarkdownTableCell(gap.method.toUpperCase())} | ${gap.fieldCount} |`)
   }
   lines.push('')
   return lines
@@ -91,7 +93,7 @@ function renderHardPagesSection(entries: HardPageEntry[]): string[] {
   }
   lines.push('| URL | Reason | Attempted At |', '| --- | --- | --- |')
   for (const entry of entries) {
-    lines.push(`| ${entry.url} | ${entry.reasonCode} | ${entry.attemptedAt} |`)
+    lines.push(`| ${sanitizeMarkdownTableCell(entry.url)} | ${entry.reasonCode} | ${entry.attemptedAt} |`)
   }
   lines.push('')
   return lines
@@ -113,7 +115,7 @@ export function renderCoverageReportMarkdown(report: CoverageReport): string {
         'coverage metrics below (their interactive-element counts are unknown, not zero) — see the hard-pages section:',
       '',
     )
-    for (const url of report.pagesExcludedFromCoverage) lines.push(`- ${url}`)
+    for (const url of report.pagesExcludedFromCoverage) lines.push(`- ${sanitizeMarkdownText(url)}`)
     lines.push('')
   }
   lines.push('## Zero-coverage pages', '', 'Every interactive element on these pages was skipped — no POM locators were generated at all.', '')

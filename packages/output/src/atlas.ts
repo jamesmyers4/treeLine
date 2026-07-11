@@ -1,6 +1,7 @@
 import type { StoredInterpretation } from '@treeline/core'
 import type { CrawledPage } from './input.js'
 import type { PageAtlasEntry, SiteAtlas } from './types.js'
+import { sanitizeMarkdownTableCell, sanitizeMarkdownText } from './markdown-safety.js'
 
 function buildEntry(page: CrawledPage, interpretation: StoredInterpretation | undefined): PageAtlasEntry {
   const testIdCount = page.interactiveElements.filter((el) => el.testId !== null).length
@@ -46,23 +47,23 @@ function formatConfidence(confidence: number | null): string {
 
 function renderPageSection(entry: PageAtlasEntry): string[] {
   const heading = entry.title !== '' ? entry.title : entry.url
-  const lines: string[] = [`## ${heading}`, '', entry.url, '']
+  const lines: string[] = [`## ${sanitizeMarkdownText(heading)}`, '', sanitizeMarkdownText(entry.url), '']
   if (!entry.interpreted) {
     lines.push('This page has not yet been interpreted. Check hard-pages/ for details.', '')
     return lines
   }
   lines.push(
-    `Page type: ${entry.pageType}`,
+    `Page type: ${sanitizeMarkdownText(entry.pageType!)}`,
     '',
     '### Purpose',
     '',
-    `${entry.purpose}`,
+    sanitizeMarkdownText(entry.purpose!),
     '',
     '### Key data entities',
     '',
   )
   for (const entity of entry.keyDataEntities) {
-    lines.push(`- ${entity}`)
+    lines.push(`- ${sanitizeMarkdownText(entity)}`)
   }
   lines.push('')
   return lines
@@ -80,8 +81,9 @@ export function renderAtlasMarkdown(atlas: SiteAtlas): string {
     '| --- | --- | --- | --- | --- | --- |',
   ]
   for (const entry of atlas.pages) {
+    const pageType = entry.pageType !== null ? sanitizeMarkdownTableCell(entry.pageType) : '—'
     lines.push(
-      `| ${entry.url} | ${entry.pageType ?? '—'} | ${formatConfidence(entry.confidence)} | ${entry.interpreted ? 'Yes' : 'No'} | ${entry.interactiveElementCount} | ${entry.testIdCount} |`,
+      `| ${sanitizeMarkdownTableCell(entry.url)} | ${pageType} | ${formatConfidence(entry.confidence)} | ${entry.interpreted ? 'Yes' : 'No'} | ${entry.interactiveElementCount} | ${entry.testIdCount} |`,
     )
   }
   lines.push('')

@@ -1,5 +1,6 @@
 import type { CrawlDiff, SelectorCandidateChange, VisualChange } from '@treeline/core'
 import { urlHash } from '@treeline/core'
+import { sanitizeMarkdownTableCell, sanitizeMarkdownText } from './markdown-safety.js'
 
 export type SelectorChangeClassification = 'regression' | 'improvement' | 'other'
 
@@ -13,7 +14,7 @@ export function classifyChange(change: SelectorCandidateChange): SelectorChangeC
 
 function describeChange(change: SelectorCandidateChange): string {
   const suffix = change.occurrenceIndex > 0 ? ` [${change.occurrenceIndex}]` : ''
-  return `${change.role} '${change.accessibleName}'${suffix}`
+  return `${sanitizeMarkdownTableCell(change.role)} '${sanitizeMarkdownTableCell(change.accessibleName)}'${suffix}`
 }
 
 function formatFlags(stable: boolean, uniqueOnPage: boolean): string {
@@ -25,7 +26,7 @@ function renderChangesTable(changes: SelectorCandidateChange[], emptyMessage: st
   const lines: string[] = ['| URL | Element | Before | After |', '| --- | --- | --- | --- |']
   for (const change of changes) {
     lines.push(
-      `| ${change.url} | ${describeChange(change)} | ${formatFlags(change.baselineStable, change.baselineUniqueOnPage)} | ${formatFlags(change.currentStable, change.currentUniqueOnPage)} |`,
+      `| ${sanitizeMarkdownTableCell(change.url)} | ${describeChange(change)} | ${formatFlags(change.baselineStable, change.baselineUniqueOnPage)} | ${formatFlags(change.currentStable, change.currentUniqueOnPage)} |`,
     )
   }
   lines.push('')
@@ -34,7 +35,7 @@ function renderChangesTable(changes: SelectorCandidateChange[], emptyMessage: st
 
 function renderUrlList(urls: string[], emptyMessage: string): string[] {
   if (urls.length === 0) return [emptyMessage, '']
-  const lines = urls.map((url) => `- ${url}`)
+  const lines = urls.map((url) => `- ${sanitizeMarkdownText(url)}`)
   lines.push('')
   return lines
 }
@@ -43,7 +44,7 @@ function renderTitleChangesTable(titleChanges: CrawlDiff['titleChanges']): strin
   if (titleChanges.length === 0) return ['No title changes found.', '']
   const lines: string[] = ['| URL | Baseline Title | Current Title |', '| --- | --- | --- |']
   for (const change of titleChanges) {
-    lines.push(`| ${change.url} | ${change.baselineTitle} | ${change.currentTitle} |`)
+    lines.push(`| ${sanitizeMarkdownTableCell(change.url)} | ${sanitizeMarkdownTableCell(change.baselineTitle)} | ${sanitizeMarkdownTableCell(change.currentTitle)} |`)
   }
   lines.push('')
   return lines
@@ -84,7 +85,7 @@ function renderVisualChangedTable(changed: VisualChange[]): string[] {
   if (changed.length === 0) return ['No pages with a visual change.', '']
   const lines: string[] = ['| URL | Diff % | Image |', '| --- | --- | --- |']
   for (const change of changed) {
-    lines.push(`| ${change.url} | ${round1(change.diffPixelPercent!)}% | ![Visual diff](visual-diffs/${urlHash(change.url)}.png) |`)
+    lines.push(`| ${sanitizeMarkdownTableCell(change.url)} | ${round1(change.diffPixelPercent!)}% | ![Visual diff](visual-diffs/${urlHash(change.url)}.png) |`)
   }
   lines.push('')
   return lines
@@ -92,7 +93,7 @@ function renderVisualChangedTable(changed: VisualChange[]): string[] {
 
 function renderVisualUncomparableList(uncomparable: VisualChange[]): string[] {
   if (uncomparable.length === 0) return ['No pages failed comparison.', '']
-  const lines = uncomparable.map((change) => `- ${change.url} (${change.status})`)
+  const lines = uncomparable.map((change) => `- ${sanitizeMarkdownText(change.url)} (${change.status})`)
   lines.push('')
   return lines
 }

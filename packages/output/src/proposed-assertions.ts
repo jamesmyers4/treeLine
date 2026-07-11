@@ -10,6 +10,10 @@ const PROPOSED_FILE_HEADER = `// AI-PROPOSED TEST — UNVERIFIED, NOT RUN AGAINS
 // the page's captured aria snapshot and form structure. Review every line
 // against the real page before removing test.skip.`
 
+function toSafeComment(text: string): string {
+  return text.replace(/\r\n|\r|\n/g, ' ')
+}
+
 function findSubmitField(form: CapturedForm | undefined): CapturedFormField | undefined {
   return form?.fields.find((field) => field.role === 'button')
 }
@@ -57,8 +61,8 @@ ${fieldLines.join('\n')}
 ${buildSubmitLine(form)}
 
   // Unverified guess — treeline has not observed this page's real post-submission behavior:
-  // ${assertion.successAssertion}
-  // ${assertion.successAssertionCaveat}
+  // ${toSafeComment(assertion.successAssertion)}
+  // ${toSafeComment(assertion.successAssertionCaveat)}
 })
 `
 }

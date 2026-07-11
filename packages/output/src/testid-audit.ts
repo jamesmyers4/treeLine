@@ -1,5 +1,6 @@
 import type { CrawledPage } from './input.js'
 import type { PageTestIdCoverage, TestIdAuditReport, TestIdGapEntry } from './types.js'
+import { sanitizeMarkdownTableCell, sanitizeMarkdownText } from './markdown-safety.js'
 
 function round1(value: number): number {
   return Math.round(value * 10) / 10
@@ -35,14 +36,14 @@ export function renderTestIdAuditMarkdown(report: TestIdAuditReport): string {
     '| --- | --- | --- |',
   ]
   for (const page of report.pages) {
-    lines.push(`| ${page.url} | ${page.coveragePercent}% | ${page.gaps.length} |`)
+    lines.push(`| ${sanitizeMarkdownTableCell(page.url)} | ${page.coveragePercent}% | ${page.gaps.length} |`)
   }
   lines.push('')
   for (const page of report.pages) {
     if (page.gaps.length === 0) continue
-    lines.push(`## Gaps: ${page.url}`, '')
+    lines.push(`## Gaps: ${sanitizeMarkdownText(page.url)}`, '')
     for (const gap of page.gaps) {
-      lines.push(`- ${gap.role} '${gap.accessibleName}'`)
+      lines.push(`- ${sanitizeMarkdownText(gap.role)} '${sanitizeMarkdownText(gap.accessibleName)}'`)
     }
     lines.push('')
   }

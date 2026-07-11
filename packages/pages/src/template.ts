@@ -20,6 +20,7 @@ export function escapeHtml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 export function htmlPage(title: string, bodyHtml: string, backHref: string | null): string {

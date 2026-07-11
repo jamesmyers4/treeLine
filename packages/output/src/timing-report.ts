@@ -1,5 +1,6 @@
 import type { CrawledPage } from './input.js'
 import type { LateAppearingElementEntry, SlowNetworkRequestEntry, SlowPageEntry, TimingReport } from './types.js'
+import { sanitizeMarkdownTableCell } from './markdown-safety.js'
 
 // Real crawls across three site profiles for this session — a minimal static
 // page (example.com, pageLoadMs 725), a real content-heavy site
@@ -95,7 +96,7 @@ function renderSlowPagesSection(report: TimingReport): string[] {
   }
   lines.push('| URL | Page Load (ms) | Over threshold |', '| --- | --- | --- |')
   for (const entry of report.slowestPages) {
-    lines.push(`| ${entry.url} | ${entry.pageLoadMs} | ${entry.overThreshold ? 'Yes' : 'No'} |`)
+    lines.push(`| ${sanitizeMarkdownTableCell(entry.url)} | ${entry.pageLoadMs} | ${entry.overThreshold ? 'Yes' : 'No'} |`)
   }
   lines.push('')
   return lines
@@ -117,7 +118,7 @@ function renderSlowNetworkRequestsSection(report: TimingReport): string[] {
   }
   lines.push('| Page | Method | Request URL | Duration (ms) | Over threshold |', '| --- | --- | --- | --- | --- |')
   for (const entry of report.slowestNetworkRequests) {
-    lines.push(`| ${entry.pageUrl} | ${entry.method} | ${entry.requestUrl} | ${entry.durationMs} | ${entry.overThreshold ? 'Yes' : 'No'} |`)
+    lines.push(`| ${sanitizeMarkdownTableCell(entry.pageUrl)} | ${sanitizeMarkdownTableCell(entry.method)} | ${sanitizeMarkdownTableCell(entry.requestUrl)} | ${entry.durationMs} | ${entry.overThreshold ? 'Yes' : 'No'} |`)
   }
   lines.push('')
   return lines
@@ -141,7 +142,7 @@ function renderHighLatencyElementsSection(report: TimingReport): string[] {
   }
   lines.push('| Page | Role | Accessible Name | Appeared At (ms) | Over threshold |', '| --- | --- | --- | --- | --- |')
   for (const entry of report.slowestAppearingElements) {
-    lines.push(`| ${entry.pageUrl} | ${entry.role} | ${entry.accessibleName} | ${entry.appearedAtMs} | ${entry.overThreshold ? 'Yes' : 'No'} |`)
+    lines.push(`| ${sanitizeMarkdownTableCell(entry.pageUrl)} | ${sanitizeMarkdownTableCell(entry.role)} | ${sanitizeMarkdownTableCell(entry.accessibleName)} | ${entry.appearedAtMs} | ${entry.overThreshold ? 'Yes' : 'No'} |`)
   }
   lines.push('')
   return lines

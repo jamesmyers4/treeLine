@@ -1,6 +1,7 @@
 import type { AxeIncompleteResult, AxeViolation } from '@treeline/acquire'
 import type { CrawledPage } from './input.js'
 import type { AxeFindingSummary, AxeReport, PageAxeReport } from './types.js'
+import { sanitizeMarkdownTableCell, sanitizeMarkdownText } from './markdown-safety.js'
 
 function toSummary(finding: AxeViolation | AxeIncompleteResult): AxeFindingSummary {
   const firstNode = finding.nodes[0]
@@ -34,14 +35,14 @@ function renderFindingsTable(findings: AxeFindingSummary[], emptyMessage: string
   if (findings.length === 0) return [emptyMessage, '']
   const lines: string[] = ['| Rule | Impact | Affected Elements | Example Selector | Help |', '| --- | --- | --- | --- | --- |']
   for (const finding of findings) {
-    lines.push(`| ${finding.id} | ${finding.impact ?? '—'} | ${finding.affectedElementCount} | ${finding.exampleSelector} | ${finding.help} |`)
+    lines.push(`| ${finding.id} | ${finding.impact ?? '—'} | ${finding.affectedElementCount} | ${sanitizeMarkdownTableCell(finding.exampleSelector)} | ${finding.help} |`)
   }
   lines.push('')
   return lines
 }
 
 function renderPageSection(page: PageAxeReport): string[] {
-  const lines: string[] = [`## ${page.url}`, '', '### Violations', '']
+  const lines: string[] = [`## ${sanitizeMarkdownText(page.url)}`, '', '### Violations', '']
   lines.push(...renderFindingsTable(page.violations, 'No violations found.'))
   lines.push('### Needs Manual Review', '')
   lines.push(...renderFindingsTable(page.needsReview, 'Nothing flagged for manual review.'))
@@ -60,7 +61,7 @@ export function renderAxeReportMarkdown(report: AxeReport): string {
     '| --- | --- | --- |',
   ]
   for (const page of report.pages) {
-    lines.push(`| ${page.url} | ${page.violations.length} | ${page.needsReview.length} |`)
+    lines.push(`| ${sanitizeMarkdownTableCell(page.url)} | ${page.violations.length} | ${page.needsReview.length} |`)
   }
   lines.push('')
   for (const page of report.pages) {

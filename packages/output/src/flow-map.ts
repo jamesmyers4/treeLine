@@ -1,6 +1,7 @@
 import type { CapturedForm, CapturedFormField, NetworkEntry } from '@treeline/acquire'
 import type { CrawledPage } from './input.js'
 import type { ApiSurfaceEntry, FlowMap, PageFormsEntry } from './types.js'
+import { sanitizeMarkdownTableCell, sanitizeMarkdownText } from './markdown-safety.js'
 
 const API_SURFACE_RESOURCE_TYPES = new Set(['xhr', 'fetch', 'websocket', 'eventsource'])
 
@@ -54,8 +55,10 @@ export function generateFlowMap(pages: CrawledPage[]): FlowMap {
 function renderFormFieldsTable(fields: CapturedFormField[]): string[] {
   const lines: string[] = ['| Role | Accessible Name | Input Type | Required | Pattern |', '| --- | --- | --- | --- | --- |']
   for (const field of fields) {
+    const inputType = field.inputType !== null ? sanitizeMarkdownTableCell(field.inputType) : '—'
+    const pattern = field.pattern !== null ? sanitizeMarkdownTableCell(field.pattern) : '—'
     lines.push(
-      `| ${field.role} | ${field.accessibleName} | ${field.inputType ?? '—'} | ${field.required ? 'Yes' : 'No'} | ${field.pattern ?? '—'} |`,
+      `| ${sanitizeMarkdownTableCell(field.role)} | ${sanitizeMarkdownTableCell(field.accessibleName)} | ${inputType} | ${field.required ? 'Yes' : 'No'} | ${pattern} |`,
     )
   }
   lines.push('')
@@ -63,13 +66,14 @@ function renderFormFieldsTable(fields: CapturedFormField[]): string[] {
 }
 
 function renderForm(form: CapturedForm): string[] {
-  const lines: string[] = [`Action: ${form.action || '(none)'}`, `Method: ${form.method.toUpperCase()}`, '']
+  const action = form.action ? sanitizeMarkdownText(form.action) : '(none)'
+  const lines: string[] = [`Action: ${action}`, `Method: ${sanitizeMarkdownText(form.method.toUpperCase())}`, '']
   lines.push(...renderFormFieldsTable(form.fields))
   return lines
 }
 
 function renderPageFormsSection(entry: PageFormsEntry): string[] {
-  const lines: string[] = [`## ${entry.url}`, '']
+  const lines: string[] = [`## ${sanitizeMarkdownText(entry.url)}`, '']
   for (const form of entry.forms) {
     lines.push(...renderForm(form))
   }
@@ -82,7 +86,8 @@ function renderApiSurfaceTable(entries: ApiSurfaceEntry[]): string[] {
   for (const entry of entries) {
     const remaining = entry.totalPageCount - entry.samplePages.length
     const more = remaining > 0 ? ` (+${remaining} more)` : ''
-    lines.push(`| ${entry.method} | ${entry.url} | ${entry.occurrenceCount} | ${entry.samplePages.join(', ')}${more} |`)
+    const samplePages = entry.samplePages.map(sanitizeMarkdownTableCell).join(', ')
+    lines.push(`| ${sanitizeMarkdownTableCell(entry.method)} | ${sanitizeMarkdownTableCell(entry.url)} | ${entry.occurrenceCount} | ${samplePages}${more} |`)
   }
   lines.push('')
   return lines

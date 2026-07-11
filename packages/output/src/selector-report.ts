@@ -2,6 +2,7 @@ import type { DomInteractiveElement } from '@treeline/acquire'
 import { computeSelectorCandidates } from '@treeline/core'
 import type { CrawledPage } from './input.js'
 import type { PageSelectorReport, SelectorCandidate, SelectorReport, SelectorReportEntry } from './types.js'
+import { sanitizeMarkdownTableCell, sanitizeMarkdownText } from './markdown-safety.js'
 
 function describeElement(el: DomInteractiveElement): string {
   if (el.accessibleName) return `${el.role} '${el.accessibleName}'`
@@ -31,7 +32,7 @@ export function renderSelectorReportMarkdown(report: SelectorReport): string {
   const lines: string[] = ['# Selector Stability Report', '', `Generated: ${report.generatedAt}`, '']
   for (const page of report.pages) {
     lines.push(
-      `## ${page.url}`,
+      `## ${sanitizeMarkdownText(page.url)}`,
       '',
       '| Element | Strategy | Selector | Stable | Unique |',
       '| --- | --- | --- | --- | --- |',
@@ -39,7 +40,7 @@ export function renderSelectorReportMarkdown(report: SelectorReport): string {
     for (const entry of page.entries) {
       for (const candidate of entry.candidates) {
         lines.push(
-          `| ${entry.elementDescription} | ${candidate.strategy} | ${candidate.value} | ${candidate.stable ? 'Yes' : 'No'} | ${candidate.uniqueOnPage ? 'Yes' : 'No'} |`,
+          `| ${sanitizeMarkdownTableCell(entry.elementDescription)} | ${candidate.strategy} | ${sanitizeMarkdownTableCell(candidate.value)} | ${candidate.stable ? 'Yes' : 'No'} | ${candidate.uniqueOnPage ? 'Yes' : 'No'} |`,
         )
       }
     }
