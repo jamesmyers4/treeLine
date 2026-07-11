@@ -25,7 +25,7 @@ function makeForm(overrides: Partial<CapturedForm>): CapturedForm {
 }
 
 function makeNetworkEntry(overrides: Partial<NetworkEntry>): NetworkEntry {
-  return { url: 'https://example.com/api/data', method: 'GET', status: 200, resourceType: 'xhr', ...overrides }
+  return { url: 'https://example.com/api/data', method: 'GET', status: 200, resourceType: 'xhr', durationMs: 50, ...overrides }
 }
 
 function makePage(overrides: Partial<CrawledPage>): CrawledPage {
@@ -37,6 +37,7 @@ function makePage(overrides: Partial<CrawledPage>): CrawledPage {
     networkLog: [],
     screenshotPath: null,
     capturedAt: new Date().toISOString(),
+    pageLoadMs: null,
     interactiveElements: [],
     axeViolations: [],
     axeIncomplete: [],

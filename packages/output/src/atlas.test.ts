@@ -27,6 +27,7 @@ function makePage(overrides: Partial<CrawledPage>): CrawledPage {
     networkLog: [],
     screenshotPath: null,
     capturedAt: new Date().toISOString(),
+    pageLoadMs: null,
     interactiveElements: [],
     axeViolations: [],
     axeIncomplete: [],

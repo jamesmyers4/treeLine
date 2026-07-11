@@ -18,6 +18,7 @@ const page: PageState = {
   title: candidate.title!,
   ariaSnapshot: candidate.ariaSnapshot!,
   capturedAt: candidate.capturedAt!,
+  pageLoadMs: candidate.pageLoadMs ?? 0,
 };
 console.log(`interpreting: ${page.url}`);
 const result = await interpretPage(page);

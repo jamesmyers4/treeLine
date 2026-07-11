@@ -125,6 +125,7 @@ function makePage(
     networkLog: [],
     screenshot,
     capturedAt: new Date().toISOString(),
+    pageLoadMs: 500,
     interactiveElements,
     axeViolations: [],
     axeIncomplete: [],

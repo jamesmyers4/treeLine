@@ -22,6 +22,7 @@ function makePageState(url: string): PageState {
     networkLog: [],
     screenshot: null,
     capturedAt: '2026-01-01T00:00:00.000Z',
+    pageLoadMs: 500,
     interactiveElements: [],
     axeViolations: [],
     axeIncomplete: [],

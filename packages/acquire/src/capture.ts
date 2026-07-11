@@ -95,18 +95,26 @@ async function capturePageWithBrowser(url: string, browser: Browser): Promise<Pa
   const context = await browser.newContext()
   const page = await context.newPage()
   const networkLog: NetworkEntry[] = []
-  const pending = new Map<string, { method: string; resourceType: string }>()
+  const pending = new Map<string, { method: string; resourceType: string; startedAt: number }>()
   page.on('request', (req) => {
-    pending.set(req.url(), { method: req.method(), resourceType: req.resourceType() })
+    pending.set(req.url(), { method: req.method(), resourceType: req.resourceType(), startedAt: Date.now() })
   })
   page.on('response', (res) => {
     const req = pending.get(res.url())
     if (req) {
-      networkLog.push({ url: res.url(), method: req.method, status: res.status(), resourceType: req.resourceType })
+      networkLog.push({
+        url: res.url(),
+        method: req.method,
+        status: res.status(),
+        resourceType: req.resourceType,
+        durationMs: Date.now() - req.startedAt,
+      })
     }
   })
+  const navigationStart = Date.now()
   await page.goto(url, { waitUntil: 'domcontentloaded' })
   await page.waitForLoadState('networkidle').catch(() => undefined)
+  const pageLoadMs = Date.now() - navigationStart
   const title = await page.title()
   const ariaSnapshot = await page.locator('body').ariaSnapshot()
   let axeViolations: AxeViolation[] = []
@@ -257,6 +265,7 @@ async function capturePageWithBrowser(url: string, browser: Browser): Promise<Pa
     networkLog,
     screenshot,
     capturedAt: new Date().toISOString(),
+    pageLoadMs,
     interactiveElements,
     axeViolations,
     axeIncomplete,

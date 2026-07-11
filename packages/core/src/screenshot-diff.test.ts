@@ -44,6 +44,7 @@ function makePage(url: string, screenshot: Buffer | null): PageState {
     networkLog: [],
     screenshot,
     capturedAt: new Date().toISOString(),
+    pageLoadMs: 500,
     interactiveElements: [],
     axeViolations: [],
     axeIncomplete: [],

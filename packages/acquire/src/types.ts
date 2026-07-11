@@ -3,6 +3,7 @@ export interface NetworkEntry {
   method: string
   status: number
   resourceType: string
+  durationMs: number
 }
 
 export interface DomInteractiveElement {
@@ -66,6 +67,7 @@ export interface PageState {
   networkLog: NetworkEntry[]
   screenshot: Buffer | null
   capturedAt: string
+  pageLoadMs: number
   interactiveElements: DomInteractiveElement[]
   axeViolations: AxeViolation[]
   axeIncomplete: AxeIncompleteResult[]

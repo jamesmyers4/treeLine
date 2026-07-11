@@ -26,6 +26,7 @@ function makePage(url: string, interactiveElements: DomInteractiveElement[]): Cr
     networkLog: [],
     screenshotPath: null,
     capturedAt: new Date().toISOString(),
+    pageLoadMs: null,
     interactiveElements,
     axeViolations: [],
     axeIncomplete: [],

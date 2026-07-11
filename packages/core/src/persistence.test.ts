@@ -17,6 +17,7 @@ function makePage(url: string, forms: CapturedForm[] = [], screenshot: Buffer | 
     networkLog: [],
     screenshot,
     capturedAt: new Date().toISOString(),
+    pageLoadMs: 842,
     interactiveElements: [],
     axeViolations: [],
     axeIncomplete: [],
@@ -102,6 +103,26 @@ describe('forms persistence', () => {
     expect(db.pageExists('https://example.com/')).toBe(true)
     expect(db.pageExists('https://example.com/other')).toBe(false)
     db.close()
+  })
+})
+
+describe('pageLoadMs persistence', () => {
+  it('round-trips a non-zero pageLoadMs', () => {
+    const page = makePage('https://example.com/')
+    page.pageLoadMs = 1337
+    const db = openCrawlDb(dbPath)
+    db.recordPageState(page)
+    const pages = db.getAllPages()
+    db.close()
+    expect(pages[0].pageLoadMs).toBe(1337)
+  })
+
+  it('stores null pageLoadMs for pages recorded via markFailed', () => {
+    const db = openCrawlDb(dbPath)
+    db.markFailed('https://example.com/failed', 'timeout')
+    const pages = db.getAllPages()
+    db.close()
+    expect(pages[0].pageLoadMs).toBeNull()
   })
 })
 

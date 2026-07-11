@@ -15,6 +15,7 @@ function makePage(url: string, title: string, interactiveElements: DomInteractiv
     networkLog: [],
     screenshot: null,
     capturedAt: new Date().toISOString(),
+    pageLoadMs: 500,
     interactiveElements,
     axeViolations: [],
     axeIncomplete: [],

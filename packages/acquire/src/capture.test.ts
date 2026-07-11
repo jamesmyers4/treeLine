@@ -13,6 +13,12 @@ describe('capturePage', () => {
     expect(Array.isArray(result.networkLog)).toBe(true)
     expect(Buffer.isBuffer(result.screenshot)).toBe(true)
     expect(typeof result.capturedAt).toBe('string')
+    expect(typeof result.pageLoadMs).toBe('number')
+    expect(result.pageLoadMs).toBeGreaterThan(0)
+    for (const entry of result.networkLog) {
+      expect(typeof entry.durationMs).toBe('number')
+      expect(entry.durationMs).toBeGreaterThanOrEqual(0)
+    }
     expect(Array.isArray(result.interactiveElements)).toBe(true)
     expect(result.interactiveElements.length).toBeGreaterThan(0)
     expect(Array.isArray(result.axeViolations)).toBe(true)

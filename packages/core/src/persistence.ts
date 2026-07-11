@@ -26,6 +26,7 @@ export function openCrawlDb(dbPath: string) {
       networkLog TEXT,
       screenshotPath TEXT,
       capturedAt TEXT,
+      pageLoadMs INTEGER,
       status TEXT,
       interactiveElements TEXT,
       axeViolations TEXT,
@@ -60,8 +61,8 @@ export function openCrawlDb(dbPath: string) {
         screenshotPath = join('screenshots', fileName)
       }
       db.prepare(`
-        INSERT OR REPLACE INTO pages (url, title, ariaSnapshot, links, networkLog, screenshotPath, capturedAt, status, interactiveElements, axeViolations, axeIncomplete, forms)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO pages (url, title, ariaSnapshot, links, networkLog, screenshotPath, capturedAt, pageLoadMs, status, interactiveElements, axeViolations, axeIncomplete, forms)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         pageState.url,
         pageState.title,
@@ -70,6 +71,7 @@ export function openCrawlDb(dbPath: string) {
         JSON.stringify(pageState.networkLog),
         screenshotPath,
         pageState.capturedAt,
+        pageState.pageLoadMs,
         'ok',
         JSON.stringify(pageState.interactiveElements),
         JSON.stringify(pageState.axeViolations),
@@ -104,13 +106,14 @@ export function openCrawlDb(dbPath: string) {
       networkLog: NetworkEntry[]
       screenshotPath: string | null
       capturedAt: string | null
+      pageLoadMs: number | null
       interactiveElements: DomInteractiveElement[]
       axeViolations: AxeViolation[]
       axeIncomplete: AxeIncompleteResult[]
       forms: CapturedForm[]
       status: string
     }> {
-      const rows = db.prepare('SELECT * FROM pages').all() as Array<Record<string, string | Buffer | null>>
+      const rows = db.prepare('SELECT * FROM pages').all() as Array<Record<string, string | number | Buffer | null>>
       return rows.map((row) => ({
         url: (row.url as string) ?? '',
         title: (row.title as string) ?? null,
@@ -119,6 +122,7 @@ export function openCrawlDb(dbPath: string) {
         networkLog: row.networkLog ? (JSON.parse(row.networkLog as string) as NetworkEntry[]) : [],
         screenshotPath: (row.screenshotPath as string) ?? null,
         capturedAt: (row.capturedAt as string) ?? null,
+        pageLoadMs: (row.pageLoadMs as number) ?? null,
         interactiveElements: row.interactiveElements
           ? (JSON.parse(row.interactiveElements as string) as DomInteractiveElement[])
           : [],
