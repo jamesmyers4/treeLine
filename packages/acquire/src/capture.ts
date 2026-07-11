@@ -3,6 +3,34 @@ import type { Browser, Page } from 'playwright'
 import type { AcquireOptions, AxeIncompleteResult, AxeViolation, CapturedForm, CaptureHandler, DomInteractiveElement, NetworkEntry, PageState } from './types.js'
 import { launchHardened } from './launch.js'
 
+const INTERACTIVE_SELECTOR = 'button, a[href], input, select, textarea, [role]'
+const APPEARED_ATTR = 'data-treeline-appeared-at'
+
+async function installAppearanceTracker(page: Page): Promise<void> {
+  await page.addInitScript(
+    ({ selector, attr }) => {
+      const t0 = Date.now()
+      let domReady = false
+      document.addEventListener('DOMContentLoaded', () => { domReady = true }, { once: true })
+      const tag = (el: Element) => {
+        if (!el.hasAttribute(attr) && el.matches(selector)) el.setAttribute(attr, String(Date.now() - t0))
+      }
+      const observer = new MutationObserver((mutations) => {
+        if (!domReady) return
+        for (const mutation of mutations) {
+          mutation.addedNodes.forEach((node) => {
+            if (!(node instanceof Element)) return
+            tag(node)
+            node.querySelectorAll(selector).forEach((child) => tag(child))
+          })
+        }
+      })
+      observer.observe(document, { childList: true, subtree: true })
+    },
+    { selector: INTERACTIVE_SELECTOR, attr: APPEARED_ATTR },
+  )
+}
+
 export async function extractForms(page: Page): Promise<CapturedForm[]> {
   return page.$$eval('form', (formEls) => {
     const computeCssPath = (target: Element): string => {
@@ -111,6 +139,7 @@ async function capturePageWithBrowser(url: string, browser: Browser): Promise<Pa
       })
     }
   })
+  await installAppearanceTracker(page)
   const navigationStart = Date.now()
   await page.goto(url, { waitUntil: 'domcontentloaded' })
   await page.waitForLoadState('networkidle').catch(() => undefined)
@@ -152,8 +181,8 @@ async function capturePageWithBrowser(url: string, browser: Browser): Promise<Pa
     (els as HTMLAnchorElement[]).map((el) => el.href).filter(Boolean),
   )
   const interactiveElements: DomInteractiveElement[] = await page.$$eval(
-    'button, a[href], input, select, textarea, [role]',
-    (els) =>
+    INTERACTIVE_SELECTOR,
+    (els, attr) =>
       els.map((el) => {
         const tagName = el.tagName.toLowerCase()
         const explicitRole = el.getAttribute('role')
@@ -247,8 +276,10 @@ async function capturePageWithBrowser(url: string, browser: Browser): Promise<Pa
           classList: Array.from(el.classList),
           cssPath: computeCssPath(el),
           xpath: computeXPath(el),
+          appearedAtMs: el.hasAttribute(attr) ? Number(el.getAttribute(attr)) : null,
         }
       }),
+    APPEARED_ATTR,
   )
   const forms = await extractForms(page)
   let screenshot: Buffer | null = null

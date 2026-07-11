@@ -33,6 +33,7 @@ function makeElement(overrides: Partial<DomInteractiveElement>): DomInteractiveE
     classList: [],
     cssPath: 'body > div',
     xpath: '/html/body/div',
+    appearedAtMs: null,
     ...overrides,
   }
 }

@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import type { CapturedForm, PageState } from '@treeline/acquire'
+import type { CapturedForm, DomInteractiveElement, PageState } from '@treeline/acquire'
 import type { CrawlConfig } from './types.js'
 import { openCrawlDb } from './persistence.js'
 
@@ -123,6 +123,42 @@ describe('pageLoadMs persistence', () => {
     const pages = db.getAllPages()
     db.close()
     expect(pages[0].pageLoadMs).toBeNull()
+  })
+})
+
+describe('appearedAtMs persistence (per-element appearance latency)', () => {
+  it('round-trips a real appearedAtMs value alongside a null one within interactiveElements', () => {
+    const elements: DomInteractiveElement[] = [
+      {
+        role: 'button',
+        accessibleName: 'Immediate',
+        testId: null,
+        tagName: 'button',
+        elementId: null,
+        classList: [],
+        cssPath: 'body > button',
+        xpath: '/html/body/button',
+        appearedAtMs: null,
+      },
+      {
+        role: 'link',
+        accessibleName: 'Delayed',
+        testId: null,
+        tagName: 'a',
+        elementId: null,
+        classList: [],
+        cssPath: 'body > a',
+        xpath: '/html/body/a',
+        appearedAtMs: 842,
+      },
+    ]
+    const page = makePage('https://example.com/')
+    page.interactiveElements = elements
+    const db = openCrawlDb(dbPath)
+    db.recordPageState(page)
+    const pages = db.getAllPages()
+    db.close()
+    expect(pages[0].interactiveElements).toEqual(elements)
   })
 })
 

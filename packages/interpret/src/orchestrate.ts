@@ -6,6 +6,8 @@ import { interpretPage } from './interpret.js'
 export async function runInterpretation(dbPath: string, hardPagesDir: string): Promise<void> {
   const db = openCrawlDb(dbPath)
   const pages = db.getAllPages()
+  // recordPageState always sets pageLoadMs atomically with title/ariaSnapshot/capturedAt; markFailed leaves
+  // all four null. This filter guarantees pageLoadMs is non-null below, same as the other three fields.
   const capturedPages = pages.filter((p) => p.title !== null && p.ariaSnapshot !== null && p.capturedAt !== null)
   for (const page of capturedPages) {
     if (db.getInterpretation(page.url)) continue
@@ -14,7 +16,7 @@ export async function runInterpretation(dbPath: string, hardPagesDir: string): P
       title: page.title!,
       ariaSnapshot: page.ariaSnapshot!,
       capturedAt: page.capturedAt!,
-      pageLoadMs: page.pageLoadMs ?? 0,
+      pageLoadMs: page.pageLoadMs!,
       screenshot: null,
     }
     try {

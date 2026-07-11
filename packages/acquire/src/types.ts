@@ -15,6 +15,7 @@ export interface DomInteractiveElement {
   classList: string[]
   cssPath: string
   xpath: string
+  appearedAtMs: number | null
 }
 
 export interface AxeViolationNode {
