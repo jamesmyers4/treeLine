@@ -47,6 +47,7 @@ function makeInterpretation(overrides: Partial<StoredInterpretation>): StoredInt
     keyDataEntities: ['user', 'email'],
     confidence: 0.95,
     interpretedAt: new Date().toISOString(),
+    proposedAssertion: null,
     ...overrides,
   }
 }

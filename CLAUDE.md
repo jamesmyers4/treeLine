@@ -108,7 +108,7 @@ works at all, neither of which the workflow can set for you:
 
 1. **Settings → Actions → General → Workflow permissions** — must allow
    "Read and write permissions," or the workflow's `permissions: contents:
-   write` block still gets rejected when it tries to push to `gh-pages`.
+write` block still gets rejected when it tries to push to `gh-pages`.
 2. **Settings → Pages → Build and deployment → Source** — must be set to
    "Deploy from a branch," branch `gh-pages`, folder `/ (root)`. This does
    not happen automatically just because the branch exists and has
@@ -117,7 +117,7 @@ works at all, neither of which the workflow can set for you:
    the hard way in session 36: two real published runs landed on
    `gh-pages` with correct content, and the public URL still 404'd because
    this setting hadn't been turned on. Also note `scripts/publish.ts
-   index` only ever writes `runs/index.html`, not a root-level
+index` only ever writes `runs/index.html`, not a root-level
    `index.html` — the effective landing page is `/runs/index.html`, not
    `/`, until/unless a root redirect is added.
 
@@ -165,7 +165,7 @@ Then confirm the real end-to-end crawl command still works:
 
 ```
 cd packages/cli
-echo $ANTHROPIC_API_KEY
+echo "${ANTHROPIC_API_KEY:0:8}..."
 ```
 
 If that's blank, set it (`export ANTHROPIC_API_KEY=sk-ant-...`) before the
@@ -258,8 +258,8 @@ status` / look for the `[new branch]`-style confirmation line rather than
   visual diffing existed. A live site won't reliably re-render a genuine
   pixel-level change on demand between two crawls. The technique proven
   across sessions 23-26: run one real crawl, then manually swap the
-  on-disk screenshot file for a *different* image of the *same pixel
-  dimensions* before running `diff` a second time — this forces a genuine
+  on-disk screenshot file for a _different_ image of the _same pixel
+  dimensions_ before running `diff` a second time — this forces a genuine
   `'changed'` status (as opposed to `'dimensions-changed'`, which is a
   different code path) so the comparison, threshold, and report-rendering
   logic can all be exercised for real. Worth remembering for any future

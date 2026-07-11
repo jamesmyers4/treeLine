@@ -95,6 +95,8 @@ describe('runTreelineCrawl', () => {
     expect(specFiles).toHaveLength(Object.keys(pages).length)
     expect(summary.pomsGenerated).toBe(pomFiles.length)
     expect(summary.specsGenerated).toBe(specFiles.length)
+    expect(summary.proposedAssertionSpecsGenerated).toBe(0)
+    expect(specFiles.some((name) => name.endsWith('.proposed.spec.ts'))).toBe(false)
     expect(typeof summary.totalAxeViolations).toBe('number')
     expect(typeof summary.totalAxeNeedsReview).toBe('number')
     expect(typeof summary.flaggedSlowPages).toBe('number')

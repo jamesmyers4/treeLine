@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import type { CapturedForm, DomInteractiveElement, PageState } from '@treeline/acquire'
-import type { CrawlConfig } from './types.js'
+import type { CrawlConfig, StoredInterpretation } from './types.js'
 import { openCrawlDb } from './persistence.js'
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
@@ -159,6 +159,47 @@ describe('appearedAtMs persistence (per-element appearance latency)', () => {
     const pages = db.getAllPages()
     db.close()
     expect(pages[0].interactiveElements).toEqual(elements)
+  })
+})
+
+describe('interpretation persistence', () => {
+  function makeInterpretation(overrides: Partial<StoredInterpretation> = {}): StoredInterpretation {
+    return {
+      url: 'https://example.com/',
+      tierUsed: 'haiku',
+      pageType: 'landing',
+      purpose: 'Welcome users',
+      keyDataEntities: ['user'],
+      confidence: 0.9,
+      interpretedAt: new Date().toISOString(),
+      proposedAssertion: null,
+      ...overrides,
+    }
+  }
+
+  it('round-trips a null proposedAssertion', () => {
+    const db = openCrawlDb(dbPath)
+    db.recordInterpretation(makeInterpretation())
+    const stored = db.getInterpretation('https://example.com/')
+    db.close()
+    expect(stored?.proposedAssertion).toBeNull()
+  })
+
+  it('round-trips a non-null proposedAssertion', () => {
+    const proposedAssertion = {
+      scenario: 'Fill out and submit the signup form with synthetic data',
+      formIndex: 0,
+      fieldValues: [{ fieldIndex: 0, accessibleName: 'Email', value: 'test@example.com' }],
+      successAssertion: 'A confirmation message appears',
+      successAssertionCaveat: 'This success assertion is an unverified guess.',
+    }
+    const db = openCrawlDb(dbPath)
+    db.recordInterpretation(makeInterpretation({ proposedAssertion }))
+    const stored = db.getInterpretation('https://example.com/')
+    const all = db.getAllInterpretations()
+    db.close()
+    expect(stored?.proposedAssertion).toEqual(proposedAssertion)
+    expect(all[0]?.proposedAssertion).toEqual(proposedAssertion)
   })
 })
 

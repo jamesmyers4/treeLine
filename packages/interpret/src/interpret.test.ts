@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { PageState } from '@treeline/acquire'
+import type { CapturedForm, PageState } from '@treeline/acquire'
 
 vi.mock('./client.js', () => ({
   getAnthropicClient: vi.fn()
@@ -226,5 +226,181 @@ describe('interpretPage', () => {
     expect(keyDataEntitiesSchema.items).toEqual({ type: 'string' })
     expect(typeof keyDataEntitiesSchema.description).toBe('string')
     expect(keyDataEntitiesSchema.description.length).toBeGreaterThan(0)
+  })
+
+  it('returns proposedAssertion: null and makes only one API call when the page has no forms', async () => {
+    const mockClient = makeMockClient(mockToolUseResponse)
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    const result = await interpretPage(mockPageState)
+    expect(result.proposedAssertion).toBeNull()
+    expect(mockClient.messages.create).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('interpretPage — proposedAssertion (forms-gated)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  const form: CapturedForm = {
+    formIndex: 0,
+    action: '/submit',
+    method: 'post',
+    fields: [
+      {
+        role: 'textbox',
+        accessibleName: 'Email',
+        tagName: 'input',
+        inputType: 'email',
+        required: true,
+        pattern: null,
+        testId: null,
+        cssPath: 'body > form > input',
+      },
+      {
+        role: 'button',
+        accessibleName: 'Submit',
+        tagName: 'input',
+        inputType: 'submit',
+        required: false,
+        pattern: null,
+        testId: null,
+        cssPath: 'body > form > input[type=submit]',
+      },
+    ],
+  }
+
+  const formPageState: PageState = {
+    ...mockPageState,
+    forms: [form],
+  }
+
+  const mockProposalResponse = {
+    content: [{
+      type: 'tool_use',
+      id: 'tool_proposal_1',
+      name: 'propose_assertion',
+      input: {
+        applicable: true,
+        scenario: 'Fill out and submit the signup form with synthetic data',
+        fieldValues: [{ fieldIndex: 0, value: 'test@example.com' }],
+        successAssertion: 'A confirmation message appears'
+      }
+    }]
+  }
+
+  function makeSequentialMockClient(responses: unknown[]) {
+    const create = vi.fn()
+    for (const response of responses) create.mockResolvedValueOnce(response)
+    return { messages: { create } }
+  }
+
+  it('makes a second propose_assertion call when the page has a form', async () => {
+    const mockClient = makeSequentialMockClient([mockToolUseResponse, mockProposalResponse])
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    await interpretPage(formPageState)
+    expect(mockClient.messages.create).toHaveBeenCalledTimes(2)
+    const secondCall = mockClient.messages.create.mock.calls[1][0]
+    expect(secondCall.tool_choice).toEqual({ type: 'tool', name: 'propose_assertion' })
+  })
+
+  it('returns a populated ProposedAssertion including formIndex and an unverified-guess caveat', async () => {
+    const mockClient = makeSequentialMockClient([mockToolUseResponse, mockProposalResponse])
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    const result = await interpretPage(formPageState)
+    expect(result.proposedAssertion).not.toBeNull()
+    expect(result.proposedAssertion?.scenario).toBe('Fill out and submit the signup form with synthetic data')
+    expect(result.proposedAssertion?.formIndex).toBe(0)
+    expect(result.proposedAssertion?.fieldValues).toEqual([{ fieldIndex: 0, accessibleName: 'Email', value: 'test@example.com' }])
+    expect(result.proposedAssertion?.successAssertion).toBe('A confirmation message appears')
+    expect(typeof result.proposedAssertion?.successAssertionCaveat).toBe('string')
+    expect(result.proposedAssertion?.successAssertionCaveat.length).toBeGreaterThan(0)
+  })
+
+  it('returns proposedAssertion: null when the model reports applicable: false', async () => {
+    const notApplicableResponse = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_proposal_2',
+        name: 'propose_assertion',
+        input: { applicable: false, scenario: '', fieldValues: [], successAssertion: '' }
+      }]
+    }
+    const mockClient = makeSequentialMockClient([mockToolUseResponse, notApplicableResponse])
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    const result = await interpretPage(formPageState)
+    expect(result.proposedAssertion).toBeNull()
+  })
+
+  it('degrades to proposedAssertion: null (not a thrown error) after exhausting retries on a malformed proposal response', async () => {
+    const malformedResponse = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_proposal_bad',
+        name: 'propose_assertion',
+        input: { applicable: true }
+      }]
+    }
+    const mockClient = makeSequentialMockClient([mockToolUseResponse, malformedResponse, malformedResponse])
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    const result = await interpretPage(formPageState)
+    expect(result.proposedAssertion).toBeNull()
+    expect(result.pageType).toBe('login')
+    expect(mockClient.messages.create).toHaveBeenCalledTimes(3)
+  })
+
+  it('always derives accessibleName from the real captured field, ignoring anything the model might claim about it', async () => {
+    const mockClient = makeSequentialMockClient([mockToolUseResponse, mockProposalResponse])
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    const result = await interpretPage(formPageState)
+    expect(result.proposedAssertion?.fieldValues[0]?.accessibleName).toBe(form.fields[0]!.accessibleName)
+  })
+
+  it('drops a field value whose fieldIndex points at the submit button rather than a fillable field', async () => {
+    const responseReferencingButton = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_proposal_button_ref',
+        name: 'propose_assertion',
+        input: {
+          applicable: true,
+          scenario: 'Fill out and submit the signup form with synthetic data',
+          fieldValues: [
+            { fieldIndex: 0, value: 'test@example.com' },
+            { fieldIndex: 1, value: 'clicked' }
+          ],
+          successAssertion: 'A confirmation message appears'
+        }
+      }]
+    }
+    const mockClient = makeSequentialMockClient([mockToolUseResponse, responseReferencingButton])
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    const result = await interpretPage(formPageState)
+    expect(result.proposedAssertion?.fieldValues).toHaveLength(1)
+    expect(result.proposedAssertion?.fieldValues[0]?.fieldIndex).toBe(0)
+  })
+
+  it('drops a field value whose fieldIndex is out of range', async () => {
+    const responseWithBadIndex = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_proposal_oob',
+        name: 'propose_assertion',
+        input: {
+          applicable: true,
+          scenario: 'Fill out and submit the signup form with synthetic data',
+          fieldValues: [
+            { fieldIndex: 0, value: 'test@example.com' },
+            { fieldIndex: 99, value: 'garbage' }
+          ],
+          successAssertion: 'A confirmation message appears'
+        }
+      }]
+    }
+    const mockClient = makeSequentialMockClient([mockToolUseResponse, responseWithBadIndex])
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    const result = await interpretPage(formPageState)
+    expect(result.proposedAssertion?.fieldValues).toHaveLength(1)
+    expect(result.proposedAssertion?.fieldValues[0]?.fieldIndex).toBe(0)
   })
 })

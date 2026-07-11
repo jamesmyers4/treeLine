@@ -12,6 +12,7 @@ import {
   generateAtlas,
   renderAtlasMarkdown,
   generatePOMsAndSpecs,
+  generateProposedAssertionSpecs,
   generateAxeReport,
   renderAxeReportMarkdown,
   generateFlowMap,
@@ -52,6 +53,7 @@ export interface TreelineCrawlSummary {
   hardPagesCount: number
   pomsGenerated: number
   specsGenerated: number
+  proposedAssertionSpecsGenerated: number
   skippedElementsCount: number
   totalAxeViolations: number
   totalAxeNeedsReview: number
@@ -115,6 +117,10 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
     for (const spec of specs) {
       await writeFile(join(specsDir, spec.fileName), spec.code)
     }
+    const proposedAssertionSpecs = generateProposedAssertionSpecs(pages, interpretations)
+    for (const spec of proposedAssertionSpecs) {
+      await writeFile(join(specsDir, spec.fileName), spec.code)
+    }
     await writeFile(join(outputDir, 'skipped-elements.json'), JSON.stringify(skipped, null, 2))
     const hardPageEntries = await readHardPageEntries(hardPagesDir)
     const coverageReport = generateCoverageReport(pages, skipped, hardPageEntries)
@@ -128,6 +134,7 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
       hardPagesCount: hardPageEntries.length,
       pomsGenerated: poms.length,
       specsGenerated: specs.length,
+      proposedAssertionSpecsGenerated: proposedAssertionSpecs.length,
       skippedElementsCount: skipped.length,
       totalAxeViolations: axeReport.totalViolations,
       totalAxeNeedsReview: axeReport.totalNeedsReview,

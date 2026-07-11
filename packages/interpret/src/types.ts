@@ -1,3 +1,7 @@
+import type { ProposedAssertion } from '@treeline/core'
+
+export type { ProposedAssertion, ProposedFormFieldValue } from '@treeline/core'
+
 export type InterpretationTier = 'haiku' | 'sonnet'
 
 export interface TierRoutingDecision {
@@ -12,4 +16,5 @@ export interface PageInterpretation {
   purpose: string
   keyDataEntities: string[]
   confidence: number
+  proposedAssertion: ProposedAssertion | null
 }

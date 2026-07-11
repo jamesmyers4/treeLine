@@ -36,7 +36,8 @@ const mockInterpretation: PageInterpretation = {
   pageType: 'landing',
   purpose: 'Welcome users',
   keyDataEntities: [],
-  confidence: 0.9
+  confidence: 0.9,
+  proposedAssertion: null
 }
 
 let tmpDir: string

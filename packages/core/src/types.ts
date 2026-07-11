@@ -32,6 +32,20 @@ export interface CrawlResult {
   hostnameMismatches: HostnameMismatch[]
 }
 
+export interface ProposedFormFieldValue {
+  fieldIndex: number
+  accessibleName: string
+  value: string
+}
+
+export interface ProposedAssertion {
+  scenario: string
+  formIndex: number
+  fieldValues: ProposedFormFieldValue[]
+  successAssertion: string
+  successAssertionCaveat: string
+}
+
 export interface StoredInterpretation {
   url: string
   tierUsed: string
@@ -40,4 +54,5 @@ export interface StoredInterpretation {
   keyDataEntities: string[]
   confidence: number
   interpretedAt: string
+  proposedAssertion: ProposedAssertion | null
 }

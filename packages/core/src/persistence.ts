@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import Database from 'better-sqlite3'
 import type { AxeIncompleteResult, AxeViolation, CapturedForm, DomInteractiveElement, NetworkEntry, PageState } from '@treeline/acquire'
-import type { CrawlConfig, HardPageReasonCode, StoredInterpretation } from './types.js'
+import type { CrawlConfig, HardPageReasonCode, ProposedAssertion, StoredInterpretation } from './types.js'
 import { urlHash } from './url-utils.js'
 
 function screenshotFileName(url: string): string {
@@ -40,7 +40,8 @@ export function openCrawlDb(dbPath: string) {
       purpose TEXT,
       keyDataEntities TEXT,
       confidence REAL,
-      interpretedAt TEXT
+      interpretedAt TEXT,
+      proposedAssertion TEXT
     );
   `)
   return {
@@ -134,8 +135,8 @@ export function openCrawlDb(dbPath: string) {
     },
     recordInterpretation(interp: StoredInterpretation): void {
       db.prepare(`
-        INSERT OR REPLACE INTO interpretations (url, tierUsed, pageType, purpose, keyDataEntities, confidence, interpretedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO interpretations (url, tierUsed, pageType, purpose, keyDataEntities, confidence, interpretedAt, proposedAssertion)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         interp.url,
         interp.tierUsed,
@@ -144,6 +145,7 @@ export function openCrawlDb(dbPath: string) {
         JSON.stringify(interp.keyDataEntities),
         interp.confidence,
         interp.interpretedAt,
+        interp.proposedAssertion ? JSON.stringify(interp.proposedAssertion) : null,
       )
     },
     getInterpretation(url: string): StoredInterpretation | null {
@@ -159,6 +161,7 @@ export function openCrawlDb(dbPath: string) {
         keyDataEntities: row.keyDataEntities ? (JSON.parse(row.keyDataEntities as string) as string[]) : [],
         confidence: row.confidence as number,
         interpretedAt: row.interpretedAt as string,
+        proposedAssertion: row.proposedAssertion ? (JSON.parse(row.proposedAssertion as string) as ProposedAssertion) : null,
       }
     },
     getAllInterpretations(): StoredInterpretation[] {
@@ -171,6 +174,7 @@ export function openCrawlDb(dbPath: string) {
         keyDataEntities: row.keyDataEntities ? (JSON.parse(row.keyDataEntities as string) as string[]) : [],
         confidence: row.confidence as number,
         interpretedAt: row.interpretedAt as string,
+        proposedAssertion: row.proposedAssertion ? (JSON.parse(row.proposedAssertion as string) as ProposedAssertion) : null,
       }))
     },
     close(): void {
