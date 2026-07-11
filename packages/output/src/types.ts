@@ -153,3 +153,39 @@ export interface CoverageReport {
   unresolvedHardPages: HardPageEntry[]
   pagesExcludedFromCoverage: string[]
 }
+
+export interface SlowPageEntry {
+  url: string
+  pageLoadMs: number
+  overThreshold: boolean
+}
+
+export interface SlowNetworkRequestEntry {
+  pageUrl: string
+  requestUrl: string
+  method: string
+  durationMs: number
+  overThreshold: boolean
+}
+
+export interface LateAppearingElementEntry {
+  pageUrl: string
+  role: string
+  accessibleName: string
+  appearedAtMs: number
+  overThreshold: boolean
+}
+
+export interface TimingReport {
+  generatedAt: string
+  pagesAnalyzed: number
+  pageLoadThresholdMs: number
+  networkRequestThresholdMs: number
+  appearanceThresholdMs: number
+  flaggedPageCount: number
+  flaggedNetworkRequestCount: number
+  flaggedElementCount: number
+  slowestPages: SlowPageEntry[]
+  slowestNetworkRequests: SlowNetworkRequestEntry[]
+  slowestAppearingElements: LateAppearingElementEntry[]
+}

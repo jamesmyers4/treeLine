@@ -49,6 +49,9 @@ program
       console.log(`Skipped elements: ${summary.skippedElementsCount}`)
       console.log(`Axe violations: ${summary.totalAxeViolations}`)
       console.log(`Axe needs review: ${summary.totalAxeNeedsReview}`)
+      console.log(`Slow-loading pages: ${summary.flaggedSlowPages}`)
+      console.log(`Slow network requests: ${summary.flaggedSlowNetworkRequests}`)
+      console.log(`High-latency elements: ${summary.flaggedHighLatencyElements}`)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.error(`Error: ${message}`)

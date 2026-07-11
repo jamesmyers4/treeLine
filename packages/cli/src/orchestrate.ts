@@ -18,6 +18,8 @@ import {
   renderFlowMapMarkdown,
   generateCoverageReport,
   renderCoverageReportMarkdown,
+  generateTimingReport,
+  renderTimingReportMarkdown,
   classifyChange,
   renderDiffReportMarkdown,
 } from '@treeline/output'
@@ -53,6 +55,9 @@ export interface TreelineCrawlSummary {
   skippedElementsCount: number
   totalAxeViolations: number
   totalAxeNeedsReview: number
+  flaggedSlowPages: number
+  flaggedSlowNetworkRequests: number
+  flaggedHighLatencyElements: number
 }
 
 function deriveOutputDir(url: string): string {
@@ -114,6 +119,8 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
     const hardPageEntries = await readHardPageEntries(hardPagesDir)
     const coverageReport = generateCoverageReport(pages, skipped, hardPageEntries)
     await writeFile(join(reportsDir, 'coverage-report.md'), renderCoverageReportMarkdown(coverageReport))
+    const timingReport = generateTimingReport(pages)
+    await writeFile(join(reportsDir, 'timing-report.md'), renderTimingReportMarkdown(timingReport))
     return {
       outputDir,
       pagesCaptured: capturedPages.length,
@@ -124,6 +131,9 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
       skippedElementsCount: skipped.length,
       totalAxeViolations: axeReport.totalViolations,
       totalAxeNeedsReview: axeReport.totalNeedsReview,
+      flaggedSlowPages: timingReport.flaggedPageCount,
+      flaggedSlowNetworkRequests: timingReport.flaggedNetworkRequestCount,
+      flaggedHighLatencyElements: timingReport.flaggedElementCount,
     }
   } finally {
     db?.close()
