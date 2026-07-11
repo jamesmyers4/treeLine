@@ -1,6 +1,6 @@
 # CLAUDE.md — treeline
 
-_Last updated after session 36._
+_Last updated after session 43._
 
 Full design rationale lives in `CONTEXT.md` — read that first for the "why."
 This file is the operational guide: conventions, commands, and hard-won
@@ -22,11 +22,16 @@ is escalation (fixing `hard-pages/` entries), not the crawl runtime.
 - `packages/core` — crawler, persistence (`pages` + `interpretations`
   tables), robots/sitemap, hard-pages writer
 - `packages/acquire` — Patchright-hardened Playwright layer, axe-core
-  scanning, Fastify API
+  scanning, Fastify API, timing/appearance-latency instrumentation
 - `packages/interpret` — 2-tier AI interpretation (Haiku 4.5 / Sonnet 5)
-  with retry, plus persistence orchestration (`runInterpretation`)
+  with retry, plus persistence orchestration (`runInterpretation`), plus
+  the forms-gated AI-proposed-assertion call
 - `packages/output` — selector report, testid audit, atlas, POM+spec
-  generation, axe report, diff report, flow map (`flow-map.ts`) generators
+  generation, axe report, diff report, flow map, coverage-gap report,
+  timing report, proposed-assertion spec generation, and a shared
+  markdown-safety sanitizer used by every report generator
+- `packages/pages` — static HTML renderer that turns a crawl/diff output
+  directory into a browsable site (used by the GitHub Pages publish flow)
 
 ## Conventions
 
@@ -37,9 +42,10 @@ is escalation (fixing `hard-pages/` entries), not the crawl runtime.
   between statements within a function body.
 - **This convention applies to treeline's own source files only** — NOT to
   the content of strings this tool generates as output (POM classes, spec
-  files). Generated code for end users should use normal, readable
-  TypeScript formatting. Don't compress generated-code templates just
-  because the generator's own source follows the compressed style.
+  files, proposed-assertion specs). Generated code for end users should use
+  normal, readable TypeScript formatting. Don't compress generated-code
+  templates just because the generator's own source follows the compressed
+  style.
 - Locator ranking for anything selector-related: `getByRole` → `data-testid`
   → CSS → XPath, in that order of preference.
 - **A selector candidate is only safe to bake directly into generated code
@@ -51,6 +57,19 @@ is escalation (fixing `hard-pages/` entries), not the crawl runtime.
   locator, `.filter()`) rather than using it as-is.
 - Same-origin crawl scope is the default and should not be silently widened.
 - Stealth mode is opt-in (`--stealth` flag) — never the default posture.
+- **Any dynamic/untrusted value spliced into generated code or markdown
+  needs an escaping strategy matched to its destination — there is no one
+  universal "safe" function.** `JSON.stringify(...)` is correct for a value
+  landing inside a quoted TS string literal (handles quote/newline escaping
+  as an inherent property of what it does). It is not correct for a value
+  landing inside a `//` comment, which has no equivalent to matched-quote
+  escaping — use `toSafeComment()` (strips embedded newlines) there instead.
+  Values landing in generated markdown need `sanitizeMarkdownText`/
+  `sanitizeMarkdownTableCell` (`packages/output/src/markdown-safety.ts`).
+  Values landing directly in hand-written HTML templates need `escapeHtml`
+  (`packages/pages/src/template.ts`). Picking the wrong one for the
+  destination is exactly how the session 42 comment-breakout bug happened —
+  see "Operational gotchas" below.
 
 ## Commands
 
@@ -70,9 +89,13 @@ Real example, from `packages/cli`:
 pnpm exec tsx src/index.ts crawl https://example.com --max-pages 5
 ```
 
-`crawl` generates five reports per run, under `<output>/reports/`:
+`crawl` generates seven reports per run, under `<output>/reports/`:
 `selector-report.md`, `testid-audit.md`, `atlas.md`, `axe-report.md`,
-`flow-map.md`.
+`flow-map.md`, `coverage-report.md` (session 38), `timing-report.md`
+(session 41) — plus, for any page with a captured form and a meaningful
+proposed scenario, a `<page>.proposed.spec.ts` alongside the trusted
+generated specs (session 42, always `test.skip`-wrapped, never merged into
+the trusted spec).
 
 `diff` writes `reports/diff-report.md` into the current-run output
 directory, plus `reports/visual-diffs/*.png` — one pixel-diff image per
@@ -98,10 +121,15 @@ enabled, the run's output is rendered to static HTML by `@treeline/pages`
 (markdown reports → HTML via markdown-it, `.ts` POMs/specs →
 syntax-highlighted HTML via shiki) and pushed to the `gh-pages` branch
 under `runs/<run_number>/`, with `runs/index.html` regenerated to list
-every published run. `false` by default because this repo is public and
-prior real crawls (sessions 28-32) already targeted live third-party
-sites the repo owner doesn't own — publishing every run's content to a
-public URL should be a deliberate per-run choice, not automatic.
+every published run, and a static root-redirect `index.html` (session 37)
+written at the branch root so the bare Pages URL works too, not just
+`/runs/`. `false` by default because this repo is public and prior real
+crawls (sessions 28-32) already targeted live third-party sites the repo
+owner doesn't own — publishing every run's content to a public URL should
+be a deliberate per-run choice, not automatic. **This isn't a hypothetical
+concern** — see the GPB judgment call in CONTEXT.md for a real instance of
+this almost going wrong; only publish a real third-party target
+deliberately, ideally with standing/consent to do so, not by default.
 
 A fresh clone/fork needs two one-time repo-settings changes before this
 works at all, neither of which the workflow can set for you:
@@ -116,15 +144,17 @@ write` block still gets rejected when it tries to push to `gh-pages`.
    Pages source configured still 404s on the public Pages URL. Confirmed
    the hard way in session 36: two real published runs landed on
    `gh-pages` with correct content, and the public URL still 404'd because
-   this setting hadn't been turned on. Also note `scripts/publish.ts
-index` only ever writes `runs/index.html`, not a root-level
-   `index.html` — the effective landing page is `/runs/index.html`, not
-   `/`, until/unless a root redirect is added.
+   this setting hadn't been turned on.
+
+As of session 37, once both of the above are done, both the bare Pages
+root URL and `/runs/` work correctly — the earlier gap (root URL 404ing
+even with the branch settings correct, because nothing wrote a root
+`index.html`) is resolved; see "V2 additions" in CONTEXT.md.
 
 ### Pruning a published run from GitHub Pages
 
-Not automated — a manual recipe, proven for real once the two prerequisites
-above are met:
+Not automated — a manual recipe, proven for real more than once (including
+for a real accidental publish, see CONTEXT.md's GPB judgment call):
 
 ```
 git fetch origin gh-pages
@@ -140,7 +170,13 @@ git worktree remove gh-pages-worktree
 ```
 
 The `index` regeneration step is not optional — skipping it leaves a
-`runs/index.html` that still links to the now-deleted run directory.
+`runs/index.html` that still links to the now-deleted run directory. If
+`git push` fails with "You are not currently on a branch" here, it's
+because the worktree checked out `origin/gh-pages` in detached-HEAD state
+— fix with `git push origin HEAD:gh-pages` (pushes the current commit
+straight to the remote branch regardless of local branch tracking), or add
+`-B gh-pages` to the `git worktree add` step next time to avoid it
+entirely, matching what the real workflow does.
 
 ### Verify the repo is actually in the state described
 
@@ -153,10 +189,11 @@ pnpm --filter @treeline/acquire build && pnpm --filter @treeline/acquire test
 pnpm --filter @treeline/core build && pnpm --filter @treeline/core test
 pnpm --filter @treeline/interpret build && pnpm --filter @treeline/interpret test
 pnpm --filter @treeline/output build && pnpm --filter @treeline/output test
+pnpm --filter @treeline/pages build && pnpm --filter @treeline/pages test
 pnpm --filter @treeline/cli build && pnpm --filter @treeline/cli test
 ```
 
-All five packages should build and pass cleanly. If `packages/cli`'s test
+All six packages should build and pass cleanly. If `packages/cli`'s test
 run shows a wall of unrelated failures importing `@playwright/test`, check
 that `packages/cli/vitest.config.ts` exists and excludes
 `treeline-output/**` — see "Operational gotchas" below.
@@ -170,6 +207,8 @@ echo "${ANTHROPIC_API_KEY:0:8}..."
 
 If that's blank, set it (`export ANTHROPIC_API_KEY=sk-ant-...`) before the
 next command, or add `--skip-interpretation` to run for free without it.
+**Never `echo` the full key value** — see "Operational gotchas" below for
+why this specific command is written the way it is.
 
 ```
 pnpm exec tsx src/index.ts crawl https://example.com --max-pages 2 --output treeline-output/verify
@@ -177,13 +216,16 @@ pnpm exec tsx src/index.ts crawl https://example.com --max-pages 2 --output tree
 
 Should complete with a summary showing pages captured, POMs/specs
 generated, and (if interpretation wasn't skipped) an axe violations/
-needs-review count. Check `treeline-output/verify/reports/` for all five
+needs-review count. Check `treeline-output/verify/reports/` for all seven
 report files: `selector-report.md`, `testid-audit.md`, `atlas.md`,
-`axe-report.md`, `flow-map.md`. For the flow-map check specifically,
-confirm against a real site with an actual form (e.g.
-httpbin.org/forms/post) that the forms table is populated and the API
-surface table lists at least one endpoint — an empty flow-map.md on a site
-known to have forms/network activity means something regressed.
+`axe-report.md`, `flow-map.md`, `coverage-report.md`, `timing-report.md`.
+For the flow-map check specifically, confirm against a real site with an
+actual form (e.g. httpbin.org/forms/post) that the forms table is
+populated and the API surface table lists at least one endpoint — an
+empty flow-map.md on a site known to have forms/network activity means
+something regressed. If interpretation wasn't skipped and the site has a
+form, also check for a `<page>.proposed.spec.ts` alongside the generated
+specs.
 
 Then confirm diff mode still works — run a second small crawl into a
 different `--output` path, then:
@@ -212,12 +254,23 @@ stop and figure out why before writing new code — something regressed.
   `tsx` as its own devDependency: `pnpm add -D tsx --filter @treeline/<pkg>`.
   Running `pnpm exec tsx` from a package that doesn't have it installed
   fails with "'tsx' is not recognized," not a clearer dependency error.
+- **Never `echo` the raw `$ANTHROPIC_API_KEY` value — check presence, not
+  content.** A real key got exposed this way: `echo $ANTHROPIC_API_KEY` (at
+  the time, this file's own literal recommendation) prints the full raw
+  value to the terminal, and terminal output routinely ends up pasted back
+  into an agent's context for troubleshooting. Use
+  `echo "${ANTHROPIC_API_KEY:0:8}..."` (confirms it's set and gives a
+  partial sanity-check without exposing the whole thing) or
+  `[ -n "$ANTHROPIC_API_KEY" ] && echo set || echo "not set"` (confirms
+  presence only) instead. If a raw key value ever does end up in a
+  terminal output, chat log, or anywhere else outside a secrets manager,
+  rotate it immediately in the Anthropic Console — there is no way to
+  retrieve a lost/exposed key's value after the fact, only revoke and
+  generate a new one. This applies to the GitHub Actions
+  `ANTHROPIC_API_KEY` repo secret too, not just your local shell — update
+  both if you rotate.
 - **`ANTHROPIC_API_KEY` only persists for the current shell session.**
-  `export ANTHROPIC_API_KEY=...` is lost on a new terminal/tab. Any session
-  involving real interpretation calls should start with `echo
-$ANTHROPIC_API_KEY` to confirm it's actually set before running anything.
-  The Anthropic Console only shows a key's full value once, at creation —
-  there is no way to retrieve a lost key later, only generate a new one.
+  `export ANTHROPIC_API_KEY=...` is lost on a new terminal/tab.
 - **`packages/cli/vitest.config.ts` exists specifically to exclude
   `treeline-output/**`from test collection.** Every real crawl into`packages/cli`writes generated`.spec.ts`files under`treeline-output/<host>/specs/`. Without this exclusion, vitest's default
 glob picks those up as if they were real test suites and they fail
@@ -263,17 +316,23 @@ status` / look for the `[new branch]`-style confirmation line rather than
   `'changed'` status (as opposed to `'dimensions-changed'`, which is a
   different code path) so the comparison, threshold, and report-rendering
   logic can all be exercised for real. Worth remembering for any future
-  visual-diff-adjacent work rather than re-deriving it.
+  visual-diff-adjacent work rather than re-deriving it. **Session 40 used
+  the same real-fixture-not-live-site principle for appearance-latency
+  testing** — a live site's async behavior can't be relied on to appear on
+  cue either, so a small local server with a genuinely delayed element is
+  the controlled equivalent.
 - **`vitest` does not type-check.** Changing a field on a shared type used
   in test fixtures across multiple packages (e.g. `PageState`) can silently
   break other packages' fixtures without `vitest` ever failing, because
   fixture objects satisfy the old shape at the type level as far as the
   test file itself is concerned but no longer match what real code
-  constructs. This happened twice in this build — first with
-  `axeIncomplete`, then with `forms` — both times only caught by running an
-  actual package `build`, not `test`. After changing a shared type, run
-  `build` for every package that could plausibly construct that type as
-  test data, not just the package where the type changed.
+  constructs. This happened multiple times in this build — `axeIncomplete`,
+  then `forms`, then session 39's `pageLoadMs`/`durationMs` addition
+  (fixture fallout across all six packages, all caught by running real
+  `build`) — every time only caught by running an actual package `build`,
+  not `test`. After changing a shared type, run `build` for every package
+  that could plausibly construct that type as test data, not just the
+  package where the type changed.
 - **Browser cleanup must be in a `finally` block, always.** A real CI run
   once hung for ~1.5 hours after finishing all its actual work because
   `capturePage` only closed its browser on the happy path — a page-level
@@ -281,7 +340,11 @@ status` / look for the `[new branch]`-style confirmation line rather than
   logic) orphaned the browser process and kept Node's event loop alive
   indefinitely (session 29). If you're touching capture code, confirm the
   browser/context genuinely closes on every path, including error paths —
-  don't assume the happy-path close is sufficient.
+  don't assume the happy-path close is sufficient. **The same "always close
+  in `finally`" discipline was reapplied in session 34-35b to a different
+  resource, a SQLite db handle** (`packages/pages/src/meta.ts`'s
+  `buildRunMeta`) — same principle, any resource with a lifecycle, not
+  just browsers.
 - **The GitHub Actions crawl workflow needs Xvfb.** Default (non-stealth)
   capture launches headed (`headless: false`); there's no flag to change
   this. `.github/workflows/crawl.yml` installs Xvfb and runs the crawl
@@ -304,7 +367,9 @@ status` / look for the `[new branch]`-style confirmation line rather than
   crawl run are visible to anyone. The API key itself is masked
   automatically in logs, but the actual crawled content (reports, POMs,
   real business content) is not — worth a moment's thought before crawling
-  any new target through the Action.
+  any new target through the Action, and a bigger moment's thought before
+  publishing that content to `gh-pages` (see the GPB judgment call in
+  CONTEXT.md for why this isn't just theoretical).
 - **`inputs.*` vs `github.event.inputs.*` — a boolean input compared with
   `== 'true'` in a workflow-level `if:` silently always evaluates false.**
   For a `workflow_dispatch` trigger, the `inputs` context preserves each
@@ -327,6 +392,41 @@ status` / look for the `[new branch]`-style confirmation line rather than
   string, so the string comparison there is the right tool. The bug is
   specific to comparing a boolean against a string inside a YAML-level
   `if:` expression.
+- **`markdown-it`'s `html: false` config is what makes rendering crawled
+  content to HTML safe by default — don't change it without understanding
+  what it's actually blocking.** Confirmed empirically in session 43: with
+  `html: false` (the current, correct setting in
+  `packages/pages/src/markdown.ts`), raw HTML embedded in source markdown
+  — including from crawled page titles or AI-derived text that happens to
+  contain `<script>` or similar — gets escaped to inert text rather than
+  rendered as live markup. Flipping this to `true` for any reason (e.g. to
+  allow richer formatting in a future report) would reopen a real
+  injection surface on the public `gh-pages` site — don't, without a real
+  reason and a fresh audit.
+- **Untrusted content in generated markdown still needs sanitization even
+  though `markdown-it`'s `html:false` blocks script injection** — the two
+  are different problems. `|` in a crawled title/URL/AI-derived string can
+  silently truncate a markdown table row; an embedded newline can inject a
+  fake heading or a fabricated clickable link into a report, which reads
+  as content spoofing (treeline appearing to say something it didn't) even
+  though it can't execute code. `packages/output/src/markdown-safety.ts`
+  (`sanitizeMarkdownText`/`sanitizeMarkdownTableCell`, session 43) handles
+  this — every report generator that splices crawled/AI-derived content
+  into markdown output should go through it. If you add a ninth report
+  generator, route its dynamic values through this too rather than
+  assuming markdown-it's HTML protection is sufficient on its own.
+- **Never let a model's freeform natural-language output serve as a
+  matching/lookup key against structured, deterministic data.** A real bug
+  in session 42's `proposedAssertion` feature: the model's own guessed
+  `accessibleName` for a form field was used to match that field back to
+  the real captured `DomInteractiveElement[]` array. On a page with
+  genuinely unlabeled inputs, the model invented plausible-sounding labels
+  instead of describing what it actually saw, so the match silently
+  failed and generated code pointed at nothing (and, worse, used the wrong
+  interaction type — `.fill()` instead of `.check()` for checkbox/radio
+  fields). Fix: identity/matching always traces back to real captured
+  data; a model may propose values, scenarios, or descriptions, but never
+  gets to serve as the key used to look something else up.
 
 ## Model routing (packages/interpret)
 
@@ -344,11 +444,17 @@ status` / look for the `[new branch]`-style confirmation line rather than
   circular workspace dependency (`core` must not depend on `interpret`).
   `PageInterpretation` (the type `interpretPage` returns) and
   `StoredInterpretation` (what gets persisted) intentionally share field
-  names but are separate types in separate packages.
+  names but are separate types in separate packages. Both now include
+  `proposedAssertion` (session 42) — kept in step with each other the same
+  way the rest of their shared fields are.
 - `PageInterpretation` does NOT include `interactiveElements` — removed in
   session 4.7. Per-element data belongs to `PageState.interactiveElements`
   (real DOM capture), not AI interpretation. Do not reintroduce it to
   `PageInterpretation`.
+- **The `proposedAssertion` AI call (session 42) is gated on
+  `pageState.forms.length > 0`, before the call is made, not after.** Don't
+  remove this gate — it exists specifically to avoid spending tokens on
+  pages that structurally can't have a meaningful form-fill scenario.
 
 ## Escalation workflow — `hard-pages/`
 
@@ -369,7 +475,11 @@ Manifest entry shape (`HardPageEntry`, as actually implemented):
 `reasonCode` values: `empty-snapshot`, `timeout`, `auth-wall`,
 `low-confidence`, `parse-error`. `captureSnapshot` carries a truncated real
 error message when available (session 5.97 fix) — do not hardcode this back
-to always-`null`.
+to always-`null`. A small reader for this manifest was added in
+`packages/cli/src/orchestrate.ts` (session 38) so `coverage-report.md` can
+surface unresolved entries as real parsed data rather than a raw file
+count — this reader lives in `cli`, not `core`/`acquire`, kept scoped to
+exactly where it's needed.
 
 When invoked against `hard-pages/`, Claude Code should:
 
@@ -404,16 +514,33 @@ pattern for new work:
   signatures, exact test cases to write) rather than an open-ended ask.
 - After any session whose output feeds a later session (interpretation
   schemas, capture data shapes, report inputs), do a manual real-data sanity
-  check — a throwaway script against a real crawl, read by a human, then
-  deleted — before building the next thing on top of it. This has caught
-  real bugs unit tests missed at least four separate times (AI-guessed
-  testid unreliability, a swallowed exception hiding a config error, a
-  malformed-JSON schema issue, axe silently failing on every capture), plus
-  three more real-data limitations found this way during flow map's
-  verification (session 19-20) — see CONTEXT.md's "Open items".
+  check before building the next thing on top of it. This has caught real
+  bugs unit tests missed repeatedly — AI-guessed testid unreliability, a
+  swallowed exception hiding a config error, a malformed-JSON schema
+  issue, axe silently failing on every capture, three more real-data
+  limitations during flow map's verification (sessions 19-20), and the
+  session 42 model-freeform-text-as-lookup-key bug (see "Operational
+  gotchas" above) — see CONTEXT.md's "Open items".
+- **Not every manual check needs to be a throwaway script that gets
+  deleted afterward.** Session 40 deliberately kept its manual check as a
+  permanent regression test rather than a deleted one-off, because
+  "immediate element → `null`, delayed element → a real number in a sane
+  range" is precisely, mechanically assertable — unlike a visual-diff
+  pixel comparison on a real complex page, which genuinely needs human
+  judgment to evaluate. The throwaway-script convention exists for cases
+  needing human judgment; a controlled, mechanically-checkable property
+  should just become a real test.
 - When a manual check finds a real bug, fix it in its own small session
   before continuing, even if it means backtracking. Don't build the next
   feature on top of output you haven't verified.
+- **A feature-scoped session isn't the only kind of session worth
+  running.** Session 43 was a dedicated audit — not tied to any single
+  V2.md item — specifically because a feature session only has reason to
+  check what it's building, not accumulated risk across everything that
+  came before it (e.g. escaping consistency across eight report
+  generators built in eight different sessions). Worth running one of
+  these periodically, scoped to one concrete question at a time (not "check
+  everything"), rather than only ever adding new capability.
 
 ## Do not
 
@@ -430,3 +557,12 @@ pattern for new work:
   spec-accurate accessible-name computation — it's a simplified heuristic
   with known gaps (see CONTEXT.md).
 - Do not default `treeline diff --fail-on-regression` to on.
+- Do not default `publish_to_pages` to `true`.
+- Do not merge a `*.proposed.spec.ts` file's content into the trusted
+  generated `.spec.ts`, and do not generate a proposed test that isn't
+  wrapped in `test.skip(...)`.
+- Do not use a model's freeform text output as a matching/lookup key
+  against structured, deterministic data — see "Operational gotchas."
+- Do not `echo` a raw `$ANTHROPIC_API_KEY` (or any other secret) value to
+  a terminal that an agent session might read back — check presence, not
+  content.

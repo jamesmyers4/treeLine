@@ -1,25 +1,34 @@
-# HANDOFF.md — treeline (as of session 32)
+# HANDOFF.md — treeline (as of session 43)
 
 _Written for a fresh Claude Code session, or a fresh conversation with
-Claude, picking this project up with zero memory of the 32-session
-history that built it. Read `CONTEXT.md` and `CLAUDE.md` next — but see
-"Known staleness" below before trusting them fully. Verify real repo
-state over trusting any document, including this one._
+Claude, picking this project up with zero memory of the 43-session history
+that built it. Read `CONTEXT.md` and `CLAUDE.md` next — both were
+synced to reflect real repo state as of this same session, so they should
+be trustworthy as of right now. Still: verify real repo state over
+trusting any document, including this one — that's been the single most
+consistent lesson of this entire project._
 
 ## What treeline is, briefly
 
 An AI-powered site comprehension engine. Crawls a site with a hardened
 Playwright/Patchright browser, captures real DOM + accessibility-tree
 state, runs tiered AI interpretation (Claude Haiku 4.5 / Sonnet 5), and
-generates Page Object Models, Playwright specs, and five markdown reports
-(selector stability, testid audit, atlas, axe accessibility, flow map).
-Also supports diffing two crawls against each other, including visual
-(screenshot pixel-diff) comparison, with a `--fail-on-regression` CI-gate
-flag. Full architecture and rationale: `CONTEXT.md`.
+generates Page Object Models, Playwright specs, and seven markdown reports
+(selector stability, testid audit, atlas, axe accessibility, flow map,
+coverage gaps, timing/flakiness). For pages with a form, it can also
+propose — never auto-run, never auto-commit — a fill-and-assert test
+scenario as a separate, `test.skip`-wrapped file. Also supports diffing
+two crawls against each other, including visual (screenshot pixel-diff)
+comparison, with a `--fail-on-regression` CI-gate flag. All of this runs
+in CI via a real GitHub Action, which can optionally publish rendered
+output as a live, browsable website. Full architecture and rationale:
+`CONTEXT.md`.
 
 ## Verify the repo is actually in the state described
 
-Don't assume — confirm, in order:
+Don't assume — confirm, in order. This list is longer than earlier
+versions of this document because there's genuinely more surface area now
+— don't skip steps because an earlier HANDOFF.md had fewer of them.
 
 ```
 pnpm install
@@ -27,10 +36,11 @@ pnpm --filter @treeline/acquire build && pnpm --filter @treeline/acquire test
 pnpm --filter @treeline/core build && pnpm --filter @treeline/core test
 pnpm --filter @treeline/interpret build && pnpm --filter @treeline/interpret test
 pnpm --filter @treeline/output build && pnpm --filter @treeline/output test
+pnpm --filter @treeline/pages build && pnpm --filter @treeline/pages test
 pnpm --filter @treeline/cli build && pnpm --filter @treeline/cli test
 ```
 
-All five should build and pass cleanly. If `packages/cli`'s tests show a
+All six should build and pass cleanly. If `packages/cli`'s tests show a
 wall of unrelated failures importing `@playwright/test`, check
 `packages/cli/vitest.config.ts` excludes `treeline-output/**` (see
 CLAUDE.md's gotchas).
@@ -42,8 +52,10 @@ cd packages/cli
 pnpm exec tsx src/index.ts crawl https://example.com --max-pages 2 --output ../../treeline-output/handoff-verify --skip-interpretation
 ```
 
-Check `treeline-output/handoff-verify/reports/` for all five report
-files. Then confirm diff mode (including visual diffing):
+Check `treeline-output/handoff-verify/reports/` for all **seven** report
+files (not five — `coverage-report.md` and `timing-report.md` are new
+since the last time this document was written). Then confirm diff mode
+(including visual diffing):
 
 ```
 pnpm exec tsx src/index.ts crawl https://example.com --max-pages 2 --output ../../treeline-output/handoff-verify-2 --skip-interpretation
@@ -52,9 +64,16 @@ pnpm exec tsx src/index.ts diff ../../treeline-output/handoff-verify ../../treel
 
 Should produce `diff-report.md` with a Visual Changes section.
 
-Also confirm `.github/workflows/crawl.yml` exists — a sixth thing worth
-checking that older versions of this verify sequence didn't need to,
-since CI-based crawling is new as of session 28.
+If you want to confirm the AI-proposed-assertion path too, run a small
+crawl against `httpbin.org/forms/post` **with** interpretation enabled
+(a real `ANTHROPIC_API_KEY` set, no `--skip-interpretation`) and check for
+a `.proposed.spec.ts` file alongside the generated specs — every test in
+it should be `test.skip`-wrapped.
+
+Also confirm `.github/workflows/crawl.yml` exists and has a
+`publish_to_pages` input (not just `url`/`max_pages`/
+`skip_interpretation`) — this workflow has grown substantially since
+Stage A alone.
 
 If any of this doesn't match what's claimed below, stop and figure out
 why before writing new code — something regressed.
@@ -64,160 +83,204 @@ why before writing new code — something regressed.
 **v1 (sessions 1-20) — complete.** Crawler, hardened capture (DOM ground
 truth + axe-core), 2-tier AI interpretation with retry, all five base
 reports, POM + spec generation, `hard-pages/` escalation, diff mode
-(sessions 11-14), form/flow map (sessions 16-19). Fully documented in
-`CONTEXT.md`.
+(sessions 11-14), form/flow map (sessions 16-19).
 
-**V2 item #1, visual diffing (sessions 21-27) — complete.** Real
-screenshot capture (session 21), disk persistence with directory-
-independent deterministic naming (22), pixel-diff comparison via
-`pixelmatch`/`pngjs` with an empirically-determined 0.1% threshold (23),
-diff-image generation (24), rendering into `diff-report.md`'s "Visual
-Changes" section (25), automatic CLI wiring with no new flag (26), docs
-sync (27). Removed from `V2.md` per that file's own process once done —
-its content now lives in `CONTEXT.md`'s "V2 additions" section.
+**Visual diffing (sessions 21-27) — complete.** Real screenshot capture,
+disk persistence, pixel-diff comparison at an empirically-derived 0.1%
+threshold, diff-image generation, rendered into `diff-report.md`.
 
-**GitHub Action, Stage A (session 28) — complete, proven working.**
-`.github/workflows/crawl.yml`: `workflow_dispatch` trigger with `url`
-(required), `max_pages`, `skip_interpretation` (default `true`) inputs.
-Builds all 5 packages in dependency order, runs under Xvfb (the default
-non-stealth capture path launches headed — `headless: false` — with no
-CLI override, so a GitHub-hosted runner needs a virtual display or
-nothing works at all), uploads the output directory via
-`actions/upload-artifact`. Verified with two successful real runs
-(hgwllc.com, goldenpetbrands.com), including one with real AI
-interpretation and a real `ANTHROPIC_API_KEY` secret. Stage B (GitHub
-Pages auto-publish) is not started.
+**GitHub Action, Stage A (session 28) — complete.** `workflow_dispatch`
+trigger, `url`/`max_pages`/`skip_interpretation` inputs, runs under Xvfb,
+uploads output via `actions/upload-artifact`. Proven against two real
+sites.
 
-**Process-lifecycle fix (session 29) — complete.** A real CI run hung for
-~1.5 hours after finishing all its actual work — root cause:
-`capturePage` only closed its browser on the happy path, so any page-
-level error (caught and swallowed by the crawler's own per-page
-resilience logic) orphaned that browser process and kept Node's event
-loop alive indefinitely. Fixed with a `finally` block guaranteeing
-closure on every path, plus a `process.exit()` backstop in the CLI, plus
-`timeout-minutes: 25` added to the workflow as a safety net. Verified
-against the exact site/settings that originally hung — now completes in
-about 2 minutes.
+**Process-lifecycle fix (session 29) — complete.** A real CI run once
+hung ~1.5 hours from an unclosed browser on an error path. Fixed with a
+`finally` block plus a `process.exit()` backstop plus a workflow timeout.
 
-**Real-output review + two more real bugs found and fixed (sessions
-30-32) — complete.** Session 30 reviewed two real GitHub Actions crawl
-outputs and found a genuine silent-data-loss bug: POM/spec generation
-overwrote files when two different URLs slugified to the same filename
-(root `/` vs `/home`; bare paths vs `.html`-suffixed duplicates), with
-every other report showing correct page counts — only POM/spec output
-was affected, which is why it went unnoticed. Session 31 fixed it with
-deterministic collision detection and numeric-suffix disambiguation
-(`packages/output/src/naming.ts`, new), mirroring the existing
-`.nth(i)`-style disambiguation pattern already used for duplicate
-elements within a page. Session 32 found and fixed a related discovery
-bug: `www.goldenpetbrands.com` issues a real 301 redirect, but the
-crawler was establishing same-origin scope from the pre-redirect URL and
-never updating it — `sitemap.xml` (fetched via `fetch()`, which follows
-redirects transparently) returned entries on the real post-redirect
-hostname, all of which got filtered out against the stale origin. Fixed
-to resolve origin from the post-redirect URL; also added detection
-(sitemap + `rel=canonical` signals) for genuine non-redirected hostname
-mismatches, which warns with the specific alternate URL rather than
-silently auto-widening scope.
+**Real-output review + two bugs found and fixed (sessions 30-32) —
+complete.** A POM/spec filename collision bug (two URLs slugifying to the
+same name, silently overwriting each other) and a redirect-origin scope
+bug (same-origin filtering rejecting real content after a 301 redirect),
+both found by actually reading real crawl output, not by unit tests.
 
-## Known staleness — read this before trusting CONTEXT.md/CLAUDE.md
+**GitHub Pages publish, Stage B (sessions 34-35b) — complete.** New
+package `@treeline/pages` renders a crawl/diff output directory to static
+HTML (markdown-it + shiki). Publishes to `gh-pages` under
+`runs/<run_number>/`, opt-in via `publish_to_pages` (default `false`).
+Found and fixed a real boolean-input type-coercion bug in the workflow
+YAML along the way — six gated steps silently never ran regardless of the
+input, for one session, before being caught by actually triggering the
+workflow and watching nothing happen.
 
-Both files were last updated in session 27, covering everything through
-visual diffing. **They do not yet reflect any of sessions 28-32** — not
-the GitHub Action's existence, not the process-lifecycle fix, not either
-of the two bugs found via the output review. Treat this document as
-authoritative for anything from session 28 onward until a docs-sync pass
-happens (see "What's left," below) — and don't be surprised if
-`CLAUDE.md`'s Commands section, monorepo layout, or operational gotchas
-look incomplete relative to what's actually in the repo.
+**Root landing page (session 37) — complete.** The bare Pages URL 404'd
+even with the branch and Settings correct, because nothing wrote a root
+`index.html` — only `runs/index.html` existed. Fixed with a static
+meta-refresh redirect file, written on every publish run so it's
+self-healing.
+
+**Coverage-gap report (session 38) — complete.** Sixth report,
+`coverage-report.md`: zero-coverage pages, high-skip pages, forms without
+a generated test (found to be universally true today, stated as such),
+unresolved `hard-pages/` entries. Bundled in the same session: a real
+flow-map table-overflow CSS fix, found via a real published run.
+
+**Timing/flakiness signal, first cut (sessions 39-41) — complete.** New
+capture: page-load time, per-request duration, per-element appearance
+latency (the last one narrowed to only mean something for elements that
+render in after initial load). Seventh report, `timing-report.md`, three
+sections with empirically-derived thresholds (two solid, one — appearance
+latency — on a genuinely thinner basis, stated as such). Diff-mode timing
+regression detection deliberately deferred — needs real run-to-run noise
+data to design against, which now exists but hasn't been used yet.
+
+**AI-proposed test assertions, first cut — forms only (session 42) —
+complete.** Proposes a fill-and-assert scenario for pages with a captured
+form, as a separate `*.proposed.spec.ts` file, every test `test.skip`-
+wrapped, values obviously synthetic, success assertion explicitly labeled
+an unverified guess. A real bug (model's freeform text used as a
+structured-data lookup key) found and fixed via the mandated manual
+check.
+
+**Escaping/injection audit (session 43) — complete.** Not a V2.md item —
+reactive hardening, prompted by a direct question about whether a
+dedicated review pass would find things feature-scoped sessions wouldn't.
+It did: an `escapeHtml` gap (missing `'`), a real markdown/table content-
+spoofing bug (crawled content with `|` or embedded newlines could corrupt
+report tables or inject fake headings/links — not code execution, but
+real integrity damage), and a comment-breakout risk in the proposed-
+assertion generator. All fixed, all covered by a new permanent regression
+test verified against raw HTML bytes, not just assertions.
+
+## Known staleness — read this before trusting anything older
+
+`CONTEXT.md`, `CLAUDE.md`, and `V2.md` were all synced in the same session
+this document was written in (session 43) — as of right now, they should
+be accurate. If you're reading this significantly after it was written,
+treat that sync as a snapshot, not a guarantee — check dates/session
+numbers in each file's header against whatever the real latest session
+turns out to be, the same way this document itself keeps telling you to
+verify rather than trust.
+
+**One thing this sync could not do: `README.md` was not included** in
+what was available when this sync happened, so it was left untouched. It
+may be stale relative to everything above — worth a look before treating
+it as accurate, especially since it's the file most likely to be read by
+someone outside this project (a portfolio reviewer, a hiring contact).
 
 ## What's left — options, not a directive
 
-**Strongest candidate: a docs-sync pass covering sessions 28-32.**
-Same shape as sessions 15, 20, and 27 — fold the GitHub Action, the
-process-lifecycle fix, and both bug fixes into `CONTEXT.md`/`CLAUDE.md`,
-add the gotchas listed below to CLAUDE.md's operational-gotchas section.
-Low risk (no source changes), high value (closes the exact staleness gap
-this document exists to warn about), and consistent with how every prior
-arc in this project has been closed out before moving to the next thing.
+**Item 5 extensions (AI-proposed assertions beyond forms).** The
+form-fill-and-submit scenario is a deliberately narrow first cut. Natural
+next steps, none scoped yet: assertion scenarios beyond forms; a
+lightweight "promote this reviewed proposal into the trusted spec"
+workflow (plain copy-paste may already be sufficient — untested); a
+summary report of how many proposals exist across a crawl.
 
-**GitHub Action Stage B** — auto-publish reports to GitHub Pages after
-each run (Shiki for `.ts` highlighting, native markdown rendering for
-`.md` reports), giving a persistent shareable link instead of artifacts
-that expire on GitHub's retention schedule. Natural continuation of
-session 28, not yet scoped in detail.
+**Item 4's remaining piece: diff-mode timing regression detection.**
+Deliberately deferred until real report output and real run-to-run noise
+existed to design against. That data exists now (sessions 39-41 produced
+real crawls with real timing data) — this is the most "ready to pick up"
+unfinished piece on the whole list, in the sense that its own stated
+blocker is resolved.
 
-**Six items remain in `V2.md`, unstarted, sketch-level only** (item
-numbering may have shifted since item #1's removal in session 27 — check
-the file rather than trust a number): the GitHub Action item beyond
-Stage A (see above), coverage-gap reporting, a timing/flakiness signal, AI-
-proposed test assertions, multi-step flow test generation, and a hosted
-run+output viewer. The file's own calibration note is worth taking
-seriously: item #1 was estimated at "2-3 sessions" and took 6. Several of
-these remaining items were explicitly flagged as needing a `/grill-me` or
-`/grill-with-docs` scoping pass before any session prompt should be
-written — particularly the timing signal and AI-proposed assertions,
-which are more architecturally open than the others.
+**Item 6 — multi-step flow test generation.** The biggest remaining item
+by a wide margin. Depends on interaction-reachable page discovery (a real
+new capability, not an extension), which itself has never been started.
+Don't begin this without real appetite for a diff-mode-or-bigger
+multi-session arc, and expect the estimate to be a floor, not a ceiling —
+every ambitious V2 item so far has taken longer than its first guess.
 
-## Known gotchas from sessions 28-32 (not yet folded into CLAUDE.md)
+**Item 7, Stage C — a real hosted frontend.** Stages A and B are done.
+Stage C (URL-triggers-a-run web UI, Monaco-based output browser) needs its
+own real scoping pass on hosting/triggering architecture before any
+session prompt gets written — don't treat it as a quick continuation of
+Stage B just because the number is close.
 
-- **Browser cleanup must be in a `finally` block, always.** The session
-  29 bug happened because it wasn't. If you're touching capture code,
-  confirm the browser/context genuinely closes on every path, including
-  error paths — don't assume the happy-path close is sufficient.
-- **The GitHub Actions workflow needs Xvfb.** Default (non-stealth)
-  capture launches headed; there's no flag to change this. Any future
-  CI-related session touching the crawl workflow needs to know this.
-- **Crawl origin must be resolved from the post-redirect URL**, not the
-  originally-typed seed URL. `fetch()` (used for `sitemap.xml`) follows
-  redirects transparently; `page.goto()`'s origin-scope check needs to
-  match that behavior or same-origin filtering silently rejects real,
-  legitimate site content.
-- **POM/spec filenames can collide across different URLs** — always go
-  through the deterministic disambiguation in `naming.ts`, never derive a
-  filename independently in a second place (this is exactly what caused
-  the session 30 bug — two independent computations of "the same" name).
-- **This repo is public.** Actions history, logs, and artifacts from any
-  crawl run are visible to anyone. The API key itself is masked
-  automatically in logs, but the actual crawled content (reports, POMs,
-  real business content) is not — worth a moment's thought before
-  crawling any new target through the Action.
-- **The GitHub Action doesn't expose `--stealth`.** Deliberately deferred
-  in session 28. Stealth-mode testing happens locally only, for now.
+**Item 8 — auto-file bugs to an external tracker.** Just an idea,
+captured, not scoped at all. The one real open question it raised on its
+own (how would treeline tell "a real site bug" apart from "my own
+generated test is stale or wrong," which is the actual precondition for
+this being safe to build at all) needs answering before this gets any
+closer to a session prompt.
 
-## How work has actually happened in this repo (keep doing this)
+**Three more audit types were named but never run**, alongside the
+escaping/injection one that was: a cross-session consistency check
+(specifically: do the null/missing-data conventions established
+independently in sessions 39, 40, and 42 actually agree with each other,
+or did three different sessions each invent a slightly different
+convention for "this value is missing"?), a genuine docs-accuracy pass
+beyond "what changed since the last sync," and a dead-code hunt
+specifically for more cases like the `pageLoadMs ?? 0` fallback that
+turned out to be unreachable — that one was caught by accident, in
+conversation, not by a dedicated search for the pattern.
 
-Small, single-package-scoped sessions with detailed, explicit prompts —
-types spelled out, exact function signatures, exact test cases — rather
-than open-ended asks. A "Step 0" investigation of real source, before
-writing any fix or feature, has repeatedly caught things a written spec
-alone would have missed or gotten wrong (screenshots not actually being
-captured when `CONTEXT.md` claimed they were; the real root cause of the
-origin-scope bug turning out to be a redirect-handling gap, not a "same-
-origin is too strict" design problem). A manual sanity check against a
-real site, every session that touches capture/output — not just unit
-tests — has caught real bugs unit tests alone missed, repeatedly, most
-recently the two bugs found in session 30's real-output review. When a
-real incident happens (the session 29 hang, which cost real CI time), it
-gets root-caused and fixed properly, not patched around or deferred.
-Cross-file and cross-report consistency checks (does this report's own
-summary line match its own content; do two independently-derived values
-ever diverge) have been a disproportionately high-value habit — worth
-continuing deliberately, not just when something already seems wrong.
+## Known gotchas from sessions 37-43 (folded into CLAUDE.md, repeated here
+
+for visibility)
+
+- The GitHub Pages root URL now works (session 37) — this was a real,
+  previously-documented gap, now closed. Don't re-investigate it as if
+  it's still open.
+- `markdown-it`'s `html: false` setting is load-bearing for safety, not
+  just a formatting choice — don't flip it without a fresh audit.
+- Any dynamic/untrusted value going into generated output needs the
+  escaping technique matched to its destination — `JSON.stringify` for a
+  quoted string literal, `toSafeComment()` for a `//` comment,
+  `sanitizeMarkdownText`/`sanitizeMarkdownTableCell` for markdown,
+  `escapeHtml` for hand-written HTML templates. There is no one universal
+  safe function.
+- Never `echo` a raw secret value to a terminal an agent might read back
+  — check presence (`${VAR:0:8}...` or a presence test), not content. A
+  real key got exposed this way earlier in this project's history and had
+  to be rotated.
+- Never use a model's freeform text as a lookup/matching key against
+  structured data — a real bug in session 42 traced directly back to this.
 
 ## Judgment calls worth knowing the reasoning behind, not just the outcome
 
 - **Pixel-diff, not AI-vision, as the primary visual-diff mechanism.**
-  Deterministic, free, fast; an AI-description layer is planned as a
-  separately-scoped future addition, gated to only fire on pages the
-  pixel-diff already flagged as changed — not built yet.
+  Deterministic, free, fast; an AI-description layer was considered as a
+  future addition, gated to only fire on pages pixel-diff already flagged
+  — not built.
 - **Warn-with-a-fix, not auto-widen, for the origin-mismatch case.**
   Session 32 deliberately preserved strict same-origin enforcement rather
-  than treating www/non-www as automatically equivalent — real downsides
-  exist to auto-widening (different `robots.txt` per hostname, genuinely
-  different content sometimes living at each hostname) that outweighed
-  the convenience.
-- **No new CLI flags added without a clear need.** The GitHub Action
-  kept its input surface deliberately minimal (`url`, `max_pages`,
-  `skip_interpretation` only) rather than exposing every CLI flag
-  speculatively.
+  than treating www/non-www as automatically equivalent.
+- **No new CLI flags added without a clear need**, throughout this whole
+  project — the GitHub Action's input surface has grown, but only ever by
+  one input at a time, each time tied to a specific, real need
+  (`publish_to_pages`), never speculatively.
+- **`publish_to_pages` defaults to `false`, and this isn't just abstract
+  caution.** A real crawl of a company the repo owner was actually
+  interviewing with (goldenpetbrands.com) got published to the public run
+  history mid-project, with the (reasonable, well-intentioned) idea of
+  possibly sharing the link with the hiring contact there. On reflection
+  it was pruned instead — the crawl itself was technically and legally
+  fine, but a permanent, public, unsolicited scan of a real company's
+  site, while a hiring relationship might still be live, was judged not
+  worth the risk, especially given that particular crawl wasn't even a
+  strong demonstration of treeline's real strengths. Full detail in
+  `CONTEXT.md`. The takeaway that should outlive this specific incident:
+  treat `publish_to_pages` as being for targets you own or have real
+  standing to publish about, not a default toggle for whatever you happen
+  to be crawling that day.
+- **`test.skip` plus a separate file, not prose-only and not
+  enabled-by-default code, for AI-proposed assertions.** Considered and
+  rejected: prose-only (safe but loses almost all value — every proposal
+  becomes a from-scratch rewrite) and enabled-by-default code (real
+  industry precedent strongly against this — no serious test-generation
+  tool defaults to "runs against production automatically," and this
+  would have been the first time treeline's own default behavior could
+  cause a real side effect on someone else's live system). `test.skip` +
+  separate file gives real, useful, editable code with two independent
+  safety layers (file separation and runtime skip) instead of relying on
+  either alone.
+- **A dedicated audit session is a real, distinct category of session,
+  not just "more of the same."** Session 43 wasn't scoped to build
+  anything — it existed to check a specific question (does untrusted
+  content ever reach published HTML unescaped) across everything built so
+  far, something no single feature-scoped session had reason to do on its
+  own. It found three real things a feature-by-feature approach hadn't
+  caught. Worth treating as a periodic practice, not a one-time event —
+  see "What's left" above for three more audit questions raised but not
+  yet run.

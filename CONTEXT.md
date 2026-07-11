@@ -1,6 +1,6 @@
 # treeline — CONTEXT.md
 
-_Last updated after session 36. This file reflects what's actually built and
+_Last updated after session 43. This file reflects what's actually built and
 verified, not just the original plan — see the "Status" section for what's
 done vs. remaining._
 
@@ -48,12 +48,12 @@ for the full per-item breakdown.
   top-ranked candidate, matched across runs by role + accessibleName +
   occurrenceIndex), a markdown diff report with regressions surfaced first,
   and the `treeline diff <baselineDir> <currentDir> [--output dir]
-  [--fail-on-regression]` CLI command
+[--fail-on-regression]` CLI command
 - **Form & flow map** (sessions 16-19) — forms captured as grouped
   structures in `@treeline/acquire` (session 16), persisted in
   `@treeline/core` (session 17), rendered as `flow-map.md` combining forms
   and API surface in `packages/output` (session 18), wired into `treeline
-  crawl` as a fifth automatic report in `packages/cli` (session 19)
+crawl` as a fifth automatic report in `packages/cli` (session 19)
 
 Nothing structural remains from the original v1 plan.
 
@@ -82,7 +82,7 @@ candidate roadmap this was picked from.
     (session 22) — see "PageState shape" below for the `screenshot` vs.
     `screenshotPath` split this introduced.
   - Pixel-diff comparison via `pixelmatch`/`pngjs`, `packages/core/src/
-    screenshot-diff.ts` (session 23). Uses a 0.1% changed-pixel threshold —
+screenshot-diff.ts` (session 23). Uses a 0.1% changed-pixel threshold —
     empirically determined, not guessed: two independent real crawls of
     unchanged pages (example.com and the more visually complex httpbin.org/
     forms/post) both showed a 0% noise floor after pixelmatch's own
@@ -94,7 +94,7 @@ candidate roadmap this was picked from.
     `packages/output/src/diff-report.ts` (session 25).
   - Automatic file-writing wired into `treeline diff` in
     `packages/cli/src/orchestrate.ts` — writes `reports/visual-diffs/
-    <urlHash>.png` for each changed page, no new CLI flag required
+<urlHash>.png` for each changed page, no new CLI flag required
     (session 26).
   - **Guarantee preserved:** `--fail-on-regression` remains driven solely by
     selector-candidate regressions (`summary.hasRegressions` in
@@ -116,8 +116,7 @@ candidate roadmap this was picked from.
     `actions/upload-artifact`. `timeout-minutes: 25` safety net. Verified
     with two successful real runs (hgwllc.com, goldenpetbrands.com),
     including one with real AI interpretation and a real
-    `ANTHROPIC_API_KEY` secret. Stage B (GitHub Pages auto-publish) not
-    started — see `V2.md` item 2.
+    `ANTHROPIC_API_KEY` secret.
   - **Process-lifecycle fix** (session 29) — a real CI run hung for ~1.5
     hours after finishing all its actual work. Root cause: `capturePage`
     only closed its browser on the happy path, so any page-level error
@@ -170,9 +169,8 @@ candidate roadmap this was picked from.
     share one inline stylesheet (`template.ts`) that deliberately reuses
     treeline's own `#1a2744`/`#f4f6f9`/`#aac4ff` palette rather than
     inventing a second look for generated output. `discover.ts` orders
-    reports by a fixed known list (atlas, selector-report, testid-audit,
-    axe-report, flow-map, diff-report) before falling back to alphabetical
-    for anything unrecognized.
+    reports by a fixed known list before falling back to alphabetical for
+    anything unrecognized.
   - **`meta.json` capture** (`meta.ts`) — `buildRunMeta(outputDir, mode)`
     opens the run's `crawl.sqlite` (if present) via `@treeline/core`'s
     `openCrawlDb`, reads `db.getMeta()?.seedUrl` and
@@ -181,92 +179,335 @@ candidate roadmap this was picked from.
     fix, applied here to a db handle instead of a browser. `RunMode` is
     inferred, not passed by the caller with certainty: `render.ts` checks
     whether any rendered report is `diff-report.md` and sets `mode:
-    'diff'` if so, `'crawl'` otherwise. This relies on `getMeta()`, a new
+'diff'` if so, `'crawl'` otherwise. This relies on `getMeta()`, a new
     read accessor added to `packages/core/src/persistence.ts` alongside
     the existing `insertMeta` — `crawl_meta` was already written on every
     crawl, but nothing previously read it back out.
   - **Multi-run index** (`runs-index.ts`) — `buildRunsIndex(runsRootDir)`
     scans immediate subdirectories of a `runs/` root, reads each one's
-    `meta.json` (skipping any directory that doesn't have one — e.g. a
-    non-run file that ended up in the same directory), sorts by
+    `meta.json` (skipping any directory that doesn't have one), sorts by
     `renderedAt` descending, and writes a `runs/index.html` table of every
-    published run (target URL, mode, rendered timestamp, page count) — the
-    landing page for browsing historical runs, not just the latest one.
+    published run (target URL, mode, rendered timestamp, page count).
   - **`scripts/publish.ts`** — the two-subcommand entry point the workflow
-    actually shells out to: `render <outputDir> <targetDir>` (wraps
+    shells out to: `render <outputDir> <targetDir>` (wraps
     `renderOutputToHtml`) and `index <runsRootDir>` (wraps
-    `buildRunsIndex`). Not a general CLI — just enough surface for the two
-    workflow steps that need it.
+    `buildRunsIndex`).
   - **Workflow wiring** (`.github/workflows/crawl.yml`) — new
     `publish_to_pages` boolean input, **default `false`** (opt-in, not
-    opt-out). Reasoning: this repo is public (see the "This repo is
-    public" gotcha in CLAUDE.md), and prior real runs (sessions 28-32)
-    already crawled live third-party sites the repo owner doesn't own —
-    publishing every run's actual content to a public URL by default would
-    compound that without a deliberate choice each time. `permissions:
-    contents: write` (needed to push to the `gh-pages` branch) and
-    `fetch-depth: 0` on checkout (needed so the later `git worktree
-    add`/`rebase` steps against `origin/gh-pages` have real history to
-    work with, not a shallow clone) were both added alongside this input.
-    `@treeline/pages` was added to the build-order step, between
-    `@treeline/core` and `@treeline/interpret`. Six subsequent steps are
-    all gated on the same condition: render the run to HTML
-    (`scripts/publish.ts render`), prepare a `gh-pages` worktree (checks
-    out the existing `origin/gh-pages` branch if it exists, otherwise
-    creates it fresh as an orphan branch via `git worktree add --detach` +
-    `checkout --orphan gh-pages` + `rm -rf .`), copy the rendered run into
-    `runs/<github.run_number>/` inside that worktree (deliberately
-    `run_number`, the short per-repo incrementing counter, not
-    `run_id`/`github.run_id` — much friendlier as a URL path than the long
-    globally-unique ID already used for the artifact name), rebuild the
-    runs index (`scripts/publish.ts index`), commit, and push — with a
-    fetch/rebase/retry fallback if the push is rejected (another run
-    landed on `gh-pages` first).
-  - **The boolean-input type-coercion bug** (introduced in the session
-    34-35b "Wire GitHub Pages publish into crawl workflow" commit, fixed
-    the same session) — every one of the six gated steps above originally
-    read `if: inputs.publish_to_pages == 'true'`. This silently evaluated
-    **false on every run, regardless of what the user actually selected**,
-    so triggering the workflow with `publish_to_pages: true` produced an
-    artifact but never touched `gh-pages` at all — no error, no visible
-    signal, just steps quietly skipped. Root cause: GitHub Actions'
-    `inputs.*` context (workflow_dispatch only) preserves the real
-    declared type of an input — a `type: boolean` input is a genuine
-    boolean there, not a string. `github.event.inputs.*`, by contrast,
-    stringifies every input unconditionally. `inputs.publish_to_pages ==
-    'true'` therefore compares a real boolean against a string; GitHub
-    Actions' expression syntax resolves `==` between mismatched types by
-    coercing both sides to numbers, and `true`/`'true'` do not coerce to
-    the same number, so the comparison is false whether the underlying
-    input was `true` or `false`. Fixed by comparing the boolean directly —
-    `if: inputs.publish_to_pages` — with no string comparison at all. This
-    is the same class of gotcha as `SKIP_INTERPRETATION` a few lines above
-    it in the same workflow, which is safe **only** because that one is
-    consumed inside a bash `run:` step (`env: SKIP_INTERPRETATION:
-    ${{ inputs.skip_interpretation }}`, then bash's `[ "$SKIP_INTERPRETATION"
-    = "true" ]`) — env vars are always strings by the time bash sees them,
-    so the string comparison there is correct. The bug only exists in a
-    YAML-level `if:` expression, where `inputs.*` is not a string. Verified
-    fixed for real, not just by inspection: two real workflow runs after
-    the fix (`Publish run 7 (https://example.com)`, `Publish run 9
-    (https://httpbin.org/forms/post)`, both 2026-07-10) landed real commits
-    on `origin/gh-pages` under `runs/7/` and `runs/9/`, each with a
-    correct `meta.json`, rendered reports, POMs, and specs.
-  - **Known gap, not yet resolved:** the `gh-pages` branch as it exists on
-    the real remote today has `runs/7/`, `runs/9/`, and `runs/index.html`,
-    but **no root-level `index.html`** — `scripts/publish.ts index` only
-    ever writes `<runsRootDir>/index.html` (i.e. `runs/index.html`), and
-    nothing in the workflow creates a landing page at the branch root.
-    Combined with this: hitting the repo's actual GitHub Pages URL as of
-    this writing 404s, both at the root and at `/runs/index.html` —
-    consistent with GitHub Pages serving not actually being turned on yet
-    in this repo's Settings (Pages source = `gh-pages` branch root is a
-    one-time manual step, see CLAUDE.md, and doesn't happen automatically
-    just because the branch exists and has content). Until Pages is
-    enabled *and* a root `index.html` exists (or redirects to `runs/`),
-    there is no working public URL yet, even though the publish mechanism
-    itself is proven. Flagged for an owner decision, not silently fixed
-    here — this session is docs-only.
+    opt-out). Reasoning: this repo is public, and prior real runs
+    (sessions 28-32) already crawled live third-party sites the repo
+    owner doesn't own — publishing every run's actual content to a public
+    URL by default would compound that without a deliberate choice each
+    time. This reasoning was not hypothetical — see the GPB judgment call
+    below. `permissions: contents: write` and `fetch-depth: 0` on checkout
+    both added alongside this input. `@treeline/pages` added to the
+    build-order step, between `@treeline/core` and `@treeline/interpret`.
+    Six gated steps: render the run to HTML, prepare a `gh-pages`
+    worktree (checks out `origin/gh-pages` if it exists, otherwise
+    creates it fresh as an orphan branch), copy the rendered run into
+    `runs/<github.run_number>/`, rebuild the runs index, commit, and push
+    — with a fetch/rebase/retry fallback if the push is rejected.
+  - **The boolean-input type-coercion bug** (introduced and fixed in the
+    same session, 35b) — every one of the six gated steps originally read
+    `if: inputs.publish_to_pages == 'true'`, which silently evaluated
+    **false on every run regardless of the actual input** — no error, no
+    visible signal, steps just quietly skipped. Root cause: `inputs.*`
+    (workflow_dispatch context) preserves an input's real declared type —
+    a `type: boolean` input is a genuine boolean there — while
+    `github.event.inputs.*` stringifies everything unconditionally.
+    `inputs.publish_to_pages == 'true'` compares a real boolean against a
+    string; GitHub Actions' `==` coerces mismatched types to numbers, and
+    `true`/`'true'` don't coerce to the same number, so the comparison is
+    always false. Fixed by comparing the boolean directly:
+    `if: inputs.publish_to_pages`. See CLAUDE.md's gotchas for the full
+    writeup, including why `SKIP_INTERPRETATION`'s existing string
+    comparison elsewhere in the same file is correct and unrelated (it's
+    consumed inside a bash `run:` step via `env:`, where everything is
+    already a string by the time bash sees it).
+- **Root landing page for GitHub Pages** (session 37) — resolves the gap
+  flagged at the end of Stage B's rollout: `scripts/publish.ts index` only
+  ever wrote `runs/index.html`, so the bare Pages root URL 404'd even once
+  Pages serving was enabled. Fixed with a static file,
+  `packages/pages/static/root-redirect.html` (a meta-refresh redirect to
+  `runs/`, plus a plain fallback link) — deliberately static rather than
+  rendered, since its content never varies. A new "Write root redirect"
+  workflow step, in the same `publish_to_pages`-gated group, copies it to
+  `gh-pages-worktree/index.html` on every publish run, so it's self-healing
+  if the branch is ever rebuilt from scratch rather than a one-time manual
+  add. Verified live: the repo's actual Pages root URL now returns 200 and
+  redirects correctly to `/runs/`, confirmed via a real triggered run
+  (`example.com`, `publish_to_pages: true`) after both this fix and the
+  separate one-time repo-Settings changes (see CLAUDE.md) were done. The
+  `/runs/` URL itself was and remains unaffected.
+- **Coverage-gap report** (session 38, V2 item 3) — `coverage-report.md`,
+  wired into `treeline crawl` as the sixth automatic report, same pattern
+  flow-map followed when it was added as the fifth (session 19). Four
+  sections, all computed from data treeline already tracks — no new
+  capture work:
+  - **Zero-coverage pages** — every interactive element on the page ended
+    up in POM generation's `skipped` array, no locators generated at all.
+  - **High-skip pages** — skipped elements exceed 50% of that page's total
+    interactive elements. Deliberately a relative threshold, not absolute
+    — a 4-element page with 3 skipped is a worse signal than a 200-element
+    page with 3 skipped.
+  - **Forms without a corresponding generated test** — Step 0 investigation
+    found this isn't a per-form defect to detect, it's a currently-always-
+    true fact: `generateSpec` (`pom-generation.ts`) produces only a
+    page-level skeleton with a single `toHaveURL` assertion — it has never
+    referenced form fields, for any form, regardless of page. The report
+    states this plainly, with the reasoning, rather than presenting it as
+    a per-form finding it isn't. (Session 42's proposed-assertion work,
+    below, is the actual answer to this gap — for forms specifically.)
+  - **Unresolved hard-pages entries** — a small reader for the
+    `HardPageEntry` JSON manifest was added directly in
+    `packages/cli/src/orchestrate.ts` (not `core`/`acquire` — kept
+    minimal, scoped only to where it's needed), replacing what had been
+    just a raw file count with real parsed entries.
+  - Verified against a real crawl with deliberately unlabeled/duplicate
+    elements, cross-checked by hand against that run's own
+    `selector-report.md`/`testid-audit.md` — exact-match counts, and the
+    50%-exactly boundary case correctly excluded (threshold is `>50%`, not
+    `≥50%`).
+  - **Bundled in the same session, unrelated:** a real table-overflow bug
+    in `flow-map.md`'s API surface table, reported against a live
+    published run — very long unbroken URL tokens (Cloudflare
+    challenge-platform paths) pushed the whole page wide, since browsers
+    only wrap at whitespace by default. Fixed in
+    `packages/pages/src/template.ts`'s shared table CSS:
+    `overflow-wrap: anywhere; word-break: break-word;` on `td`/`th`.
+    Verified with a real headless-Chromium A/B measurement — the same
+    rendered page overflowed its 1024px viewport to 1706px without the
+    fix, fit cleanly at 1024px with it. Only affects future renders; not
+    retroactively applied to already-published runs.
+- **Timing/flakiness signal, first cut** (sessions 39-41, V2 item 4) —
+  V2.md's own description of this item claimed it could reuse "capture
+  timing data ... that already exists." That claim turned out to be false
+  — checking the real `PageState`/`NetworkEntry` shape at the time found
+  no timestamps or durations captured anywhere. This item genuinely starts
+  in `packages/acquire`, not `packages/output`, confirming V2.md's own
+  separate suspicion that it "may need new capture-layer instrumentation."
+  Split across three sessions, each proving its output against real data
+  before the next was scoped — same discipline as flow map's four-session
+  capture/persist/render/wire-in split.
+  - **Session 39 — page-load and network-request timing.**
+    `PageState.pageLoadMs: number`, wall-clock time from just before
+    navigation through the crawler's existing `waitForLoadState
+('networkidle')` wait (confirmed as the real wait strategy in Step 0,
+    not assumed). `NetworkEntry.durationMs: number`, measured from a
+    request event to its matching response event. Both persisted (new
+    `pageLoadMs` column on the `pages` table). Cross-checked by hand
+    against Chrome DevTools' Network tab for a real page — not just
+    asserted non-null.
+  - **Session 40 — per-element appearance latency.**
+    `DomInteractiveElement.appearedAtMs: number | null` — deliberately
+    narrowed to only mean something for elements that render in _after_
+    initial page load; trivially inapplicable (and reported as `null`,
+    never a fake `0`) for anything already present at initial capture.
+    Mechanism: a `MutationObserver` is injected via `page.addInitScript`
+    at navigation start, tagging any element inserted after
+    `DOMContentLoaded` fires with a `data-treeline-appeared-at` attribute
+    — the existing `interactiveElements` `$$eval` pass reads that
+    attribute back during its normal DOM traversal, no new communication
+    plumbing needed. Elements present at initial load simply have no
+    attribute, so they read back as `null`. Verified against a permanent
+    (not throwaway) local-fixture test in `capture.test.ts` — one
+    immediately-present element, one inserted after a real 700ms-delayed
+    `fetch()` response, confirmed `null` vs. a real, sane latency value.
+    Kept as a permanent test rather than deleted, since "immediate →
+    `null`, delayed → a number in a sane range" is precisely assertable
+    against a controlled fixture, unlike, say, a visual-diff pixel
+    comparison on a real complex page, which genuinely needs human
+    judgment — the throwaway-script convention exists for the latter
+    case, not this one.
+  - **Resolved in this arc:** an open question from session 39 — whether
+    `page.pageLoadMs ?? 0` in `packages/interpret/src/orchestrate.ts` was
+    reachable defensive code or dead code. Traced the real invariant:
+    `recordPageState` sets `pageLoadMs` atomically with `title`/
+    `ariaSnapshot`/`capturedAt`; `markFailed` nulls all four; the
+    `capturedPages` filter already excludes `markFailed` rows via the
+    other three fields. `pageLoadMs` can therefore never be `null` inside
+    that filter — confirmed dead. Changed to a non-null assertion
+    (`page.pageLoadMs!`) with a one-line comment stating the invariant, so
+    a future reader knows why the assertion is safe rather than having to
+    re-derive it. Same pattern found and fixed in
+    `packages/interpret/scripts/sanity-check.ts`.
+  - **Session 41 — `timing-report.md`.** Wired into `treeline crawl` as
+    the seventh automatic report. Three sections, each with an
+    empirically-derived threshold, same discipline as visual diffing's
+    0.1% pixel threshold — not a guessed number:
+    - Slow-loading pages: **2500ms.** Real crawled sites topped out at
+      1071ms; deliberately-slow test loads started at 3599ms.
+    - Slow network requests: **500ms.** Real requests (including images)
+      topped out at 399ms; deliberately-slow ones (`httpbin.org/delay/3`
+      and similar) started at 712ms.
+    - High-latency element appearance: **2500ms**, but on a genuinely
+      thinner empirical basis than the other two — real crawls turned up
+      almost no naturally-occurring `appearedAtMs` samples, since the
+      crawler doesn't click or scroll, so there wasn't enough real
+      distribution to derive a percentile from. Anchored instead to
+      Playwright's own default `expect()` timeout (5000ms), halved. This
+      weaker basis is stated explicitly in the code, not presented with
+      false confidence equal to the other two thresholds.
+    - Every section also always surfaces its top 5 slowest/highest-latency
+      entries regardless of threshold, so the report has real content
+      even on a uniformly fast or uniformly slow site — a pure
+      percentile/outlier approach would otherwise report nothing unusual
+      on a site where everything is equally slow.
+    - Verified with a deliberately-slow real request
+      (`httpbin.org/delay/3`) correctly flagged, and fast pages/requests/
+      elements correctly not flagged — false positives checked
+      deliberately, not just false negatives.
+  - **Still open, deliberately deferred:** diff-mode timing regression
+    detection (comparing timing data across two crawls). Not built in
+    this arc on purpose — a regression detector needs real, observed
+    run-to-run noise to design against, the same way the 0.1% visual-diff
+    threshold needed two real crawls' worth of noise-floor data before it
+    could be set responsibly. That data didn't exist before session 41
+    produced real report output; it does now. Natural next step whenever
+    picked back up.
+- **AI-proposed test assertions, first cut — forms only** (session 42, V2
+  item 5) — extends `StoredInterpretation` with
+  `proposedAssertion: ProposedAssertion | null`, attempted only for pages
+  with at least one captured form (gated before the AI call, not after).
+  Scoping decisions locked in before any code was written, given this is
+  the first V2 item that touches generated test _logic_ rather than
+  structure:
+  - **Every proposed test lives in a separate `*.proposed.spec.ts` file**,
+    never merged into the trusted generated `.spec.ts` — mirrors this
+    project's existing pattern of keeping trusted/suggested data in
+    separate types and files (`StoredInterpretation`/`PageInterpretation`,
+    POM/spec) rather than blurring the boundary in one shared file.
+  - **Every proposed test is wrapped in `test.skip(...)`** — real,
+    complete, editable Playwright code, but never runnable by default. A
+    human deletes one line to enable it after review; nothing runs
+    silently against a real target just by running the suite. Verified
+    for real, not just asserted: the generated file was run through
+    `npx playwright test` and confirmed to report "1 skipped," not
+    executed.
+  - **Proposed fill values are deliberately, obviously synthetic**
+    (`"Test User"`, `"test@example.com"`) — a second, independent safety
+    layer beyond `test.skip`, in case a human ever removes the skip
+    without fully reading the file.
+  - **Treeline itself never fills or submits anything during generation**
+    — stays entirely passive/read-only, same as every other part of this
+    codebase. The AI only ever writes code describing what a test _could_
+    do; it never acts on a live page to produce that description.
+  - **The success assertion is explicitly stated as an unverified guess**,
+    in the generated file itself (a comment, not just this document) —
+    treeline has never observed real post-submission behavior for any
+    page it's crawled, so any "assert success" claim is a plausible guess
+    based only on the page's captured pre-submission state, not a checked
+    fact the way everything else treeline generates is.
+  - **A real bug, caught by the mandated manual check:** the first version
+    matched the model's own freeform `accessibleName` guess back to
+    captured form fields, as the lookup key. On `httpbin.org/forms/post`
+    (genuinely unlabeled inputs), the model recognized the well-known URL
+    and invented plausible-sounding labels instead of describing what it
+    actually saw — so locators never matched real fields, and
+    checkbox/radio fields got `.fill()` instead of `.check()`. Fixed by
+    ensuring field identity always traces back to the real captured field
+    array; the model may propose values and scenarios, but never gets to
+    serve as the identity/matching key for structured data. General
+    lesson, not just a one-off patch: **never let a model's freeform
+    natural-language output serve as a lookup key against deterministic,
+    structured data.**
+  - **Values are safe by construction, not by manual escaping** — every
+    dynamic value spliced into the generated spec (`fill()`/
+    `selectOption()` arguments, locator strings, the scenario title, even
+    the target URL) goes through `JSON.stringify(...)`, which handles
+    quote/newline escaping as an inherent property of what it does. The
+    one place that genuinely needed a different technique —
+    `successAssertion`/`successAssertionCaveat`, spliced into a `//`
+    comment rather than a quoted string literal — got `toSafeComment()`
+    (strips embedded newlines) specifically because a code comment has no
+    equivalent to matched-quote escaping; see session 43 below for how
+    this was confirmed complete.
+  - **Deliberately not built in this first cut:** anything beyond
+    form-fill-and-submit scenarios; a way to "promote" a reviewed-good
+    proposal into the trusted spec (plain copy-paste may be entirely
+    sufficient); a summary report of how many proposals exist across a
+    crawl.
+- **Escaping/injection audit** (session 43) — not a V2.md roadmap item;
+  reactive hardening work, prompted by a direct question about whether a
+  dedicated review pass would surface anything a feature-scoped session
+  wouldn't. It found real things. Scope: every path where crawled or
+  AI-derived content reaches the HTML actually published to the live,
+  public `gh-pages` site — stakes that didn't exist before Stage B turned
+  markdown files someone might read in a terminal into HTML served to
+  anyone visiting a public URL.
+  - **Confirmed safe by design, verified empirically, not assumed:**
+    `markdown-it`'s `html: false` config (`packages/pages/src/
+markdown.ts`) fully blocks raw HTML/script injection, in prose and in
+    table cells alike; markdown-it's default link validator already
+    rejects `javascript:`/`data:` URI schemes in `[text](url)` links;
+    `naming.ts`'s filename generation can't produce path traversal
+    (segments joined with `-`, never `/`, and the WHATWG URL API
+    percent-encodes dangerous characters in a pathname), so unescaped
+    `href` interpolation in `index-page.ts`/`runs-index.ts` was already
+    safe.
+  - **Fixed — `escapeHtml` gap:** `packages/pages/src/template.ts`'s
+    existing HTML-escaping function (built in session 34) was missing the
+    `'` character from the five it's required to escape. Added.
+  - **Fixed — real content-integrity bug, not XSS:** crawled titles,
+    URLs, `accessibleName`, and AI-derived text were spliced directly
+    into markdown source with no handling of `|` or embedded newlines.
+    Verified live: a `|` silently truncated a table row (columns
+    dropped), and an embedded newline injected a fake `<h1>` heading plus
+    a real clickable link into a report. Correctly categorized as content
+    spoofing rather than XSS — markdown-it's `html:false` and its
+    link-scheme validator genuinely do block code execution here — but a
+    real integrity problem regardless: a crawled site could make its own
+    fabricated content appear as if it were part of treeline's own
+    published report. Fixed with a new file,
+    `packages/output/src/markdown-safety.ts`
+    (`sanitizeMarkdownText`/`sanitizeMarkdownTableCell`), applied at every
+    untrusted-string interpolation point across all eight report
+    generators (`atlas.ts`, `axe-report.ts`, `selector-report.ts`,
+    `testid-audit.ts`, `coverage-report.ts`, `timing-report.ts`,
+    `flow-map.ts`, `diff-report.ts`).
+  - **Fixed — comment-breakout risk:** in `proposed-assertions.ts` (see
+    session 42 above), `successAssertion`/`successAssertionCaveat` were
+    the only two dynamic values in that file spliced into a `//` comment
+    rather than a `JSON.stringify`-escaped string literal — an embedded
+    newline could break out of the comment into raw, uncommented
+    generated TypeScript. Fixed with `toSafeComment()`. Confirmed in
+    follow-up review that every other dynamic value in that same file
+    (`.fill()`/`.selectOption()` arguments, locators, the scenario title,
+    `page.url`) was already safe by construction via `JSON.stringify`, so
+    this was the one genuine gap, not one of several.
+  - **Permanent regression test:**
+    `packages/pages/src/injection-safety.test.ts` — a real `PageState`
+    with a `<script>alert(1)</script>` title and pipe-laden titles/names
+    runs through the actual `@treeline/output` generators and
+    `renderOutputToHtml`, asserting no live `<script>` tag and no table
+    corruption in the final HTML. Manually verified against raw HTML
+    bytes, not just test assertions — the payload appears only as
+    `&lt;script&gt;`, the pipe payload stays inside one `<td>`, and the
+    injected-heading attempt renders as inert text.
+
+## GPB judgment call (context, not code — worth knowing regardless)
+
+Not an architectural decision, but worth recording in the same spirit as
+the judgment calls already documented above, since it directly shaped
+`publish_to_pages`'s default-`false` design and isn't obvious from the
+code alone: mid-project, a real crawl of `goldenpetbrands.com` — a company
+the repo owner was actually interviewing with — got published to the
+public `gh-pages` run history via the opt-in flag, with the intent of
+possibly sharing the live link with the hiring contact there. On
+reflection, this was pruned rather than shared or left live: the
+technical/legal footing was fine (treeline respects `robots.txt`, no
+stealth, nothing here is different from what any browser or scanner does
+to a public site), but the optics of an unsolicited, permanently-public
+scan of a real company's site — while a hiring relationship might still be
+live — were judged not worth the risk, especially since that specific
+report wasn't even a strong demonstration of treeline's actual
+differentiators (zero forms found, mostly Cloudflare/font-loading noise in
+the API surface table, not real business logic). Pruned using the
+documented recipe (see CLAUDE.md). The general principle this reinforces:
+`publish_to_pages` is for targets you own or have standing to publish
+about — real third-party targets, however legitimate the crawl itself is,
+belong as artifact-only unless there's a specific, deliberate reason and
+ideally consent to make that particular run permanent and public.
 
 ## Primary deliverable priority
 
@@ -300,9 +541,13 @@ candidate roadmap this was picked from.
 ## PageState shape (as actually captured, `@treeline/acquire`)
 
 Grew significantly beyond the original plan through sessions 1, 4.5, 4.6, 9,
-and 9.5:
+9.5, and 39-40:
 
 - `url`, `title`, `ariaSnapshot`, `links`, `capturedAt`
+- `pageLoadMs: number` (session 39) — wall-clock time from just before
+  navigation through the crawler's existing `waitForLoadState
+('networkidle')` wait. Persisted as a `pages` table column. Feeds
+  `timing-report.md`'s slow-page-load section (session 41).
 - `screenshot: Buffer | null` — a real full-page PNG captured via
   Playwright's `page.screenshot` (session 21). This field was previously
   documented here as "captured" when it was actually a hardcoded `null`
@@ -320,14 +565,22 @@ and 9.5:
   22). Visual diffing (see "V2 additions" below) reads this field, not
   `screenshot`, when comparing two crawls.
 - `networkLog: NetworkEntry[]` — request/response url, method, status,
-  resourceType. Captured since session 1; rendered as the API surface half
-  of `flow-map.md` since session 18 (see "Open items" for two known dedup/
-  filter gaps in that rendering).
+  resourceType, plus `durationMs: number` (session 39, time between the
+  request event and its matching response event). Captured since session
+  1; rendered as the API surface half of `flow-map.md` since session 18
+  (see "Open items" for two known dedup/filter gaps in that rendering);
+  `durationMs` feeds `timing-report.md`'s slow-request section (session
+  41).
 - `interactiveElements: DomInteractiveElement[]` — real DOM ground truth
   per element: `role`, `accessibleName`, `testId`, `tagName`, `elementId`,
-  `classList`, `cssPath`, `xpath`. This exists specifically because AI
-  guessing at `testIdPresent` from the aria snapshot was unreliable (session
-  4.5) — `data-testid` is invisible to the accessibility tree by design.
+  `classList`, `cssPath`, `xpath`, plus `appearedAtMs: number | null`
+  (session 40) — `null` for anything present at initial page load,
+  otherwise the real timestamp (relative to navigation start) at which a
+  `MutationObserver` first observed the element being inserted after
+  `DOMContentLoaded`. Feeds `timing-report.md`'s high-latency-element
+  section (session 41). This exists specifically because AI guessing at
+  `testIdPresent` from the aria snapshot was unreliable (session 4.5) —
+  `data-testid` is invisible to the accessibility tree by design.
   **Known limitation:** `accessibleName` resolution is a simplified
   heuristic (`aria-label` → `aria-labelledby` → `textContent` →
   `placeholder`/`value`). It does NOT check for an `<img alt>` descendant or
@@ -382,19 +635,22 @@ Built as both a library and a network-callable API from day one.
   - No Opus escalation tier — deliberate.
 - **`PageInterpretation` shape** (as of session 4.7 — narrower than
   originally planned): `url`, `tierUsed`, `pageType`, `purpose`,
-  `keyDataEntities: string[]`, `confidence`. `interactiveElements` was
-  deliberately removed from this type — it's redundant with and less
-  accurate than `PageState.interactiveElements` from real DOM capture. Do
-  not reintroduce it.
+  `keyDataEntities: string[]`, `confidence`, plus
+  `proposedAssertion: ProposedAssertion | null` (session 42 — see "V2
+  additions" above; only ever non-null for pages with a captured form).
+  `interactiveElements` was deliberately removed from this type — it's
+  redundant with and less accurate than `PageState.interactiveElements`
+  from real DOM capture. Do not reintroduce it.
 - **Persistence:** `StoredInterpretation` lives in `@treeline/core`, NOT
   `@treeline/interpret` — this is intentional, not an oversight, to avoid a
   circular workspace dependency (`core` has no dependency on `interpret`).
-  It mirrors `PageInterpretation`'s shape by field name only, plus
-  `interpretedAt`. `runInterpretation(dbPath, hardPagesDir)` in
-  `@treeline/interpret` orchestrates: skips pages without a successful
-  capture, skips pages that already have a stored interpretation
-  (idempotent — safe to re-run), retries once on a malformed response
-  before giving up, and routes final failures to `hard-pages/`.
+  It mirrors `PageInterpretation`'s shape by field name only (including
+  `proposedAssertion`, session 42), plus `interpretedAt`.
+  `runInterpretation(dbPath, hardPagesDir)` in `@treeline/interpret`
+  orchestrates: skips pages without a successful capture, skips pages that
+  already have a stored interpretation (idempotent — safe to re-run),
+  retries once on a malformed response before giving up, and routes final
+  failures to `hard-pages/`.
 - **Same category of split, session 12:** `computeSelectorCandidates` moved
   from `packages/output` into `packages/core` (as `selector-candidates.ts`),
   since `diff.ts` (also in `core`) needed it and `core` must not depend on
@@ -409,6 +665,10 @@ Built as both a library and a network-callable API from day one.
   it. Budget for occasional real API cost on retried pages.
 - **Real cost data point:** roughly $0.02–0.04 per Sonnet-tier page
   (~3–4k input tokens, a few hundred output tokens for the reduced schema).
+  Session 42's `proposedAssertion` call is a second, separate AI call, only
+  made for pages with a captured form — gated before the call specifically
+  to avoid spending tokens on pages that structurally can't have a
+  meaningful proposal.
 - Pages that fail after retries are queued into `hard-pages/` with
   `reasonCode: 'parse-error'` and a truncated real error message in
   `captureSnapshot` (session 5.97 — the original design had this hardcoded
@@ -458,7 +718,7 @@ Built as both a library and a network-callable API from day one.
    plus selector-candidate regression/improvement/other classification
    between two crawl output directories, rendered as a markdown report with
    regressions surfaced first. Exposed via `treeline diff <baselineDir>
-   <currentDir> [--output dir] [--fail-on-regression]`.
+<currentDir> [--output dir] [--fail-on-regression]`.
 8. **Form & flow map** — ✅ done. Forms captured as grouped structures
    (fields, `action`, `method`) in `@treeline/acquire` (session 16),
    persisted in `@treeline/core` (session 17), rendered as `flow-map.md`
@@ -496,41 +756,52 @@ pnpm workspaces monorepo:
 
 - `packages/cli` — the real `treeline crawl` command
   (`--stealth`, `--max-pages`, `--max-depth`, `--throttle-ms`, `--output`,
-  `--skip-interpretation`), orchestrating everything below. Has its own
-  `vitest.config.ts` excluding `treeline-output/` — see CLAUDE.md.
-- `packages/core` — crawler, persistence (pages + interpretations tables),
-  robots/sitemap, hard-pages writer, `diff.ts` (page + selector-candidate
-  diffing), `selector-candidates.ts` (candidate computation),
-  `screenshot-diff.ts` (pixel-diff visual comparison, session 23),
-  `origin-scope.ts` (post-redirect origin resolution + hostname-mismatch
-  detection, session 32), and `urlHash` in `url-utils.ts` (deterministic
-  per-URL hash used to name screenshot and diff-image files, session
-  22/26)
+  `--skip-interpretation`), orchestrating everything below, plus a small
+  `HardPageEntry` manifest reader (session 38) used by coverage-report.
+  Has its own `vitest.config.ts` excluding `treeline-output/` — see
+  CLAUDE.md.
+- `packages/core` — crawler, persistence (pages + interpretations tables,
+  including `pageLoadMs` and `proposedAssertion`), robots/sitemap,
+  hard-pages writer, `diff.ts` (page + selector-candidate diffing),
+  `selector-candidates.ts` (candidate computation), `screenshot-diff.ts`
+  (pixel-diff visual comparison, session 23), `origin-scope.ts`
+  (post-redirect origin resolution + hostname-mismatch detection, session
+  32), and `urlHash` in `url-utils.ts` (deterministic per-URL hash used to
+  name screenshot and diff-image files, session 22/26)
 - `packages/acquire` — hardened Playwright/Patchright capture layer +
-  axe-core scanning + Fastify API
+  axe-core scanning + Fastify API + timing/appearance-latency
+  instrumentation (sessions 39-40)
 - `packages/interpret` — 2-tier AI interpretation with retry + persistence
-  orchestration
+  orchestration + the forms-gated `proposedAssertion` AI call (session 42)
 - `packages/output` — selector report, testid audit, atlas, POM+spec
   generation (via `naming.ts`'s collision-safe filename assignment,
-  session 31), axe report, diff report renderer (now includes the Visual
-  Changes section, session 25), `flow-map.ts` (forms + API surface)
+  session 31), axe report, diff report renderer (Visual Changes section,
+  session 25), `flow-map.ts` (forms + API surface), `coverage-report.ts`
+  (session 38), `timing-report.ts` (session 41), `proposed-assertions.ts`
+  (session 42, renders `*.proposed.spec.ts`), `markdown-safety.ts`
+  (session 43, untrusted-content sanitization used by all eight report
+  generators)
 - `packages/pages` — static HTML renderer for a treeline output directory
   (markdown-it + shiki), `meta.json` capture, multi-run index generation
-  (sessions 34-35b, see "V2 additions" above)
+  (sessions 34-35b), `static/root-redirect.html` (session 37), the
+  hardened `escapeHtml` and `injection-safety.test.ts` regression suite
+  (session 43)
 - `packages/cli`'s `orchestrate.ts` — in addition to crawl orchestration,
-  now writes `reports/visual-diffs/*.png` diff images for pages with a
-  visual change (session 26)
+  writes `reports/visual-diffs/*.png` diff images for pages with a visual
+  change (session 26), and generates `*.proposed.spec.ts` files alongside
+  POM/spec output for pages with a non-null proposal (session 42)
 - `.github/workflows/crawl.yml` — `workflow_dispatch` CI crawl trigger
-  (session 28) plus opt-in `gh-pages` publish (sessions 34-35b), see "V2
-  additions" above
+  (session 28), opt-in `gh-pages` publish (sessions 34-35b), root-redirect
+  write step (session 37)
 
 ## Stack
 
 TypeScript, Playwright + Patchright, Fastify, SQLite (better-sqlite3),
 Anthropic API (Haiku 4.5 / Sonnet 5) via `@anthropic-ai/sdk`, `@axe-core/
 playwright`, `pixelmatch` + `pngjs` (visual diff comparison), `markdown-it`
-+ `shiki` (GitHub Pages HTML rendering), pnpm workspaces, Vitest,
-commander (CLI).
+
+- `shiki` (GitHub Pages HTML rendering), pnpm workspaces, Vitest,
+  commander (CLI).
 
 ## Open items
 
@@ -544,8 +815,8 @@ commander (CLI).
   out of 12 form fields with a blank accessible name in the rendered
   `flow-map.md` forms table — not an occasional edge case, a near-total
   miss on that page. Confirmed to affect `selector-report.md`,
-  `testid-audit.md`, and now `flow-map.md`. Promoted to the top of this
-  list given the now-confirmed scope (see PageState shape section above for
+  `testid-audit.md`, and `flow-map.md`. Promoted to the top of this list
+  given the now-confirmed scope (see PageState shape section above for
   the underlying heuristic detail: misses `<img alt>` and `<label for>`).
 - The API surface filter (`isApiSurfaceCandidate` in flow map) is
   technically correct per its resourceType-based rule, but can surface
