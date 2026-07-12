@@ -1,6 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { CapturedForm, PageState } from "@treeline/acquire";
-import type { PageInterpretation, ProposedAssertion } from "./types.js";
+import type { PageInterpretation, FormFillAssertion, ContentPresenceAssertion } from "./types.js";
 import { decideTier } from "./routing.js";
 import { getAnthropicClient } from "./client.js";
 import { HAIKU_MODEL, SONNET_MODEL } from "./models.js";
@@ -10,6 +10,9 @@ const MAX_PROPOSAL_ATTEMPTS = 2;
 
 const UNVERIFIED_GUESS_CAVEAT =
   "This success assertion is an unverified guess: treeline never fills or submits real forms, so it has not observed this page's actual post-submission behavior.";
+
+const OBSERVED_ELEMENT_CAVEAT =
+  "This checks that an element treeline observed during the crawl is still present — the page may have changed since capture; review before removing test.skip.";
 
 interface BaseInterpretation {
   pageType: string;
@@ -28,7 +31,7 @@ export async function interpretPage(
   const proposedAssertion =
     pageState.forms.length > 0
       ? await proposeAssertion(pageState, pageState.forms[0]!, client, model)
-      : null;
+      : await proposeContentAssertion(pageState, base, client, model);
   return {
     url: pageState.url,
     tierUsed: routingDecision.tier,
@@ -148,7 +151,7 @@ function buildProposalPrompt(pageState: PageState, form: CapturedForm): string {
     })
     .filter((line): line is string => line !== null)
     .join("\n");
-  return `URL: ${pageState.url}\nPage title: ${pageState.title}\n\nThis page has a form (action: ${form.action || "(none)"}, method: ${form.method}) with these fields, each labeled with its index in brackets:\n${fieldsDescription || "(no fillable fields found)"}\n\nPropose a single realistic test scenario for filling out and submitting this form, using obviously synthetic placeholder values only (e.g. "Test User", "test@example.com", "555-0100") — never anything that could pass for a real person's real data, and never anything you infer about this specific site from outside knowledge, even if you recognize the URL. If this form has no meaningful fill-and-submit scenario (for example: it is only a search box, a single free-text filter, or otherwise not a genuine data-entry form), set applicable to false and leave the other fields empty. Otherwise set applicable to true and describe: a short scenario, a proposed value for each fillable field (referencing it by its bracketed index — do not invent a field or its label), and what would indicate the submission succeeded — phrased as an observation, not a guarantee, since you have never seen this form actually submitted.`;
+  return `URL: ${pageState.url}\nPage title: ${pageState.title}\n\nThis page has a form (action: ${form.action || "(none)"}, method: ${form.method}) with these fields, each labeled with its index in brackets:\n${fieldsDescription || "(no fillable fields found)"}\n\nPropose a single realistic test scenario for filling out and submitting this form, using obviously synthetic placeholder values only (e.g. "Test User", "test@example.com", "555-0100") — never anything that could pass for a real person's real data, and never anything you infer about this specific site from outside knowledge, even if you recognize the URL. If this form's primary or only meaningful field is a search or filter query, phrase the success assertion as an observable state change following submission — a results list becoming visible, an item count changing, or the URL reflecting the query — never a confirmation-message pattern, since search results pages don't have that pattern and you should not invent one. If this form has no meaningful fill-and-submit scenario at all, set applicable to false and leave the other fields empty. Otherwise set applicable to true and describe: a short scenario, a proposed value for each fillable field (referencing it by its bracketed index — do not invent a field or its label), and what would indicate the submission succeeded — phrased as an observation, not a guarantee, since you have never seen this form actually submitted.`;
 }
 
 async function proposeAssertion(
@@ -156,7 +159,7 @@ async function proposeAssertion(
   form: CapturedForm,
   client: Anthropic,
   model: string,
-): Promise<ProposedAssertion | null> {
+): Promise<FormFillAssertion | null> {
   for (let attempt = 1; attempt <= MAX_PROPOSAL_ATTEMPTS; attempt++) {
     const response = await client.messages.create({
       model,
@@ -264,11 +267,129 @@ async function proposeAssertion(
         value: fv.value,
       }));
     return {
+      kind: "form-fill",
       scenario: input.scenario as string,
       formIndex: form.formIndex,
       fieldValues,
       successAssertion: input.successAssertion as string,
       successAssertionCaveat: UNVERIFIED_GUESS_CAVEAT,
+    };
+  }
+  return null;
+}
+
+function buildContentProposalPrompt(pageState: PageState, base: BaseInterpretation): string {
+  const elementsDescription = pageState.interactiveElements
+    .map((element, index) => {
+      const label = element.accessibleName || "(unlabeled)";
+      return `[${index}] ${label} (role: ${element.role})`;
+    })
+    .join("\n");
+  return `URL: ${pageState.url}\nPage title: ${pageState.title}\nPage type: ${base.pageType}\nPurpose: ${base.purpose}\nKey data entities: ${base.keyDataEntities.join(", ") || "(none)"}\n\nThis page has no forms. These are the interactive elements treeline actually captured during the crawl, each labeled with its index in brackets:\n${elementsDescription || "(no interactive elements found)"}\n\nIdentify 1-3 of these already-captured elements that most directly evidence this page fulfilling its stated purpose (for example: a heading or link naming the key content, a button central to the page's function). Reference them only by their bracketed index — do not invent an element or its label, and do not describe body text that is not in this list. If nothing on the page meaningfully supports an assertion like this (for example: no interactive elements were captured, or the only elements are generic navigation chrome unrelated to the page's purpose), set applicable to false and leave the other fields empty. Otherwise set applicable to true and describe: a short scenario naming what this checks, the bracketed indices of the elements that evidence it, and an assertion statement describing what the presence of these elements demonstrates about the page.`;
+}
+
+async function proposeContentAssertion(
+  pageState: PageState,
+  base: BaseInterpretation,
+  client: Anthropic,
+  model: string,
+): Promise<ContentPresenceAssertion | null> {
+  for (let attempt = 1; attempt <= MAX_PROPOSAL_ATTEMPTS; attempt++) {
+    const response = await client.messages.create({
+      model,
+      max_tokens: 1024,
+      tools: [
+        {
+          name: "propose_content_assertion",
+          description:
+            "Propose a content-presence assertion referencing already-captured interactive elements on a form-less page. Set applicable to false if nothing on the page meaningfully supports one.",
+          input_schema: {
+            type: "object",
+            properties: {
+              applicable: { type: "boolean" },
+              scenario: { type: "string" },
+              elementIndices: {
+                type: "array",
+                items: {
+                  type: "integer",
+                  description: "The bracketed index of a captured interactive element, exactly as given in the element list.",
+                },
+              },
+              assertion: { type: "string" },
+            },
+            required: ["applicable", "scenario", "elementIndices", "assertion"],
+          },
+        },
+      ],
+      tool_choice: { type: "tool", name: "propose_content_assertion" },
+      messages: [
+        {
+          role: "user",
+          content: buildContentProposalPrompt(pageState, base),
+        },
+      ],
+    });
+    const toolUseBlock = response.content.find(
+      (block) => block.type === "tool_use",
+    );
+    const attemptsRemain = attempt < MAX_PROPOSAL_ATTEMPTS;
+    if (!toolUseBlock || toolUseBlock.type !== "tool_use") {
+      if (attemptsRemain) {
+        console.warn(
+          `propose_content_assertion tool_use block missing, retrying (attempt ${attempt + 1}/${MAX_PROPOSAL_ATTEMPTS}) for URL: ${pageState.url}`,
+        );
+        continue;
+      }
+      console.warn(
+        `propose_content_assertion tool_use block missing from API response for URL: ${pageState.url} — skipping proposed assertion`,
+      );
+      return null;
+    }
+    const input = toolUseBlock.input as Record<string, unknown>;
+    if (typeof input.applicable !== "boolean") {
+      if (attemptsRemain) {
+        console.warn(
+          `propose_content_assertion tool_use input has unexpected shape, retrying (attempt ${attempt + 1}/${MAX_PROPOSAL_ATTEMPTS}) for URL: ${pageState.url}`,
+        );
+        continue;
+      }
+      console.warn(
+        `propose_content_assertion tool_use input has unexpected shape for URL: ${pageState.url} — skipping proposed assertion`,
+      );
+      return null;
+    }
+    if (!input.applicable) return null;
+    const isValidScenario =
+      typeof input.scenario === "string" && input.scenario.trim().length > 0;
+    const isValidElementIndices =
+      Array.isArray(input.elementIndices) &&
+      input.elementIndices.every(
+        (i) => typeof i === "number" && Number.isInteger(i),
+      );
+    const isValidAssertion =
+      typeof input.assertion === "string" && input.assertion.trim().length > 0;
+    if (!isValidScenario || !isValidElementIndices || !isValidAssertion) {
+      if (attemptsRemain) {
+        console.warn(
+          `propose_content_assertion tool_use input has unexpected shape, retrying (attempt ${attempt + 1}/${MAX_PROPOSAL_ATTEMPTS}) for URL: ${pageState.url}`,
+        );
+        continue;
+      }
+      console.warn(
+        `propose_content_assertion tool_use input has unexpected shape for URL: ${pageState.url} — skipping proposed assertion`,
+      );
+      return null;
+    }
+    const elementIndices = (input.elementIndices as number[]).filter(
+      (i) => i >= 0 && i < pageState.interactiveElements.length,
+    );
+    if (elementIndices.length === 0) return null;
+    return {
+      kind: "content-presence",
+      scenario: input.scenario as string,
+      elementIndices,
+      assertion: input.assertion as string,
+      assertionCaveat: OBSERVED_ELEMENT_CAVEAT,
     };
   }
   return null;

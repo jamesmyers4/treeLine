@@ -5,3 +5,4 @@ dist
 .env
 hard-pages/*.json
 treeline-output/
+.env

@@ -72,7 +72,12 @@ If you want to confirm the AI-proposed-assertion path too, run a small
 crawl against `httpbin.org/forms/post` **with** interpretation enabled
 (a real `ANTHROPIC_API_KEY` set, no `--skip-interpretation`) and check for
 a `.proposed.spec.ts` file alongside the generated specs — every test in
-it should be `test.skip`-wrapped.
+it should be `test.skip`-wrapped. As of session 45 there are two possible
+shapes: a form-fill proposal (`.fill()`/`.check()`/`.selectOption()` calls
+plus a submit click) for a page with a captured form, or a
+content-presence proposal (one or more `toBeVisible()` assertions) for a
+form-less page — crawl a form-less content page (e.g. a docs or article
+page) separately to see the second shape.
 
 Also confirm `.github/workflows/crawl.yml` exists and has a
 `publish_to_pages` input (not just `url`/`max_pages`/
@@ -156,15 +161,37 @@ real integrity damage), and a comment-breakout risk in the proposed-
 assertion generator. All fixed, all covered by a new permanent regression
 test verified against raw HTML bytes, not just assertions.
 
+**AI-proposed test assertions, extended beyond forms (session 45) —
+complete.** Widened `ProposedAssertion` into a discriminated union:
+`FormFillAssertion` (session 42's shape, `kind: 'form-fill'`) and a new
+`ContentPresenceAssertion` (`kind: 'content-presence'`), mutually
+exclusive on `pageState.forms.length`. Two additive changes: (1) removed
+session 42's blanket search-box exclusion, so a search/filter-primary
+form now gets a results-appear/URL-changed success assertion instead of
+being skipped outright; (2) form-less pages now get a content-presence
+proposal referencing already-captured `interactiveElements` by
+bounds-checked index — never freeform body text, same
+never-trust-model-as-lookup-key discipline session 42 established.
+`test.skip`, synthetic-data, and `toSafeComment` escaping discipline
+carried over unchanged to the new path. Verified against two real
+targets: `en.wikipedia.org` (search-form phrasing) and
+`www.gnu.org/software/bash/manual/bash.html` (form-less content-presence,
+including a spot-check that a generated locator traced back to a real
+captured `cssPath`); both generated specs confirmed `skipped` under a
+real `npx playwright test` run.
+
 ## Known staleness — read this before trusting anything older
 
-`CONTEXT.md`, `CLAUDE.md`, and `V2.md` were all synced in the same session
-this document was written in (session 43) — as of right now, they should
-be accurate. If you're reading this significantly after it was written,
-treat that sync as a snapshot, not a guarantee — check dates/session
-numbers in each file's header against whatever the real latest session
-turns out to be, the same way this document itself keeps telling you to
-verify rather than trust.
+`CONTEXT.md` and `V2.md` were synced in the same session this paragraph
+was last updated in (session 45); `CLAUDE.md` was last synced session 43
+and was not touched session 45 (no operational/convention change this
+session, only a data-shape extension already covered by `CONTEXT.md`'s
+"Model routing"/interpretation sections). As of right now, all three
+should be accurate. If you're reading this significantly after it was
+written, treat that sync as a snapshot, not a guarantee — check dates/
+session numbers in each file's header against whatever the real latest
+session turns out to be, the same way this document itself keeps telling
+you to verify rather than trust.
 
 **One thing this sync could not do: `README.md` was not included** in
 what was available when this sync happened, so it was left untouched. It
@@ -174,12 +201,12 @@ someone outside this project (a portfolio reviewer, a hiring contact).
 
 ## What's left — options, not a directive
 
-**Item 5 extensions (AI-proposed assertions beyond forms).** The
-form-fill-and-submit scenario is a deliberately narrow first cut. Natural
-next steps, none scoped yet: assertion scenarios beyond forms; a
-lightweight "promote this reviewed proposal into the trusted spec"
-workflow (plain copy-paste may already be sufficient — untested); a
-summary report of how many proposals exist across a crawl.
+**Item 5 remaining extensions (AI-proposed assertions).** Session 45 closed
+the "scenarios beyond forms" gap (search-form phrasing, form-less
+content-presence assertions). Still open, none scoped yet: a lightweight
+"promote this reviewed proposal into the trusted spec" workflow (plain
+copy-paste may already be sufficient — untested); a summary report of how
+many proposals exist across a crawl, and of which kind.
 
 **Item 4's remaining piece: diff-mode timing regression detection.**
 Deliberately deferred until real report output and real run-to-run noise

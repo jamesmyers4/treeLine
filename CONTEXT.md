@@ -507,6 +507,83 @@ markdown.ts`) fully blocks raw HTML/script injection, in prose and in
     bytes, not just test assertions — the payload appears only as
     `&lt;script&gt;`, the pipe payload stays inside one `<td>`, and the
     injected-heading attempt renders as inert text.
+- **AI-proposed test assertions, extended beyond forms** (session 45, V2
+  item 5 extension) — widens `ProposedAssertion` from session 42's single
+  form-fill shape into a discriminated union:
+  `FormFillAssertion` (`kind: 'form-fill'`, today's shape unchanged plus
+  the discriminant) and a new `ContentPresenceAssertion`
+  (`kind: 'content-presence'`, `elementIndices: number[]` +
+  `assertion`/`assertionCaveat`). `ProposedAssertion` is exported as
+  `FormFillAssertion | ContentPresenceAssertion`. Two additive proposal
+  paths, kept mutually exclusive on `pageState.forms.length` — never both
+  attempted for the same page, so the review surface per crawl stays one
+  proposal per page, same as session 42.
+  - **Part A — search-form scenarios.** Session 42's prompt told the model
+    to set `applicable: false` for "a search box, a single free-text
+    filter" — an undocumented, overly conservative default, not an
+    architectural limit. Removed the carve-out; added guidance that a
+    search/filter-primary form should get a success assertion phrased as
+    an observable state change (results appearing, an item count
+    changing, the URL reflecting the query), never a confirmation-message
+    pattern search pages don't have. Still a `FormFillAssertion` under the
+    hood — no new type needed for this half. Verified against a real
+    target: crawling `en.wikipedia.org` (its site-wide header search form
+    counts as a captured form on every page) produced a real proposed
+    spec phrased as "the browser URL changes to include the search query
+    ... and either a matching article or a search results list is
+    displayed" — correctly avoiding a confirmation-message guess.
+  - **Part B — content-presence assertions for form-less pages.** New
+    proposal type, gated on `forms.length === 0`. Grounding constraint
+    decided before writing code: `packages/acquire/src/capture.ts` only
+    produces structured, locator-backed data
+    (`cssPath`/`xpath`/testId/accessibleName) for elements matching
+    `'button, a[href], input, select, textarea, [role]'`
+    (`DomInteractiveElement[]`) — plain body text (a heading, a price, an
+    article paragraph) has no structured locator anywhere, only the
+    unstructured `ariaSnapshot` sees it. So a content-presence assertion
+    can only ever reference **already-captured interactive elements**,
+    never a freeform `getByText` guess against body copy — the same
+    discipline session 42 already established (never let a model's
+    freeform text serve as the lookup key against structured data)
+    applied to a new surface: `elementIndices` are bounds-checked against
+    the real `interactiveElements` array both at proposal time
+    (`packages/interpret/src/interpret.ts`'s `proposeContentAssertion`,
+    filters out-of-range indices, returns `null` if none survive) and
+    again defensively at render time
+    (`packages/output/src/proposed-assertions.ts`'s
+    `renderContentPresenceSpec`). Locator generation
+    (`buildContentElementLocator`) mirrors the existing form-field
+    fallback chain exactly: accessibleName → testId → cssPath.
+  - **Review posture is identical for both new paths** — still
+    `*.proposed.spec.ts`, still `test.skip`-wrapped, still one call away
+    from being merged only by a human, despite a content-presence
+    assertion being arguably better-grounded (it checks something
+    treeline actually observed, not behavior it never watched happen).
+    Treeline hasn't earned automatic trust for AI-authored assertions
+    regardless of assertion type, and that posture isn't being revisited
+    piecemeal.
+  - **Escaping discipline held without a new gap:** both new dynamic
+    fields (`ContentPresenceAssertion.assertion`/`assertionCaveat`) go
+    through the same `toSafeComment()` session 43 already required for the
+    form-fill success assertion/caveat — confirmed via a dedicated test
+    (embedded newline collapses to a single commented line rather than
+    breaking into a bare, uncommented statement) for both kinds, not
+    assumed to carry over.
+  - **Verified against real data, not just fixtures, for both halves:** a
+    real crawl of `en.wikipedia.org/wiki/Web_scraping` (Part A, above) and
+    a real crawl of `www.gnu.org/software/bash/manual/bash.html` — a
+    form-less page — produced a real content-presence spec referencing 6
+    genuinely captured TOC links (spot-checked one locator,
+    `getByRole('link', { name: '1 Introduction' })`, against the crawl's
+    own stored `interactiveElements`: real `cssPath: "#toc-Introduction"`
+    on disk, not a fabricated element). Both generated specs were then run
+    through a real `npx playwright test` and confirmed to report "2
+    skipped," not executed.
+  - **Deliberately not built this session:** a way to "promote" a
+    reviewed-good proposal into the trusted spec; a summary report of how
+    many proposals exist, or of which kind, across a crawl. Both remain
+    open future items, same as session 42 left them, now just also
+    scoped to two assertion kinds instead of one.
 
 ## GPB judgment call (context, not code — worth knowing regardless)
 
@@ -659,8 +736,12 @@ Built as both a library and a network-callable API from day one.
 - **`PageInterpretation` shape** (as of session 4.7 — narrower than
   originally planned): `url`, `tierUsed`, `pageType`, `purpose`,
   `keyDataEntities: string[]`, `confidence`, plus
-  `proposedAssertion: ProposedAssertion | null` (session 42 — see "V2
-  additions" above; only ever non-null for pages with a captured form).
+  `proposedAssertion: ProposedAssertion | null` (session 42, extended
+  session 45 — see "V2 additions" above; a discriminated union of
+  `FormFillAssertion` (pages with a captured form) and
+  `ContentPresenceAssertion` (form-less pages) — non-null whenever either
+  proposal path found something worth proposing, null only when neither
+  did).
   `interactiveElements` was deliberately removed from this type — it's
   redundant with and less accurate than `PageState.interactiveElements`
   from real DOM capture. Do not reintroduce it.
@@ -688,10 +769,13 @@ Built as both a library and a network-callable API from day one.
   it. Budget for occasional real API cost on retried pages.
 - **Real cost data point:** roughly $0.02–0.04 per Sonnet-tier page
   (~3–4k input tokens, a few hundred output tokens for the reduced schema).
-  Session 42's `proposedAssertion` call is a second, separate AI call, only
-  made for pages with a captured form — gated before the call specifically
-  to avoid spending tokens on pages that structurally can't have a
-  meaningful proposal.
+  Session 42's `proposedAssertion` call is a second, separate AI call. As
+  of session 45 it always fires (never a third call, never skipped) —
+  pages with a captured form get `proposeAssertion`, form-less pages get
+  `proposeContentAssertion` instead, mutually exclusive on
+  `forms.length`. Cost is still bounded to exactly one proposal call per
+  page, same budget envelope as session 42, just no longer restricted to
+  form-bearing pages.
 - Pages that fail after retries are queued into `hard-pages/` with
   `reasonCode: 'parse-error'` and a truncated real error message in
   `captureSnapshot` (session 5.97 — the original design had this hardcoded
@@ -795,7 +879,9 @@ pnpm workspaces monorepo:
   axe-core scanning + Fastify API + timing/appearance-latency
   instrumentation (sessions 39-40)
 - `packages/interpret` — 2-tier AI interpretation with retry + persistence
-  orchestration + the forms-gated `proposedAssertion` AI call (session 42)
+  orchestration + the `proposedAssertion` AI call (session 42; form-fill
+  path for pages with a captured form, content-presence path for
+  form-less pages added session 45)
 - `packages/output` — selector report, testid audit, atlas, POM+spec
   generation (via `naming.ts`'s collision-safe filename assignment,
   session 31), axe report, diff report renderer (Visual Changes section,

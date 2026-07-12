@@ -185,8 +185,9 @@ describe('interpretation persistence', () => {
     expect(stored?.proposedAssertion).toBeNull()
   })
 
-  it('round-trips a non-null proposedAssertion', () => {
+  it('round-trips a non-null form-fill proposedAssertion', () => {
     const proposedAssertion = {
+      kind: 'form-fill' as const,
       scenario: 'Fill out and submit the signup form with synthetic data',
       formIndex: 0,
       fieldValues: [{ fieldIndex: 0, accessibleName: 'Email', value: 'test@example.com' }],
@@ -199,6 +200,24 @@ describe('interpretation persistence', () => {
     const all = db.getAllInterpretations()
     db.close()
     expect(stored?.proposedAssertion).toEqual(proposedAssertion)
+    expect(all[0]?.proposedAssertion).toEqual(proposedAssertion)
+  })
+
+  it('round-trips a non-null content-presence proposedAssertion, preserving the kind discriminant and elementIndices', () => {
+    const proposedAssertion = {
+      kind: 'content-presence' as const,
+      scenario: 'Confirm the article headline and author link are present',
+      elementIndices: [0, 2],
+      assertion: 'The headline and author link evidence this is the article page',
+      assertionCaveat: 'This checks that an element treeline observed during the crawl is still present.',
+    }
+    const db = openCrawlDb(dbPath)
+    db.recordInterpretation(makeInterpretation({ proposedAssertion }))
+    const stored = db.getInterpretation('https://example.com/')
+    const all = db.getAllInterpretations()
+    db.close()
+    expect(stored?.proposedAssertion).toEqual(proposedAssertion)
+    expect(stored?.proposedAssertion?.kind).toBe('content-presence')
     expect(all[0]?.proposedAssertion).toEqual(proposedAssertion)
   })
 })

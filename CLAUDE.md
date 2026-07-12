@@ -445,16 +445,23 @@ status` / look for the `[new branch]`-style confirmation line rather than
   `PageInterpretation` (the type `interpretPage` returns) and
   `StoredInterpretation` (what gets persisted) intentionally share field
   names but are separate types in separate packages. Both now include
-  `proposedAssertion` (session 42) — kept in step with each other the same
-  way the rest of their shared fields are.
+  `proposedAssertion` (session 42, extended session 45) — kept in step
+  with each other the same way the rest of their shared fields are.
+  `ProposedAssertion` is a discriminated union
+  (`FormFillAssertion | ContentPresenceAssertion`, on a `kind` field) —
+  don't treat it as the single flat shape session 42 originally shipped.
 - `PageInterpretation` does NOT include `interactiveElements` — removed in
   session 4.7. Per-element data belongs to `PageState.interactiveElements`
   (real DOM capture), not AI interpretation. Do not reintroduce it to
   `PageInterpretation`.
-- **The `proposedAssertion` AI call (session 42) is gated on
-  `pageState.forms.length > 0`, before the call is made, not after.** Don't
-  remove this gate — it exists specifically to avoid spending tokens on
-  pages that structurally can't have a meaningful form-fill scenario.
+- **The `proposedAssertion` AI call always fires — exactly once per page,
+  branching on `pageState.forms.length` rather than skipping.** Pages with
+  a captured form call `proposeAssertion` (form-fill); form-less pages
+  call `proposeContentAssertion` (content-presence, session 45) instead.
+  This replaced session 42's original "skip entirely when
+  `forms.length === 0`" gate — don't reintroduce a skip here, and don't
+  let both calls fire for the same page (they're mutually exclusive by
+  design, keeping the review surface at one proposal per page).
 
 ## Escalation workflow — `hard-pages/`
 

@@ -180,18 +180,27 @@ describe('interpretPage', () => {
         input: { pageType: 'login' }
       }]
     }
+    const notApplicableContentResponse = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_content_na',
+        name: 'propose_content_assertion',
+        input: { applicable: false, scenario: '', elementIndices: [], assertion: '' }
+      }]
+    }
     const mockClient = {
       messages: {
         create: vi.fn()
           .mockResolvedValueOnce(malformedResponse)
           .mockResolvedValueOnce(mockToolUseResponse)
+          .mockResolvedValueOnce(notApplicableContentResponse)
       }
     }
     vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
     const result = await interpretPage(mockPageState)
     expect(result.pageType).toBe('login')
     expect(result.purpose).toBe('Authenticate users')
-    expect(mockClient.messages.create).toHaveBeenCalledTimes(2)
+    expect(mockClient.messages.create).toHaveBeenCalledTimes(3)
   })
 
   it('throws after exhausting retries when every call is malformed', async () => {
@@ -228,12 +237,25 @@ describe('interpretPage', () => {
     expect(keyDataEntitiesSchema.description.length).toBeGreaterThan(0)
   })
 
-  it('returns proposedAssertion: null and makes only one API call when the page has no forms', async () => {
-    const mockClient = makeMockClient(mockToolUseResponse)
+  it('makes a second (content-proposal) API call when the page has no forms, since content-presence proposal is now attempted instead', async () => {
+    const notApplicableContentResponse = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_content_na',
+        name: 'propose_content_assertion',
+        input: { applicable: false, scenario: '', elementIndices: [], assertion: '' }
+      }]
+    }
+    const create = vi.fn()
+      .mockResolvedValueOnce(mockToolUseResponse)
+      .mockResolvedValueOnce(notApplicableContentResponse)
+    const mockClient = { messages: { create } }
     vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
     const result = await interpretPage(mockPageState)
     expect(result.proposedAssertion).toBeNull()
-    expect(mockClient.messages.create).toHaveBeenCalledTimes(1)
+    expect(mockClient.messages.create).toHaveBeenCalledTimes(2)
+    const secondCall = mockClient.messages.create.mock.calls[1][0]
+    expect(secondCall.tool_choice).toEqual({ type: 'tool', name: 'propose_content_assertion' })
   })
 })
 
@@ -309,12 +331,14 @@ describe('interpretPage — proposedAssertion (forms-gated)', () => {
     vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
     const result = await interpretPage(formPageState)
     expect(result.proposedAssertion).not.toBeNull()
-    expect(result.proposedAssertion?.scenario).toBe('Fill out and submit the signup form with synthetic data')
-    expect(result.proposedAssertion?.formIndex).toBe(0)
-    expect(result.proposedAssertion?.fieldValues).toEqual([{ fieldIndex: 0, accessibleName: 'Email', value: 'test@example.com' }])
-    expect(result.proposedAssertion?.successAssertion).toBe('A confirmation message appears')
-    expect(typeof result.proposedAssertion?.successAssertionCaveat).toBe('string')
-    expect(result.proposedAssertion?.successAssertionCaveat.length).toBeGreaterThan(0)
+    expect(result.proposedAssertion?.kind).toBe('form-fill')
+    if (result.proposedAssertion?.kind !== 'form-fill') throw new Error('expected form-fill')
+    expect(result.proposedAssertion.scenario).toBe('Fill out and submit the signup form with synthetic data')
+    expect(result.proposedAssertion.formIndex).toBe(0)
+    expect(result.proposedAssertion.fieldValues).toEqual([{ fieldIndex: 0, accessibleName: 'Email', value: 'test@example.com' }])
+    expect(result.proposedAssertion.successAssertion).toBe('A confirmation message appears')
+    expect(typeof result.proposedAssertion.successAssertionCaveat).toBe('string')
+    expect(result.proposedAssertion.successAssertionCaveat.length).toBeGreaterThan(0)
   })
 
   it('returns proposedAssertion: null when the model reports applicable: false', async () => {
@@ -353,7 +377,8 @@ describe('interpretPage — proposedAssertion (forms-gated)', () => {
     const mockClient = makeSequentialMockClient([mockToolUseResponse, mockProposalResponse])
     vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
     const result = await interpretPage(formPageState)
-    expect(result.proposedAssertion?.fieldValues[0]?.accessibleName).toBe(form.fields[0]!.accessibleName)
+    if (result.proposedAssertion?.kind !== 'form-fill') throw new Error('expected form-fill')
+    expect(result.proposedAssertion.fieldValues[0]?.accessibleName).toBe(form.fields[0]!.accessibleName)
   })
 
   it('drops a field value whose fieldIndex points at the submit button rather than a fillable field', async () => {
@@ -376,8 +401,9 @@ describe('interpretPage — proposedAssertion (forms-gated)', () => {
     const mockClient = makeSequentialMockClient([mockToolUseResponse, responseReferencingButton])
     vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
     const result = await interpretPage(formPageState)
-    expect(result.proposedAssertion?.fieldValues).toHaveLength(1)
-    expect(result.proposedAssertion?.fieldValues[0]?.fieldIndex).toBe(0)
+    if (result.proposedAssertion?.kind !== 'form-fill') throw new Error('expected form-fill')
+    expect(result.proposedAssertion.fieldValues).toHaveLength(1)
+    expect(result.proposedAssertion.fieldValues[0]?.fieldIndex).toBe(0)
   })
 
   it('drops a field value whose fieldIndex is out of range', async () => {
@@ -400,7 +426,244 @@ describe('interpretPage — proposedAssertion (forms-gated)', () => {
     const mockClient = makeSequentialMockClient([mockToolUseResponse, responseWithBadIndex])
     vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
     const result = await interpretPage(formPageState)
-    expect(result.proposedAssertion?.fieldValues).toHaveLength(1)
-    expect(result.proposedAssertion?.fieldValues[0]?.fieldIndex).toBe(0)
+    if (result.proposedAssertion?.kind !== 'form-fill') throw new Error('expected form-fill')
+    expect(result.proposedAssertion.fieldValues).toHaveLength(1)
+    expect(result.proposedAssertion.fieldValues[0]?.fieldIndex).toBe(0)
+  })
+
+  it('accepts a search-form scenario whose successAssertion describes a results-appear/URL-changed observation rather than a confirmation message', async () => {
+    const searchForm: CapturedForm = {
+      formIndex: 0,
+      action: '/search',
+      method: 'get',
+      fields: [
+        {
+          role: 'searchbox',
+          accessibleName: 'Search',
+          tagName: 'input',
+          inputType: 'search',
+          required: false,
+          pattern: null,
+          testId: null,
+          cssPath: 'body > form > input',
+        },
+      ],
+    }
+    const searchPageState: PageState = { ...mockPageState, forms: [searchForm] }
+    const searchProposalResponse = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_proposal_search',
+        name: 'propose_assertion',
+        input: {
+          applicable: true,
+          scenario: 'Search for a synthetic query term and view the results',
+          fieldValues: [{ fieldIndex: 0, value: 'test query' }],
+          successAssertion: 'The results list becomes visible and the URL reflects the query'
+        }
+      }]
+    }
+    const mockClient = makeSequentialMockClient([mockToolUseResponse, searchProposalResponse])
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    const result = await interpretPage(searchPageState)
+    expect(result.proposedAssertion).not.toBeNull()
+    if (result.proposedAssertion?.kind !== 'form-fill') throw new Error('expected form-fill')
+    expect(result.proposedAssertion.successAssertion).toBe('The results list becomes visible and the URL reflects the query')
+  })
+
+  it('includes search-scenario phrasing guidance in the proposal prompt rather than excluding search boxes outright', async () => {
+    const mockClient = makeSequentialMockClient([mockToolUseResponse, mockProposalResponse])
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    await interpretPage(formPageState)
+    const proposalCall = mockClient.messages.create.mock.calls[1][0]
+    const promptText = proposalCall.messages[0].content as string
+    expect(promptText).toMatch(/search or filter query/i)
+    expect(promptText).not.toMatch(/only a search box/i)
+  })
+})
+
+describe('interpretPage — content-presence assertions (form-less pages)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  const formlessPageState: PageState = {
+    ...mockPageState,
+    forms: [],
+    interactiveElements: [
+      {
+        role: 'link',
+        accessibleName: 'How Treeline Works',
+        testId: null,
+        tagName: 'a',
+        elementId: null,
+        classList: [],
+        cssPath: 'body > article > a',
+        xpath: '/html/body/article/a',
+        appearedAtMs: null,
+      },
+      {
+        role: 'link',
+        accessibleName: 'By Jane Author',
+        testId: null,
+        tagName: 'a',
+        elementId: null,
+        classList: [],
+        cssPath: 'body > article > .author a',
+        xpath: '/html/body/article/div/a',
+        appearedAtMs: null,
+      },
+    ],
+  }
+
+  const mockContentProposalResponse = {
+    content: [{
+      type: 'tool_use',
+      id: 'tool_content_proposal_1',
+      name: 'propose_content_assertion',
+      input: {
+        applicable: true,
+        scenario: 'Confirm the article headline and author link are present',
+        elementIndices: [0, 1],
+        assertion: 'The headline and author link evidence this is the article page'
+      }
+    }]
+  }
+
+  function makeSequentialMockClient(responses: unknown[]) {
+    const create = vi.fn()
+    for (const response of responses) create.mockResolvedValueOnce(response)
+    return { messages: { create } }
+  }
+
+  it('calls proposeContentAssertion (not proposeAssertion) when the page has no forms', async () => {
+    const mockClient = makeSequentialMockClient([mockToolUseResponse, mockContentProposalResponse])
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    await interpretPage(formlessPageState)
+    expect(mockClient.messages.create).toHaveBeenCalledTimes(2)
+    const secondCall = mockClient.messages.create.mock.calls[1][0]
+    expect(secondCall.tool_choice).toEqual({ type: 'tool', name: 'propose_content_assertion' })
+  })
+
+  it('returns a ContentPresenceAssertion with bounds-checked elementIndices', async () => {
+    const mockClient = makeSequentialMockClient([mockToolUseResponse, mockContentProposalResponse])
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    const result = await interpretPage(formlessPageState)
+    expect(result.proposedAssertion).not.toBeNull()
+    if (result.proposedAssertion?.kind !== 'content-presence') throw new Error('expected content-presence')
+    expect(result.proposedAssertion.scenario).toBe('Confirm the article headline and author link are present')
+    expect(result.proposedAssertion.elementIndices).toEqual([0, 1])
+    expect(result.proposedAssertion.assertion).toBe('The headline and author link evidence this is the article page')
+    expect(typeof result.proposedAssertion.assertionCaveat).toBe('string')
+    expect(result.proposedAssertion.assertionCaveat.length).toBeGreaterThan(0)
+  })
+
+  it('filters out an out-of-range elementIndex from a mocked API response rather than trusting it', async () => {
+    const responseWithBadIndex = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_content_proposal_oob',
+        name: 'propose_content_assertion',
+        input: {
+          applicable: true,
+          scenario: 'Confirm the article headline is present',
+          elementIndices: [0, 99],
+          assertion: 'The headline evidences this is the article page'
+        }
+      }]
+    }
+    const mockClient = makeSequentialMockClient([mockToolUseResponse, responseWithBadIndex])
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    const result = await interpretPage(formlessPageState)
+    if (result.proposedAssertion?.kind !== 'content-presence') throw new Error('expected content-presence')
+    expect(result.proposedAssertion.elementIndices).toEqual([0])
+  })
+
+  it('calls proposeAssertion (not proposeContentAssertion) when the page has a form, never both', async () => {
+    const form: CapturedForm = {
+      formIndex: 0,
+      action: '/submit',
+      method: 'post',
+      fields: [
+        {
+          role: 'textbox',
+          accessibleName: 'Email',
+          tagName: 'input',
+          inputType: 'email',
+          required: true,
+          pattern: null,
+          testId: null,
+          cssPath: 'body > form > input',
+        },
+      ],
+    }
+    const withFormState: PageState = { ...formlessPageState, forms: [form] }
+    const formProposalResponse = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_proposal_form_branch',
+        name: 'propose_assertion',
+        input: { applicable: false, scenario: '', fieldValues: [], successAssertion: '' }
+      }]
+    }
+    const mockClient = makeSequentialMockClient([mockToolUseResponse, formProposalResponse])
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    await interpretPage(withFormState)
+    expect(mockClient.messages.create).toHaveBeenCalledTimes(2)
+    const secondCall = mockClient.messages.create.mock.calls[1][0]
+    expect(secondCall.tool_choice).toEqual({ type: 'tool', name: 'propose_assertion' })
+  })
+
+  it('returns proposedAssertion: null when the model reports applicable: false', async () => {
+    const notApplicableResponse = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_content_proposal_na',
+        name: 'propose_content_assertion',
+        input: { applicable: false, scenario: '', elementIndices: [], assertion: '' }
+      }]
+    }
+    const mockClient = makeSequentialMockClient([mockToolUseResponse, notApplicableResponse])
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    const result = await interpretPage(formlessPageState)
+    expect(result.proposedAssertion).toBeNull()
+  })
+
+  it('returns proposedAssertion: null (not a crash) when interactiveElements is empty, even if the model still returns indices', async () => {
+    const emptyElementsState: PageState = { ...formlessPageState, interactiveElements: [] }
+    const responseWithIndices = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_content_proposal_empty',
+        name: 'propose_content_assertion',
+        input: {
+          applicable: true,
+          scenario: 'Confirm something is present',
+          elementIndices: [0, 1],
+          assertion: 'Something evidences the page purpose'
+        }
+      }]
+    }
+    const mockClient = makeSequentialMockClient([mockToolUseResponse, responseWithIndices])
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    const result = await interpretPage(emptyElementsState)
+    expect(result.proposedAssertion).toBeNull()
+  })
+
+  it('degrades to proposedAssertion: null (not a thrown error) after exhausting retries on a malformed content-proposal response', async () => {
+    const malformedResponse = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_content_proposal_bad',
+        name: 'propose_content_assertion',
+        input: { applicable: true }
+      }]
+    }
+    const mockClient = makeSequentialMockClient([mockToolUseResponse, malformedResponse, malformedResponse])
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    const result = await interpretPage(formlessPageState)
+    expect(result.proposedAssertion).toBeNull()
+    expect(result.pageType).toBe('login')
+    expect(mockClient.messages.create).toHaveBeenCalledTimes(3)
   })
 })

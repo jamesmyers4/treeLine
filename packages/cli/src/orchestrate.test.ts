@@ -3,10 +3,59 @@ import type { Server } from 'node:http'
 import { mkdtempSync, mkdirSync, rmSync, existsSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import { PNG } from 'pngjs'
 import { openCrawlDb, urlHash } from '@treeline/core'
 import type { DomInteractiveElement, PageState } from '@treeline/acquire'
+
+vi.mock('@treeline/interpret', () => ({
+  runInterpretation: vi.fn(async (dbPath: string) => {
+    const db = openCrawlDb(dbPath)
+    const pages = db.getAllPages()
+    const formPage = pages.find((p) => p.forms.length > 0)
+    const contentPage = pages.find((p) => p.forms.length === 0 && p.interactiveElements.length > 0)
+    const now = new Date().toISOString()
+    if (formPage) {
+      db.recordInterpretation({
+        url: formPage.url,
+        tierUsed: 'haiku',
+        pageType: 'form',
+        purpose: 'Collect data',
+        keyDataEntities: [],
+        confidence: 0.9,
+        interpretedAt: now,
+        proposedAssertion: {
+          kind: 'form-fill',
+          scenario: 'Fill out and submit the form with synthetic data',
+          formIndex: formPage.forms[0]!.formIndex,
+          fieldValues: [{ fieldIndex: 0, accessibleName: formPage.forms[0]!.fields[0]!.accessibleName, value: 'test@example.com' }],
+          successAssertion: 'A confirmation message appears',
+          successAssertionCaveat: 'unverified guess',
+        },
+      })
+    }
+    if (contentPage) {
+      db.recordInterpretation({
+        url: contentPage.url,
+        tierUsed: 'haiku',
+        pageType: 'content',
+        purpose: 'Link to other pages',
+        keyDataEntities: [],
+        confidence: 0.9,
+        interpretedAt: now,
+        proposedAssertion: {
+          kind: 'content-presence',
+          scenario: 'Confirm a navigation link is present',
+          elementIndices: [0],
+          assertion: "The link evidences this page's navigation purpose",
+          assertionCaveat: 'observed at capture time',
+        },
+      })
+    }
+    db.close()
+  }),
+}))
+
 import { runTreelineCrawl, runTreelineDiff } from './orchestrate.js'
 
 function solidPng(width: number, height: number, color: [number, number, number]): Buffer {
@@ -102,6 +151,33 @@ describe('runTreelineCrawl', () => {
     expect(typeof summary.flaggedSlowPages).toBe('number')
     expect(typeof summary.flaggedSlowNetworkRequests).toBe('number')
     expect(typeof summary.flaggedHighLatencyElements).toBe('number')
+  }, 120_000)
+
+  it('produces two distinct .proposed.spec.ts files, correctly shaped for each proposedAssertion kind, for a form page and a form-less content page', async () => {
+    const mixedOutputDir = join(tmpDir, 'output-mixed-proposals')
+    const previousKey = process.env.ANTHROPIC_API_KEY
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-test-not-real'
+    try {
+      const summary = await runTreelineCrawl({
+        url: `${baseUrl}/`,
+        stealth: false,
+        maxPages: 10,
+        maxDepth: 5,
+        throttleMs: 0,
+        outputDir: mixedOutputDir,
+        skipInterpretation: false,
+      })
+      expect(summary.proposedAssertionSpecsGenerated).toBe(2)
+      const homeSpec = readFileSync(join(mixedOutputDir, 'specs', 'home.proposed.spec.ts'), 'utf-8')
+      const aboutSpec = readFileSync(join(mixedOutputDir, 'specs', 'about.proposed.spec.ts'), 'utf-8')
+      expect(homeSpec).toContain('test.skip(')
+      expect(homeSpec).toContain('.fill(')
+      expect(aboutSpec).toContain('test.skip(')
+      expect(aboutSpec).toContain('.toBeVisible()')
+    } finally {
+      if (previousKey === undefined) delete process.env.ANTHROPIC_API_KEY
+      else process.env.ANTHROPIC_API_KEY = previousKey
+    }
   }, 120_000)
 })
 

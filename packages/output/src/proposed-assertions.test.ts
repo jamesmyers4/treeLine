@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import type { CapturedForm } from '@treeline/acquire'
-import type { ProposedAssertion, StoredInterpretation } from '@treeline/core'
+import type { CapturedForm, DomInteractiveElement } from '@treeline/acquire'
+import type { ContentPresenceAssertion, FormFillAssertion, ProposedAssertion, StoredInterpretation } from '@treeline/core'
 import type { CrawledPage } from './input.js'
 import { generateProposedAssertionSpecs, renderProposedAssertionSpec } from './proposed-assertions.js'
 
@@ -64,8 +64,9 @@ function makePage(overrides: Partial<CrawledPage> = {}): CrawledPage {
   }
 }
 
-function makeAssertion(overrides: Partial<ProposedAssertion> = {}): ProposedAssertion {
+function makeAssertion(overrides: Partial<FormFillAssertion> = {}): FormFillAssertion {
   return {
+    kind: 'form-fill',
     scenario: 'Fill out and submit the signup form with synthetic data',
     formIndex: 0,
     fieldValues: [
@@ -74,6 +75,32 @@ function makeAssertion(overrides: Partial<ProposedAssertion> = {}): ProposedAsse
     ],
     successAssertion: 'A confirmation message appears',
     successAssertionCaveat: 'This success assertion is an unverified guess.',
+    ...overrides,
+  }
+}
+
+function makeContentAssertion(overrides: Partial<ContentPresenceAssertion> = {}): ContentPresenceAssertion {
+  return {
+    kind: 'content-presence',
+    scenario: 'Confirm the article headline and author link are present',
+    elementIndices: [0, 1],
+    assertion: 'The headline link and author link evidence this is the article page',
+    assertionCaveat: 'This checks that an element treeline observed during the crawl is still present.',
+    ...overrides,
+  }
+}
+
+function makeElement(overrides: Partial<DomInteractiveElement> = {}): DomInteractiveElement {
+  return {
+    role: 'link',
+    accessibleName: 'How Treeline Works',
+    testId: null,
+    tagName: 'a',
+    elementId: null,
+    classList: [],
+    cssPath: 'body > article > a',
+    xpath: '/html/body/article/a',
+    appearedAtMs: null,
     ...overrides,
   }
 }
@@ -145,6 +172,88 @@ describe('renderProposedAssertionSpec', () => {
     }))
     expect(code).toContain(`page.getByRole("textbox", { name: "Nonexistent Field" }).fill("Test Value")`)
   })
+
+  it('collapses an embedded newline in the success assertion so it stays a single commented line, not a bare injected statement', () => {
+    const code = renderProposedAssertionSpec(makePage(), makeAssertion({
+      successAssertionCaveat: 'Line one\nconsole.log("injected")',
+    }))
+    expect(code).toContain('// Line one console.log("injected")')
+    expect(code).not.toMatch(/^console\.log\("injected"\)/m)
+  })
+})
+
+describe('renderProposedAssertionSpec — content-presence', () => {
+  function makeContentPage(overrides: Partial<CrawledPage> = {}): CrawledPage {
+    return {
+      url: 'https://example.com/article',
+      title: 'Article',
+      ariaSnapshot: '',
+      links: [],
+      networkLog: [],
+      screenshotPath: null,
+      capturedAt: new Date().toISOString(),
+      pageLoadMs: null,
+      interactiveElements: [
+        makeElement({ role: 'link', accessibleName: 'How Treeline Works' }),
+        makeElement({ role: 'link', accessibleName: 'By Jane Author', cssPath: 'body > article > .author a' }),
+      ],
+      axeViolations: [],
+      axeIncomplete: [],
+      forms: [],
+      status: 'ok',
+      ...overrides,
+    }
+  }
+
+  it('wraps the generated test in test.skip', () => {
+    const code = renderProposedAssertionSpec(makeContentPage(), makeContentAssertion())
+    expect(code).toContain('test.skip(')
+    expect(code).not.toMatch(/\btest\(/)
+  })
+
+  it('includes an AI-proposed / unverified header comment', () => {
+    const code = renderProposedAssertionSpec(makeContentPage(), makeContentAssertion())
+    expect(code).toContain('AI-PROPOSED TEST')
+    expect(code).toContain('UNVERIFIED')
+  })
+
+  it('produces one toBeVisible() line per referenced element, using the accessibleName locator', () => {
+    const code = renderProposedAssertionSpec(makeContentPage(), makeContentAssertion())
+    expect(code).toContain(`await expect(page.getByRole("link", { name: "How Treeline Works" })).toBeVisible()`)
+    expect(code).toContain(`await expect(page.getByRole("link", { name: "By Jane Author" })).toBeVisible()`)
+  })
+
+  it('falls back to testId then cssPath when an element has no accessibleName', () => {
+    const page = makeContentPage({
+      interactiveElements: [
+        makeElement({ accessibleName: '', testId: 'headline', cssPath: 'body > h1' }),
+        makeElement({ accessibleName: '', testId: null, cssPath: 'body > article > p:first-child' }),
+      ],
+    })
+    const code = renderProposedAssertionSpec(page, makeContentAssertion({ elementIndices: [0, 1] }))
+    expect(code).toContain(`await expect(page.getByTestId("headline")).toBeVisible()`)
+    expect(code).toContain(`await expect(page.locator("body > article > p:first-child")).toBeVisible()`)
+  })
+
+  it('skips an elementIndex that is out of range against the page interactiveElements array rather than crashing', () => {
+    const code = renderProposedAssertionSpec(makeContentPage(), makeContentAssertion({ elementIndices: [0, 99] }))
+    const visibleLines = code.split('\n').filter((line) => line.includes('toBeVisible()'))
+    expect(visibleLines).toHaveLength(1)
+  })
+
+  it('includes the assertion and its observed-element caveat as comments', () => {
+    const code = renderProposedAssertionSpec(makeContentPage(), makeContentAssertion())
+    expect(code).toContain('// The headline link and author link evidence this is the article page')
+    expect(code).toContain('// This checks that an element treeline observed during the crawl is still present.')
+  })
+
+  it('collapses an embedded newline in the assertion caveat so it stays a single commented line, not a bare injected statement', () => {
+    const code = renderProposedAssertionSpec(makeContentPage(), makeContentAssertion({
+      assertionCaveat: 'Line one\nconsole.log("injected")',
+    }))
+    expect(code).toContain('// Line one console.log("injected")')
+    expect(code).not.toMatch(/^console\.log\("injected"\)/m)
+  })
 })
 
 describe('generateProposedAssertionSpecs', () => {
@@ -175,5 +284,26 @@ describe('generateProposedAssertionSpecs', () => {
     const interpretations = [makeInterpretation({ proposedAssertion: makeAssertion() })]
     const specs = generateProposedAssertionSpecs(pages, interpretations)
     expect(specs).toHaveLength(0)
+  })
+
+  it('dispatches both proposedAssertion kinds correctly across a fixture set of pages, one spec per applicable page', () => {
+    const formPage = makePage({ url: 'https://example.com/signup', title: 'Signup' })
+    const contentPage = makePage({
+      url: 'https://example.com/article',
+      title: 'Article',
+      forms: [],
+      interactiveElements: [makeElement()],
+    })
+    const pages = [formPage, contentPage]
+    const interpretations = [
+      makeInterpretation({ url: 'https://example.com/signup', proposedAssertion: makeAssertion() }),
+      makeInterpretation({ url: 'https://example.com/article', proposedAssertion: makeContentAssertion({ elementIndices: [0] }) }),
+    ]
+    const specs = generateProposedAssertionSpecs(pages, interpretations)
+    expect(specs).toHaveLength(2)
+    const formSpec = specs.find((s) => s.fileName === 'signup.proposed.spec.ts')!
+    const contentSpec = specs.find((s) => s.fileName === 'article.proposed.spec.ts')!
+    expect(formSpec.code).toContain('.fill(')
+    expect(contentSpec.code).toContain('.toBeVisible()')
   })
 })

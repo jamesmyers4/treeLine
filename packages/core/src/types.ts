@@ -38,13 +38,24 @@ export interface ProposedFormFieldValue {
   value: string
 }
 
-export interface ProposedAssertion {
+export interface FormFillAssertion {
+  kind: 'form-fill'
   scenario: string
   formIndex: number
   fieldValues: ProposedFormFieldValue[]
   successAssertion: string
   successAssertionCaveat: string
 }
+
+export interface ContentPresenceAssertion {
+  kind: 'content-presence'
+  scenario: string
+  elementIndices: number[]
+  assertion: string
+  assertionCaveat: string
+}
+
+export type ProposedAssertion = FormFillAssertion | ContentPresenceAssertion
 
 export interface StoredInterpretation {
   url: string

@@ -1,13 +1,18 @@
-import type { CapturedForm, CapturedFormField } from '@treeline/acquire'
-import type { ProposedAssertion, StoredInterpretation } from '@treeline/core'
+import type { CapturedForm, CapturedFormField, DomInteractiveElement } from '@treeline/acquire'
+import type { ContentPresenceAssertion, FormFillAssertion, ProposedAssertion, StoredInterpretation } from '@treeline/core'
 import type { CrawledPage } from './input.js'
 import { assignUniqueNames } from './naming.js'
 import type { GeneratedSpec } from './types.js'
 
-const PROPOSED_FILE_HEADER = `// AI-PROPOSED TEST — UNVERIFIED, NOT RUN AGAINST THE REAL PAGE.
+const FORM_FILL_FILE_HEADER = `// AI-PROPOSED TEST — UNVERIFIED, NOT RUN AGAINST THE REAL PAGE.
 // treeline never fills or submits real forms during generation; the scenario,
 // fill values, and success assertion below are a model guess based only on
 // the page's captured aria snapshot and form structure. Review every line
+// against the real page before removing test.skip.`
+
+const CONTENT_PRESENCE_FILE_HEADER = `// AI-PROPOSED TEST — UNVERIFIED, NOT RUN AGAINST THE REAL PAGE.
+// This checks that elements treeline observed during the crawl are still
+// present. It does not verify any interactive behavior. Review every line
 // against the real page before removing test.skip.`
 
 function toSafeComment(text: string): string {
@@ -42,7 +47,15 @@ function buildSubmitLine(form: CapturedForm | undefined): string {
   return `  await page.getByRole(${JSON.stringify('button')}, { name: /submit|create|save|continue|send/i }).click()`
 }
 
-export function renderProposedAssertionSpec(page: CrawledPage, assertion: ProposedAssertion): string {
+function buildContentElementLocator(element: DomInteractiveElement): string {
+  if (element.accessibleName.trim() !== '') {
+    return `page.getByRole(${JSON.stringify(element.role)}, { name: ${JSON.stringify(element.accessibleName)} })`
+  }
+  if (element.testId) return `page.getByTestId(${JSON.stringify(element.testId)})`
+  return `page.locator(${JSON.stringify(element.cssPath)})`
+}
+
+function renderFormFillSpec(page: CrawledPage, assertion: FormFillAssertion): string {
   const form = page.forms[assertion.formIndex]
   const fieldLines = assertion.fieldValues
     .map((fieldValue) => ({ fieldValue, field: form?.fields[fieldValue.fieldIndex] }))
@@ -51,7 +64,7 @@ export function renderProposedAssertionSpec(page: CrawledPage, assertion: Propos
       const locator = buildFieldLocator(field, fieldValue.accessibleName)
       return buildFieldAction(field, locator, fieldValue.value)
     })
-  return `${PROPOSED_FILE_HEADER}
+  return `${FORM_FILL_FILE_HEADER}
 
 import { test, expect } from '@playwright/test'
 
@@ -65,6 +78,33 @@ ${buildSubmitLine(form)}
   // ${toSafeComment(assertion.successAssertionCaveat)}
 })
 `
+}
+
+function renderContentPresenceSpec(page: CrawledPage, assertion: ContentPresenceAssertion): string {
+  const elements = assertion.elementIndices
+    .filter((index) => index >= 0 && index < page.interactiveElements.length)
+    .map((index) => page.interactiveElements[index]!)
+  const assertionLines = elements.map(
+    (element) => `  await expect(${buildContentElementLocator(element)}).toBeVisible()`,
+  )
+  return `${CONTENT_PRESENCE_FILE_HEADER}
+
+import { test, expect } from '@playwright/test'
+
+test.skip(${JSON.stringify(assertion.scenario)}, async ({ page }) => {
+  await page.goto(${JSON.stringify(page.url)})
+${assertionLines.join('\n')}
+
+  // Observed-at-capture-time check — not a behavioral verification:
+  // ${toSafeComment(assertion.assertion)}
+  // ${toSafeComment(assertion.assertionCaveat)}
+})
+`
+}
+
+export function renderProposedAssertionSpec(page: CrawledPage, assertion: ProposedAssertion): string {
+  if (assertion.kind === 'content-presence') return renderContentPresenceSpec(page, assertion)
+  return renderFormFillSpec(page, assertion)
 }
 
 export function generateProposedAssertionSpecs(pages: CrawledPage[], interpretations: StoredInterpretation[]): GeneratedSpec[] {

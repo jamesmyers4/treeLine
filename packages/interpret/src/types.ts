@@ -1,6 +1,6 @@
 import type { ProposedAssertion } from '@treeline/core'
 
-export type { ProposedAssertion, ProposedFormFieldValue } from '@treeline/core'
+export type { ProposedAssertion, ProposedFormFieldValue, FormFillAssertion, ContentPresenceAssertion } from '@treeline/core'
 
 export type InterpretationTier = 'haiku' | 'sonnet'
 
