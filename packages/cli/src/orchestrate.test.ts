@@ -125,6 +125,7 @@ function makePage(
   title: string,
   interactiveElements: DomInteractiveElement[] = [],
   screenshot: Buffer | null = null,
+  pageLoadMs = 500,
 ): PageState {
   return {
     url,
@@ -134,7 +135,7 @@ function makePage(
     networkLog: [],
     screenshot,
     capturedAt: new Date().toISOString(),
-    pageLoadMs: 500,
+    pageLoadMs,
     interactiveElements,
     axeViolations: [],
     axeIncomplete: [],
@@ -306,5 +307,18 @@ describe('runTreelineDiff', () => {
     expect(summary.selectorRegressions).toBe(1)
     expect(summary.hasRegressions).toBe(true)
     expect(summary.visualChanges).toBe(0)
+  })
+
+  it('reports a real timing regression in the diff report without setting hasRegressions, keeping --fail-on-regression exit behavior tied only to selector regressions', async () => {
+    seedDb(join(baselineDir, 'crawl.sqlite'), [makePage('https://example.com/', 'Home', [], null, 800)])
+    seedDb(join(currentDir, 'crawl.sqlite'), [makePage('https://example.com/', 'Home', [], null, 1600)])
+
+    const summary = await runTreelineDiff({ baselineDir, currentDir })
+
+    expect(summary.selectorRegressions).toBe(0)
+    expect(summary.hasRegressions).toBe(false)
+    const report = readFileSync(summary.reportPath, 'utf-8')
+    expect(report).toContain('1 timing regressions')
+    expect(report).toContain('https://example.com/')
   })
 })

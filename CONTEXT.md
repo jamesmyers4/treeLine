@@ -357,14 +357,37 @@ screenshot-diff.ts` (session 23). Uses a 0.1% changed-pixel threshold —
       (`httpbin.org/delay/3`) correctly flagged, and fast pages/requests/
       elements correctly not flagged — false positives checked
       deliberately, not just false negatives.
-  - **Still open, deliberately deferred:** diff-mode timing regression
-    detection (comparing timing data across two crawls). Not built in
-    this arc on purpose — a regression detector needs real, observed
-    run-to-run noise to design against, the same way the 0.1% visual-diff
-    threshold needed two real crawls' worth of noise-floor data before it
-    could be set responsibly. That data didn't exist before session 41
-    produced real report output; it does now. Natural next step whenever
-    picked back up.
+  - **Session 44 — diff-mode timing regression detection, closing the
+    item.** Page-load timing only (network-request and element-appearance
+    timing diffing are explicit follow-ups, not built this session).
+    `packages/core/src/timing-diff.ts`: `diffPageLoadTimingFromPages`/
+    `diffPageLoadTiming`, matched on normalized URL (page-level, no
+    occurrence-index needed — unlike selector-candidate diffing).
+    Threshold derived from real repeated back-to-back crawls with
+    identical config, same technique as the visual-diff/timing-report
+    thresholds: a pure local fixture (no external DNS/TLS) held run-to-run
+    swings within +/-6.4% across 5 runs; a real external multi-page site
+    (playwright.dev, 6 pages) held within +/-17%; a real external
+    single-page site (example.com, 5 runs) held within +/-15% for 4 of 5
+    runs, but one run spiked to +126% from what looks like a cold DNS/TLS
+    handshake after connection reuse expired. Set
+    `TIMING_NOISE_THRESHOLD_PERCENT = 50` — real margin above the ~17%
+    ceiling observed across both local and normal external-network
+    profiles, while explicitly documenting the rare cold-connection
+    outlier as a known, unresolved false-positive source (an inherent
+    limitation of relative page-load-time diffing against external
+    network-bound sites, not something a static threshold alone solves).
+    Wired into `CrawlDiff.timingChanges` in `diff.ts`, a new `## Page Load
+    Timing Changes` section (regressions/improvements, same
+    `sanitizeMarkdownTableCell` discipline as every other diff section) in
+    `packages/output/src/diff-report.ts`, and a `treeline diff`
+    `--fail-on-regression` guarantee test proving a timing regression
+    never sets `hasRegressions` — report-only, same as visual changes.
+    Verified against real data, not just fixtures: a real baseline crawl
+    of a local fixture vs. a real second crawl of the same fixture with a
+    genuine 2-second server-side delay produced a real
+    516ms→2533ms/+390.9% regression entry, correctly bucketed, with
+    `--fail-on-regression`'s exit code confirmed still `0`.
 - **AI-proposed test assertions, first cut — forms only** (session 42, V2
   item 5) — extends `StoredInterpretation` with
   `proposedAssertion: ProposedAssertion | null`, attempted only for pages

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import type { CrawlDiff, SelectorCandidateChange, VisualChange } from '@treeline/core'
+import type { CrawlDiff, SelectorCandidateChange, TimingChange, VisualChange } from '@treeline/core'
 import { urlHash } from '@treeline/core'
-import { classifyChange, renderDiffReportMarkdown } from './diff-report.js'
+import { classifyChange, classifyTimingChange, renderDiffReportMarkdown } from './diff-report.js'
 
 function makeDiff(overrides: Partial<CrawlDiff>): CrawlDiff {
   return {
@@ -12,6 +12,17 @@ function makeDiff(overrides: Partial<CrawlDiff>): CrawlDiff {
     titleChanges: [],
     selectorCandidateChanges: [],
     visualChanges: [],
+    timingChanges: [],
+    ...overrides,
+  }
+}
+
+function makeTimingChange(overrides: Partial<TimingChange>): TimingChange {
+  return {
+    url: 'https://example.com',
+    baselinePageLoadMs: 800,
+    currentPageLoadMs: 1600,
+    percentChange: 100,
     ...overrides,
   }
 }
@@ -73,11 +84,12 @@ describe('renderDiffReportMarkdown', () => {
     expect(markdown).toContain('No selector candidate changes found.')
     expect(markdown).not.toContain('| URL | Element | Before | After |')
     expect(markdown).toContain(
-      '0 pages added, 0 pages removed, 0 title changes, 0 selector regressions, 0 selector improvements, 0 other selector changes, 0 visual changes',
+      '0 pages added, 0 pages removed, 0 title changes, 0 selector regressions, 0 selector improvements, 0 other selector changes, 0 visual changes, 0 timing regressions, 0 timing improvements',
     )
     expect(markdown).toContain('No visual changes found.')
     expect(markdown).not.toContain('### Changed')
     expect(markdown).not.toContain('### Could Not Compare')
+    expect(markdown).toContain('No timing regressions found.')
   })
 
   it('populates page-level sections and states no selector changes when there are none', () => {
@@ -215,5 +227,56 @@ describe('renderDiffReportMarkdown', () => {
     const [, couldNotCompareSection] = markdown.split('### Could Not Compare')
     expect(couldNotCompareSection).toContain('https://example.com/new-page (baseline-missing)')
     expect(couldNotCompareSection).toContain('https://example.com/removed-page (current-missing)')
+  })
+})
+
+describe('classifyTimingChange', () => {
+  it('classifies a positive percentChange as a regression', () => {
+    expect(classifyTimingChange(makeTimingChange({ percentChange: 100 }))).toBe('regression')
+  })
+
+  it('classifies a negative percentChange as an improvement', () => {
+    expect(classifyTimingChange(makeTimingChange({ percentChange: -60 }))).toBe('improvement')
+  })
+})
+
+describe('renderDiffReportMarkdown — timing changes', () => {
+  it('states plainly that no timing regressions were found for an empty diff, consistent with other empty-state copy', () => {
+    const markdown = renderDiffReportMarkdown(makeDiff({}))
+    expect(markdown).toContain('## Page Load Timing Changes')
+    expect(markdown).toContain('No timing regressions found.')
+    expect(markdown).not.toContain('### Regressions')
+    expect(markdown).not.toContain('### Improvements')
+  })
+
+  it('renders a regression under Regressions with URL, before/after ms, and percent change', () => {
+    const change = makeTimingChange({ url: 'https://example.com/slow', baselinePageLoadMs: 800, currentPageLoadMs: 1600, percentChange: 100 })
+    const markdown = renderDiffReportMarkdown(makeDiff({ timingChanges: [change] }))
+    const timingSection = markdown.split('## Page Load Timing Changes')[1]!
+    const regressionsSection = timingSection.split('### Improvements')[0]!
+    expect(regressionsSection).toContain('https://example.com/slow')
+    expect(regressionsSection).toContain('| 800 | 1600 | +100%')
+    expect(markdown).toContain('1 timing regressions')
+  })
+
+  it('renders an improvement under Improvements only, not Regressions', () => {
+    const change = makeTimingChange({ url: 'https://example.com/fast', baselinePageLoadMs: 2000, currentPageLoadMs: 800, percentChange: -60 })
+    const markdown = renderDiffReportMarkdown(makeDiff({ timingChanges: [change] }))
+    const timingSection = markdown.split('## Page Load Timing Changes')[1]!
+    const [regressionsSection, improvementsSection] = timingSection.split('### Improvements')
+    expect(regressionsSection).not.toContain('https://example.com/fast')
+    expect(improvementsSection).toContain('https://example.com/fast')
+    expect(improvementsSection).toContain('| 2000 | 800 | -60%')
+    expect(markdown).toContain('1 timing improvements')
+  })
+
+  it('escapes a pipe and strips an embedded newline in the timing table URL, without corrupting the table', () => {
+    const change = makeTimingChange({ url: 'https://example.com/a|b\nc' })
+    const markdown = renderDiffReportMarkdown(makeDiff({ timingChanges: [change] }))
+    expect(markdown).toContain('https://example.com/a\\|b c')
+    const timingSection = markdown.split('## Page Load Timing Changes')[1]!
+    const tableLines = timingSection.split('\n').filter((line) => line.startsWith('| https://example.com'))
+    expect(tableLines).toHaveLength(1)
+    expect(tableLines[0]).toContain('| 800 | 1600 | +100% |')
   })
 })

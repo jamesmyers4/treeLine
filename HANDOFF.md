@@ -62,7 +62,11 @@ pnpm exec tsx src/index.ts crawl https://example.com --max-pages 2 --output ../.
 pnpm exec tsx src/index.ts diff ../../treeline-output/handoff-verify ../../treeline-output/handoff-verify-2
 ```
 
-Should produce `diff-report.md` with a Visual Changes section.
+Should produce `diff-report.md` with a Visual Changes section, and an
+eighth section, `## Page Load Timing Changes` — a real timing regression
+won't show up between two identical fast `example.com` crawls, but the
+section header and "No timing regressions found." empty-state copy should
+still be present.
 
 If you want to confirm the AI-proposed-assertion path too, run a small
 crawl against `httpbin.org/forms/post` **with** interpretation enabled

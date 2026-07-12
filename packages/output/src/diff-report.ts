@@ -1,4 +1,4 @@
-import type { CrawlDiff, SelectorCandidateChange, VisualChange } from '@treeline/core'
+import type { CrawlDiff, SelectorCandidateChange, TimingChange, VisualChange } from '@treeline/core'
 import { urlHash } from '@treeline/core'
 import { sanitizeMarkdownTableCell, sanitizeMarkdownText } from './markdown-safety.js'
 
@@ -121,11 +121,55 @@ function renderVisualChangesSection(visualChanges: VisualChange[]): string[] {
   return lines
 }
 
+export type TimingChangeClassification = 'regression' | 'improvement'
+
+export function classifyTimingChange(change: TimingChange): TimingChangeClassification {
+  return change.percentChange > 0 ? 'regression' : 'improvement'
+}
+
+function renderTimingChangesTable(changes: TimingChange[], emptyMessage: string): string[] {
+  if (changes.length === 0) return [emptyMessage, '']
+  const lines: string[] = ['| URL | Before (ms) | After (ms) | % Change |', '| --- | --- | --- | --- |']
+  for (const change of changes) {
+    const sign = change.percentChange > 0 ? '+' : ''
+    lines.push(
+      `| ${sanitizeMarkdownTableCell(change.url)} | ${change.baselinePageLoadMs} | ${change.currentPageLoadMs} | ${sign}${round1(change.percentChange)}% |`,
+    )
+  }
+  lines.push('')
+  return lines
+}
+
+function renderTimingChangesSection(timingChanges: TimingChange[]): string[] {
+  const lines: string[] = ['## Page Load Timing Changes', '']
+
+  if (timingChanges.length === 0) {
+    lines.push('No timing regressions found.', '')
+    return lines
+  }
+
+  const regressions = timingChanges.filter((change) => classifyTimingChange(change) === 'regression')
+  const improvements = timingChanges.filter((change) => classifyTimingChange(change) === 'improvement')
+
+  lines.push(
+    '### Regressions',
+    '',
+    ...renderTimingChangesTable(regressions, 'No timing regressions found.'),
+    '### Improvements',
+    '',
+    ...renderTimingChangesTable(improvements, 'No timing improvements found.'),
+  )
+
+  return lines
+}
+
 export function renderDiffReportMarkdown(diff: CrawlDiff): string {
   const regressions = diff.selectorCandidateChanges.filter((change) => classifyChange(change) === 'regression')
   const improvements = diff.selectorCandidateChanges.filter((change) => classifyChange(change) === 'improvement')
   const otherChanges = diff.selectorCandidateChanges.filter((change) => classifyChange(change) === 'other')
   const visualChangedCount = diff.visualChanges.filter((change) => change.status === 'changed').length
+  const timingRegressions = diff.timingChanges.filter((change) => classifyTimingChange(change) === 'regression')
+  const timingImprovements = diff.timingChanges.filter((change) => classifyTimingChange(change) === 'improvement')
 
   const lines: string[] = [
     '# Crawl Diff Report',
@@ -136,7 +180,7 @@ export function renderDiffReportMarkdown(diff: CrawlDiff): string {
     '',
     '## Summary',
     '',
-    `${diff.pagesAdded.length} pages added, ${diff.pagesRemoved.length} pages removed, ${diff.titleChanges.length} title changes, ${regressions.length} selector regressions, ${improvements.length} selector improvements, ${otherChanges.length} other selector changes, ${visualChangedCount} visual changes`,
+    `${diff.pagesAdded.length} pages added, ${diff.pagesRemoved.length} pages removed, ${diff.titleChanges.length} title changes, ${regressions.length} selector regressions, ${improvements.length} selector improvements, ${otherChanges.length} other selector changes, ${visualChangedCount} visual changes, ${timingRegressions.length} timing regressions, ${timingImprovements.length} timing improvements`,
     '',
     '## Pages Added',
     '',
@@ -149,6 +193,7 @@ export function renderDiffReportMarkdown(diff: CrawlDiff): string {
     ...renderTitleChangesTable(diff.titleChanges),
     ...renderSelectorCandidateSection(diff.selectorCandidateChanges),
     ...renderVisualChangesSection(diff.visualChanges),
+    ...renderTimingChangesSection(diff.timingChanges),
   ]
 
   return lines.join('\n')
