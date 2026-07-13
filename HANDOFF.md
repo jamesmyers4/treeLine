@@ -13,9 +13,9 @@ consistent lesson of this entire project._
 An AI-powered site comprehension engine. Crawls a site with a hardened
 Playwright/Patchright browser, captures real DOM + accessibility-tree
 state, runs tiered AI interpretation (Claude Haiku 4.5 / Sonnet 5), and
-generates Page Object Models, Playwright specs, and seven markdown reports
+generates Page Object Models, Playwright specs, and eight markdown reports
 (selector stability, testid audit, atlas, axe accessibility, flow map,
-coverage gaps, timing/flakiness). For pages with a form, it can also
+coverage gaps, timing/flakiness, proposal coverage). For pages with a form, it can also
 propose — never auto-run, never auto-commit — a fill-and-assert test
 scenario as a separate, `test.skip`-wrapped file. Also supports diffing
 two crawls against each other, including visual (screenshot pixel-diff)
@@ -52,9 +52,9 @@ cd packages/cli
 pnpm exec tsx src/index.ts crawl https://example.com --max-pages 2 --output ../../treeline-output/handoff-verify --skip-interpretation
 ```
 
-Check `treeline-output/handoff-verify/reports/` for all **seven** report
-files (not five — `coverage-report.md` and `timing-report.md` are new
-since the last time this document was written). Then confirm diff mode
+Check `treeline-output/handoff-verify/reports/` for all **eight** report
+files (`proposal-coverage-report.md` is new since the last time this
+document was written). Then confirm diff mode
 (including visual diffing):
 
 ```
@@ -77,7 +77,11 @@ shapes: a form-fill proposal (`.fill()`/`.check()`/`.selectOption()` calls
 plus a submit click) for a page with a captured form, or a
 content-presence proposal (one or more `toBeVisible()` assertions) for a
 form-less page — crawl a form-less content page (e.g. a docs or article
-page) separately to see the second shape.
+page) separately to see the second shape. Check
+`reports/proposal-coverage-report.md` too (session 46) — it's a crawl-wide
+index of which pages got a proposal, of which kind, and which eligible
+pages didn't, derived entirely from already-captured data (no new
+persistence).
 
 Also confirm `.github/workflows/crawl.yml` exists and has a
 `publish_to_pages` input (not just `url`/`max_pages`/
@@ -180,6 +184,21 @@ including a spot-check that a generated locator traced back to a real
 captured `cssPath`); both generated specs confirmed `skipped` under a
 real `npx playwright test` run.
 
+**Proposal coverage summary report (session 46) — complete.** Closed
+item 5's last deferred piece. Eighth report, `proposal-coverage-report.md`
+— derives five mutually-exclusive per-page categories (form-fill proposal,
+content-presence proposal, form without a proposal, content-eligible
+form-less page without a proposal, no eligible elements at all) purely
+from data already captured on `CrawledPage` plus the joined
+`proposedAssertion` — no new persistence, `packages/interpret` untouched.
+Same structural model as `coverage-report.ts`. Verified against two real
+crawls (`httpbin.org/forms/post`, `example.com`, both
+`--skip-interpretation`) confirming category counts sum to the
+captured-page count; the proposal-bearing branches themselves rely on
+unit-test coverage and the existing mocked `orchestrate.test.ts`
+interpretation fixture, since a real `ANTHROPIC_API_KEY` wasn't available
+this session.
+
 ## Known staleness — read this before trusting anything older
 
 `CONTEXT.md` and `V2.md` were synced in the same session this paragraph
@@ -201,12 +220,12 @@ someone outside this project (a portfolio reviewer, a hiring contact).
 
 ## What's left — options, not a directive
 
-**Item 5 remaining extensions (AI-proposed assertions).** Session 45 closed
+**Item 5 remaining extension (AI-proposed assertions).** Session 45 closed
 the "scenarios beyond forms" gap (search-form phrasing, form-less
-content-presence assertions). Still open, none scoped yet: a lightweight
+content-presence assertions); session 46 added the summary report
+(`proposal-coverage-report.md`). Still open, not scoped: a lightweight
 "promote this reviewed proposal into the trusted spec" workflow (plain
-copy-paste may already be sufficient — untested); a summary report of how
-many proposals exist across a crawl, and of which kind.
+copy-paste may already be sufficient — untested).
 
 **Item 4's remaining piece: diff-mode timing regression detection.**
 Deliberately deferred until real report output and real run-to-run noise

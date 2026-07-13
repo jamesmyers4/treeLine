@@ -189,3 +189,27 @@ export interface TimingReport {
   slowestNetworkRequests: SlowNetworkRequestEntry[]
   slowestAppearingElements: LateAppearingElementEntry[]
 }
+
+export interface ProposalEntry {
+  url: string
+  scenario: string
+}
+
+export interface FormsWithoutProposalEntry {
+  url: string
+  formCount: number
+}
+
+export interface ContentEligibleWithoutProposalEntry {
+  url: string
+  interactiveElementCount: number
+}
+
+export interface ProposalCoverageReport {
+  generatedAt: string
+  formFillProposals: ProposalEntry[]
+  contentPresenceProposals: ProposalEntry[]
+  formsWithoutProposal: FormsWithoutProposalEntry[]
+  contentEligibleWithoutProposal: ContentEligibleWithoutProposalEntry[]
+  noEligibleElements: string[]
+}

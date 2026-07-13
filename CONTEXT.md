@@ -888,8 +888,10 @@ pnpm workspaces monorepo:
   session 25), `flow-map.ts` (forms + API surface), `coverage-report.ts`
   (session 38), `timing-report.ts` (session 41), `proposed-assertions.ts`
   (session 42, renders `*.proposed.spec.ts`), `markdown-safety.ts`
-  (session 43, untrusted-content sanitization used by all eight report
-  generators)
+  (session 43, untrusted-content sanitization used by all nine report
+  generators), `proposal-coverage-report.ts` (session 46, derives
+  per-page proposal-coverage categories from already-captured data, no
+  new persistence)
 - `packages/pages` — static HTML renderer for a treeline output directory
   (markdown-it + shiki), `meta.json` capture, multi-run index generation
   (sessions 34-35b), `static/root-redirect.html` (session 37), the
@@ -897,8 +899,9 @@ pnpm workspaces monorepo:
   (session 43)
 - `packages/cli`'s `orchestrate.ts` — in addition to crawl orchestration,
   writes `reports/visual-diffs/*.png` diff images for pages with a visual
-  change (session 26), and generates `*.proposed.spec.ts` files alongside
-  POM/spec output for pages with a non-null proposal (session 42)
+  change (session 26), generates `*.proposed.spec.ts` files alongside
+  POM/spec output for pages with a non-null proposal (session 42), and
+  writes `reports/proposal-coverage-report.md` (session 46)
 - `.github/workflows/crawl.yml` — `workflow_dispatch` CI crawl trigger
   (session 28), opt-in `gh-pages` publish (sessions 34-35b), root-redirect
   write step (session 37)

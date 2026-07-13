@@ -21,6 +21,8 @@ import {
   renderCoverageReportMarkdown,
   generateTimingReport,
   renderTimingReportMarkdown,
+  generateProposalCoverageReport,
+  renderProposalCoverageReportMarkdown,
   classifyChange,
   renderDiffReportMarkdown,
 } from '@treeline/output'
@@ -127,6 +129,8 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
     await writeFile(join(reportsDir, 'coverage-report.md'), renderCoverageReportMarkdown(coverageReport))
     const timingReport = generateTimingReport(pages)
     await writeFile(join(reportsDir, 'timing-report.md'), renderTimingReportMarkdown(timingReport))
+    const proposalCoverageReport = generateProposalCoverageReport(pages, interpretations)
+    await writeFile(join(reportsDir, 'proposal-coverage-report.md'), renderProposalCoverageReportMarkdown(proposalCoverageReport))
     return {
       outputDir,
       pagesCaptured: capturedPages.length,
