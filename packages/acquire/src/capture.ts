@@ -5,6 +5,8 @@ import { launchHardened } from './launch.js'
 
 const INTERACTIVE_SELECTOR = 'button, a[href], input, select, textarea, [role]'
 const APPEARED_ATTR = 'data-treeline-appeared-at'
+const DEFAULT_MAX_RESPONSE_BODY_BYTES = 512000
+const CAPTURABLE_RESOURCE_TYPES = new Set(['xhr', 'fetch'])
 
 async function installAppearanceTracker(page: Page): Promise<void> {
   await page.addInitScript(
@@ -113,31 +115,54 @@ export async function extractForms(page: Page): Promise<CapturedForm[]> {
 export async function capturePage(url: string, options?: AcquireOptions): Promise<PageState> {
   const browser = await launchHardened(options)
   try {
-    return await capturePageWithBrowser(url, browser)
+    return await capturePageWithBrowser(url, browser, options)
   } finally {
     await browser.close()
   }
 }
 
-async function capturePageWithBrowser(url: string, browser: Browser): Promise<PageState> {
+async function capturePageWithBrowser(url: string, browser: Browser, options?: AcquireOptions): Promise<PageState> {
   const context = await browser.newContext()
   const page = await context.newPage()
   const networkLog: NetworkEntry[] = []
   const pending = new Map<string, { method: string; resourceType: string; startedAt: number }>()
+  const bodyReads: Promise<void>[] = []
+  const sampledEndpoints = options?.sampledEndpoints ?? new Set<string>()
+  const maxResponseBodyBytes = options?.maxResponseBodyBytes ?? DEFAULT_MAX_RESPONSE_BODY_BYTES
   page.on('request', (req) => {
     pending.set(req.url(), { method: req.method(), resourceType: req.resourceType(), startedAt: Date.now() })
   })
   page.on('response', (res) => {
     const req = pending.get(res.url())
-    if (req) {
-      networkLog.push({
-        url: res.url(),
-        method: req.method,
-        status: res.status(),
-        resourceType: req.resourceType,
-        durationMs: Date.now() - req.startedAt,
-      })
+    if (!req) return
+    const entry: NetworkEntry = {
+      url: res.url(),
+      method: req.method,
+      status: res.status(),
+      resourceType: req.resourceType,
+      durationMs: Date.now() - req.startedAt,
+      responseBodySample: null,
     }
+    networkLog.push(entry)
+    if (!options?.captureResponseBodies) return
+    if (!CAPTURABLE_RESOURCE_TYPES.has(req.resourceType)) return
+    const contentType = res.headers()['content-type'] ?? ''
+    if (!contentType.toLowerCase().startsWith('application/json')) return
+    const key = `${req.method} ${res.url()}`
+    if (sampledEndpoints.has(key)) return
+    bodyReads.push(
+      (async () => {
+        try {
+          const body = await res.text()
+          sampledEndpoints.add(key)
+          if (Buffer.byteLength(body, 'utf-8') <= maxResponseBodyBytes) {
+            entry.responseBodySample = body
+          }
+        } catch {
+          // response body unreadable (redirected, already consumed) — leave unsampled, eligible for retry
+        }
+      })(),
+    )
   })
   await installAppearanceTracker(page)
   const navigationStart = Date.now()
@@ -288,6 +313,7 @@ async function capturePageWithBrowser(url: string, browser: Browser): Promise<Pa
   } catch (err) {
     console.warn(`screenshot capture failed for ${url}`, err)
   }
+  await Promise.all(bodyReads)
   return {
     url,
     title,

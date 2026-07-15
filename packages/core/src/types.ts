@@ -6,6 +6,8 @@ export interface CrawlConfig {
   stealth: boolean
   respectRobotsTxt: boolean
   throttleMs?: number
+  captureResponseBodies?: boolean
+  maxResponseBodyBytes?: number
 }
 
 export type HardPageReasonCode =

@@ -25,7 +25,15 @@ function makeForm(overrides: Partial<CapturedForm>): CapturedForm {
 }
 
 function makeNetworkEntry(overrides: Partial<NetworkEntry>): NetworkEntry {
-  return { url: 'https://example.com/api/data', method: 'GET', status: 200, resourceType: 'xhr', durationMs: 50, ...overrides }
+  return {
+    url: 'https://example.com/api/data',
+    method: 'GET',
+    status: 200,
+    resourceType: 'xhr',
+    durationMs: 50,
+    responseBodySample: null,
+    ...overrides,
+  }
 }
 
 function makePage(overrides: Partial<CrawledPage>): CrawledPage {
@@ -173,5 +181,55 @@ describe('renderFlowMapMarkdown', () => {
     const flowMap = generateFlowMap(pages)
     const markdown = renderFlowMapMarkdown(flowMap)
     expect(markdown).toContain('+2 more')
+  })
+
+  it('renders a fenced, pretty-printed block for an endpoint with a captured response body sample', () => {
+    const entry = makeNetworkEntry({
+      url: 'https://example.com/api/data',
+      method: 'GET',
+      resourceType: 'xhr',
+      responseBodySample: JSON.stringify({ id: 1, name: 'test' }),
+    })
+    const page = makePage({ networkLog: [entry] })
+    const flowMap = generateFlowMap([page])
+    const markdown = renderFlowMapMarkdown(flowMap)
+    expect(markdown).toContain('## Sample Response Bodies')
+    expect(markdown).toContain('"id": 1')
+    expect(markdown).toContain('"name": "test"')
+  })
+
+  it('does not render a block for an endpoint with no response body sample', () => {
+    const entry = makeNetworkEntry({ url: 'https://example.com/api/data', resourceType: 'xhr', responseBodySample: null })
+    const page = makePage({ networkLog: [entry] })
+    const flowMap = generateFlowMap([page])
+    const markdown = renderFlowMapMarkdown(flowMap)
+    expect(markdown).not.toContain('## Sample Response Bodies')
+  })
+
+  it('does not break out of its fence when the sample contains embedded triple backticks', () => {
+    const trickyBody = 'prefix ```escape attempt``` suffix'
+    const entry = makeNetworkEntry({
+      url: 'https://example.com/api/data',
+      resourceType: 'xhr',
+      responseBodySample: trickyBody,
+    })
+    const page = makePage({ networkLog: [entry] })
+    const flowMap = generateFlowMap([page])
+    const markdown = renderFlowMapMarkdown(flowMap)
+    const fenceMatch = markdown.match(/\n(`{4,})\n/)
+    expect(fenceMatch).not.toBeNull()
+    const fenceLines = markdown.split('\n').filter((line) => /^`+$/.test(line))
+    expect(fenceLines.length).toBeGreaterThanOrEqual(2)
+    expect(markdown).toContain(trickyBody)
+  })
+
+  it('falls back to raw (still fenced, still safe) text when the sample is not valid JSON', () => {
+    const rawText = 'not valid json {{{'
+    const entry = makeNetworkEntry({ url: 'https://example.com/api/data', resourceType: 'xhr', responseBodySample: rawText })
+    const page = makePage({ networkLog: [entry] })
+    const flowMap = generateFlowMap([page])
+    const markdown = renderFlowMapMarkdown(flowMap)
+    expect(markdown).toContain(rawText)
+    expect(markdown).toContain('```')
   })
 })

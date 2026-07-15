@@ -111,6 +111,8 @@ describe('runTreelineCrawl', () => {
       throttleMs: 0,
       outputDir,
       skipInterpretation: true,
+      captureResponseBodies: false,
+      maxResponseBodyBytes: 512000,
     })
     expect(summary.pagesCaptured).toBe(Object.keys(pages).length)
     expect(summary.pagesInterpreted).toBe(0)
@@ -169,6 +171,8 @@ describe('runTreelineCrawl', () => {
         throttleMs: 0,
         outputDir: mixedOutputDir,
         skipInterpretation: false,
+        captureResponseBodies: false,
+        maxResponseBodyBytes: 512000,
       })
       expect(summary.proposedAssertionSpecsGenerated).toBe(2)
       const homeSpec = readFileSync(join(mixedOutputDir, 'specs', 'home.proposed.spec.ts'), 'utf-8')

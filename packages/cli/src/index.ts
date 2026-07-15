@@ -9,6 +9,8 @@ interface RawCrawlOptions {
   throttleMs: string
   output?: string
   skipInterpretation: boolean
+  captureResponseBodies: boolean
+  maxResponseBodyBytes: string
 }
 
 interface RawDiffOptions {
@@ -28,6 +30,8 @@ program
   .option('--throttle-ms <n>', 'delay between requests in milliseconds', '500')
   .option('--output <dir>', 'output directory for crawl artifacts')
   .option('--skip-interpretation', 'skip AI interpretation of captured pages', false)
+  .option('--capture-response-bodies', 'capture a sample response body for JSON API calls', false)
+  .option('--max-response-body-bytes <n>', 'maximum response body size to capture, in bytes', '512000')
   .action(async (url: string, rawOptions: RawCrawlOptions) => {
     const options: TreelineCrawlOptions = {
       url,
@@ -37,6 +41,8 @@ program
       throttleMs: Number(rawOptions.throttleMs),
       outputDir: rawOptions.output,
       skipInterpretation: rawOptions.skipInterpretation,
+      captureResponseBodies: rawOptions.captureResponseBodies,
+      maxResponseBodyBytes: Number(rawOptions.maxResponseBodyBytes),
     }
     try {
       const summary = await runTreelineCrawl(options)

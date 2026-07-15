@@ -4,6 +4,7 @@ export interface NetworkEntry {
   status: number
   resourceType: string
   durationMs: number
+  responseBodySample: string | null
 }
 
 export interface DomInteractiveElement {
@@ -78,6 +79,9 @@ export interface PageState {
 export interface AcquireOptions {
   stealth?: boolean
   proxy?: string
+  captureResponseBodies?: boolean
+  maxResponseBodyBytes?: number
+  sampledEndpoints?: Set<string>
 }
 
 export interface CaptureHandler {

@@ -54,7 +54,16 @@ pnpm exec tsx src/index.ts crawl https://example.com --max-pages 2 --output ../.
 
 Check `treeline-output/handoff-verify/reports/` for all **eight** report
 files (`proposal-coverage-report.md` is new since the last time this
-document was written). Then confirm diff mode
+document was written). As of session 47, `crawl` also takes an opt-in
+`--capture-response-bodies` flag (off by default) — pass it and
+`flow-map.md` will include a "Sample Response Bodies" section with a
+pretty-printed, fenced JSON sample for each JSON xhr/fetch endpoint
+sampled during the crawl (one sample per distinct endpoint per crawl).
+As of session 47b, the per-endpoint size cap is a real overridable flag,
+`--max-response-body-bytes <n>` (default `512000`), not a fixed constant —
+raised from session 47's original `51200` after real data
+(`careers.quarterhill.com/api/jobs`, 379,382 bytes) showed the original
+cap was too low for the actual motivating endpoint. Then confirm diff mode
 (including visual diffing):
 
 ```

@@ -46,6 +46,8 @@ export interface TreelineCrawlOptions {
   throttleMs: number
   outputDir?: string
   skipInterpretation: boolean
+  captureResponseBodies: boolean
+  maxResponseBodyBytes: number
 }
 
 export interface TreelineCrawlSummary {
@@ -93,6 +95,8 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
       stealth: options.stealth,
       respectRobotsTxt: true,
       throttleMs: options.throttleMs,
+      captureResponseBodies: options.captureResponseBodies,
+      maxResponseBodyBytes: options.maxResponseBodyBytes,
     }
     await crawl(crawlConfig, dbPath, hardPagesDir)
     if (!options.skipInterpretation) {

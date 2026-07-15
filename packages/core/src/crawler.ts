@@ -44,6 +44,7 @@ export async function crawl(
     }
   }
   const visited = new Set<string>()
+  const sampledEndpoints = new Set<string>()
   let pageCount = 0
   let lastRequestAt = 0
   const throttleMs = config.throttleMs ?? 0
@@ -65,7 +66,12 @@ export async function crawl(
     }
     lastRequestAt = Date.now()
     try {
-      const pageState = await capturePage(url, { stealth: config.stealth })
+      const pageState = await capturePage(url, {
+        stealth: config.stealth,
+        captureResponseBodies: config.captureResponseBodies,
+        maxResponseBodyBytes: config.maxResponseBodyBytes,
+        sampledEndpoints,
+      })
       db.recordPageState(pageState)
       pageCount++
       if (depth < config.maxDepth) {

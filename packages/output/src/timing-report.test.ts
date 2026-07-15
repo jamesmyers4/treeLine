@@ -25,6 +25,7 @@ function makeNetworkEntry(overrides: Partial<NetworkEntry>): NetworkEntry {
     status: 200,
     resourceType: 'fetch',
     durationMs: 50,
+    responseBodySample: null,
     ...overrides,
   }
 }

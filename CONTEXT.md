@@ -584,6 +584,110 @@ markdown.ts`) fully blocks raw HTML/script injection, in prose and in
     many proposals exist, or of which kind, across a crawl. Both remain
     open future items, same as session 42 left them, now just also
     scoped to two assertion kinds instead of one.
+- **JSON response-body capture** (session 47) — not a `V2.md` roadmap item;
+  grew directly out of a real jobSearch-recon crawl against
+  `careers.quarterhill.com`: `flow-map.md`'s API Surface table surfaced a
+  real internal JSON endpoint, but with no body captured, a manual `curl`
+  was needed to see what it actually returned. This closes that gap.
+  - **Opt-in, off by default** — new `--capture-response-bodies` CLI flag
+    (`CrawlConfig.captureResponseBodies?: boolean`, `AcquireOptions.
+captureResponseBodies?: boolean`), same posture as `--stealth` and
+    `--skip-interpretation`: everything captured elsewhere is a structured
+    record of what a browser would visibly show a human; response bodies
+    can include fields never rendered anywhere, so this doesn't get to be
+    a silent default.
+  - **Dedup at capture time, via crawl-level shared state.** A
+    `Set<string>` of `${method} ${url}` keys — `sampledEndpoints` — lives in
+    `packages/core/src/crawler.ts`'s `crawl()` function alongside `visited`,
+    threaded through `AcquireOptions` into every `capturePage()` call across
+    the whole crawl (same Set instance every iteration, not a fresh one per
+    page), so a shared endpoint hit by multiple pages is only sampled once.
+  - **Fixed size cap, no second CLI flag** — `MAX_RESPONSE_BODY_BYTES =
+    51200` in `packages/acquire/src/capture.ts`. Over the cap: don't
+    capture, don't truncate — `responseBodySample` stays `null`, same as
+    every other ineligible case (non-JSON content-type, non-xhr/fetch
+    `resourceType`, already sampled, body read threw). A truncated JSON
+    fragment would be worse than nothing.
+  - **Async body read, `Promise.all`-gated return.** `capture.ts`'s
+    `page.on('response', ...)` handler still pushes each `NetworkEntry`
+    synchronously as before; only when eligible does it kick off an async
+    body read that mutates the already-pushed entry object in place once
+    resolved. Every such read is tracked in a `bodyReads` array;
+    `capturePageWithBrowser` `await`s `Promise.all(bodyReads)` before
+    returning — proven with a dedicated test using a deliberately
+    slow-arriving response body (matching the session 40 technique of a
+    small local server with genuinely delayed content, not a live site) to
+    confirm the wait is load-bearing, not just that the code compiles.
+  - **New code-fence-safe escaping helper** — `packages/output/src/
+markdown-safety.ts`'s `safeCodeFence(content)`, finds the longest run of
+    consecutive backticks in the content and returns a fence one backtick
+    longer (minimum three). Existing `sanitizeMarkdownText`/
+    `sanitizeMarkdownTableCell` are built for inline text and table cells,
+    not multi-line fenced code blocks — a response body containing a stray
+    triple-backtick sequence breaks out of a fence the same way an
+    unescaped `|` breaks a table cell, and neither existing helper covered
+    it before this session.
+  - `flow-map.ts`'s `ApiSurfaceEntry` gained `responseBodySample: string |
+    null`; `renderFlowMapMarkdown` adds a new "Sample Response Bodies"
+    subsection below the existing API Surface table (which is left exactly
+    as-is — body content in table cells would wreck table formatting), one
+    fenced block per endpoint with a sample, pretty-printed via
+    `JSON.parse`/`JSON.stringify(_, null, 2)` with a raw-text fallback if
+    parsing fails, routed through `safeCodeFence` before wrapping.
+  - **Verified against real data, not just fixtures:** a real crawl of
+    `careers.quarterhill.com` (`--capture-response-bodies --throttle-ms
+    5000`, respecting its real `crawl-delay: 5`) produced real,
+    correctly pretty-printed samples in `flow-map.md`'s new section for two
+    genuinely-hit JSON endpoints (`/api/jasession`, `/api/alrts/
+hasTalentCommunityAlrts`) — the actual case that motivated the session.
+    A timed before/after comparison (same crawl, flag on vs. off) showed
+    no meaningful difference in total wall-clock time (~26s either way,
+    dominated by the 5s per-page throttle) — async body reads running
+    alongside the existing throttle delay don't meaningfully slow a crawl
+    down.
+  - **Session 47b — the fixed 51200-byte cap from session 47 was an
+    unvalidated guess, and it was wrong for the endpoint that motivated the
+    whole feature.** `curl -s -o /dev/null -w '%{size_download} bytes\n'
+    https://careers.quarterhill.com/api/jobs` returned **379,382 bytes** —
+    over 7x the session 47 cap — so `/api/jobs` itself never got a sample
+    in that session's real-crawl verification, even though two smaller
+    endpoints on the same site did. Not a logic bug on its own, just an
+    empirical size assumption that didn't hold once checked against the
+    actual motivating endpoint.
+    - Fix: the cap is now `--max-response-body-bytes <n>` (default
+      `512000`), threaded the same path `--capture-response-bodies`
+      already follows — CLI flag → `CrawlConfig.maxResponseBodyBytes` →
+      `crawler.ts` → `AcquireOptions.maxResponseBodyBytes` →
+      `capture.ts`'s `DEFAULT_MAX_RESPONSE_BODY_BYTES` fallback. `512000`
+      is real headroom over the confirmed 379,382-byte case, not another
+      derived/empirical number.
+    - **Second bug found in the same real-data pass:** `sampledEndpoints`
+      was being marked (`.add(key)`) *before* the body read was attempted,
+      not after. A transient failure (a thrown `res.text()` — redirected
+      or already-consumed response) permanently locked that endpoint out
+      of ever being sampled again for the rest of the crawl, even from a
+      later page where the same call might succeed cleanly. Fixed by
+      moving `sampledEndpoints.add(key)` inside the `try`, after the read
+      resolves — so only a *conclusive* result (successful read, whether
+      under the cap or over it — response size is effectively
+      deterministic within one crawl, so over-cap doesn't need a retry
+      either) marks the endpoint sampled; a thrown read leaves it eligible
+      for retry on a later occurrence.
+    - Closed a test-coverage gap that should have shipped with session 47:
+      `packages/acquire/src/capture.test.ts` didn't exist as a real test
+      suite until this session even though the feature had landed —
+      added, including a dedicated regression test for the lockout bug
+      (first call's read forced to throw via a redirect response, whose
+      body Playwright documents as unreadable — a same-instance socket
+      reset turned out to be silently absorbed by Chromium's own
+      transparent retry-on-reset behavior within a single page load,
+      making it useless for testing this specific bug; the redirect
+      technique is deterministic instead) followed by a second call to the
+      same endpoint succeeding.
+    - Re-verified against `careers.quarterhill.com` with the new default:
+      `/api/jobs` now appears in `flow-map.md`'s "Sample Response Bodies"
+      section with a real, correctly pretty-printed sample — the specific
+      case that was missing before this session.
 
 ## GPB judgment call (context, not code — worth knowing regardless)
 
