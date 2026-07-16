@@ -77,6 +77,7 @@ async function buildAdversarialReportsDir(): Promise<string> {
     axeViolations: [],
     axeIncomplete: [],
     forms: [],
+    colorPalette: [],
   })
   const pages = db.getAllPages()
   db.close()

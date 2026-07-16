@@ -20,6 +20,7 @@ function makePage(url: string, title: string, interactiveElements: DomInteractiv
     axeViolations: [],
     axeIncomplete: [],
     forms: [],
+    colorPalette: [],
   }
 }
 

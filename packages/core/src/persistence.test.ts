@@ -2,13 +2,18 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import type { CapturedForm, DomInteractiveElement, PageState } from '@treeline/acquire'
+import type { CapturedForm, ColorSwatch, DomInteractiveElement, PageState } from '@treeline/acquire'
 import type { CrawlConfig, StoredInterpretation } from './types.js'
 import { openCrawlDb } from './persistence.js'
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 
-function makePage(url: string, forms: CapturedForm[] = [], screenshot: Buffer | null = null): PageState {
+function makePage(
+  url: string,
+  forms: CapturedForm[] = [],
+  screenshot: Buffer | null = null,
+  colorPalette: ColorSwatch[] = [],
+): PageState {
   return {
     url,
     title: 'Title',
@@ -22,6 +27,17 @@ function makePage(url: string, forms: CapturedForm[] = [], screenshot: Buffer | 
     axeViolations: [],
     axeIncomplete: [],
     forms,
+    colorPalette,
+  }
+}
+
+function makeColorSwatch(overrides: Partial<ColorSwatch> = {}): ColorSwatch {
+  return {
+    hex: '#1a2744',
+    property: 'background-color',
+    usageCount: 3,
+    exampleSelector: 'body',
+    ...overrides,
   }
 }
 
@@ -103,6 +119,45 @@ describe('forms persistence', () => {
     expect(db.pageExists('https://example.com/')).toBe(true)
     expect(db.pageExists('https://example.com/other')).toBe(false)
     db.close()
+  })
+})
+
+describe('colorPalette persistence', () => {
+  it('round-trips a non-empty colorPalette array field', () => {
+    const colorPalette = [makeColorSwatch(), makeColorSwatch({ hex: '#f4f6f9', property: 'color', usageCount: 1 })]
+    const db = openCrawlDb(dbPath)
+    db.recordPageState(makePage('https://example.com/', [], null, colorPalette))
+    const pages = db.getAllPages()
+    db.close()
+    expect(pages).toHaveLength(1)
+    expect(pages[0].colorPalette).toEqual(colorPalette)
+  })
+
+  it('round-trips an empty colorPalette array as [] not undefined/null', () => {
+    const db = openCrawlDb(dbPath)
+    db.recordPageState(makePage('https://example.com/no-color', [], null, []))
+    const pages = db.getAllPages()
+    db.close()
+    expect(pages[0].colorPalette).toEqual([])
+    expect(pages[0].colorPalette).not.toBeUndefined()
+    expect(pages[0].colorPalette).not.toBeNull()
+  })
+
+  it('keeps colorPalette isolated per page across multiple rows', () => {
+    const paletteA = [makeColorSwatch({ hex: '#111111' })]
+    const paletteB = [makeColorSwatch({ hex: '#222222' }), makeColorSwatch({ hex: '#333333', property: 'color' })]
+    const db = openCrawlDb(dbPath)
+    db.recordPageState(makePage('https://example.com/a', [], null, paletteA))
+    db.recordPageState(makePage('https://example.com/b', [], null, paletteB))
+    db.recordPageState(makePage('https://example.com/c', [], null, []))
+    const pages = db.getAllPages()
+    db.close()
+    const pageA = pages.find((p) => p.url === 'https://example.com/a')!
+    const pageB = pages.find((p) => p.url === 'https://example.com/b')!
+    const pageC = pages.find((p) => p.url === 'https://example.com/c')!
+    expect(pageA.colorPalette).toEqual(paletteA)
+    expect(pageB.colorPalette).toEqual(paletteB)
+    expect(pageC.colorPalette).toEqual([])
   })
 })
 

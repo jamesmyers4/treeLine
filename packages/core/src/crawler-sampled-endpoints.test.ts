@@ -59,6 +59,7 @@ describe('crawl — sampledEndpoints threading', () => {
         axeViolations: [],
         axeIncomplete: [],
         forms: [],
+        colorPalette: [],
       }
     })
     await crawl(

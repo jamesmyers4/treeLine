@@ -1,7 +1,8 @@
 import { createServer } from 'node:http'
 import type { Server } from 'node:http'
 import { describe, expect, it, beforeAll, afterAll } from 'vitest'
-import { capturePage } from './capture.js'
+import { capturePage, extractColorPalette } from './capture.js'
+import { launchHardened } from './launch.js'
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 
@@ -271,6 +272,64 @@ fetch('/api/big').catch(() => {})
       expect(entry!.responseBodySample).toBe('{"slow":true}')
     } finally {
       slowServer.close()
+    }
+  }, 30000)
+})
+
+describe('extractColorPalette (color scheme capture)', () => {
+  let server: Server
+  let baseUrl: string
+
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.end(`<!doctype html>
+<html><body style="background-color: rgb(255, 0, 0);">
+<h1 style="color: rgb(0, 0, 255);">Heading</h1>
+<button class="btn-primary" style="background-color: rgb(0, 128, 0);">Go</button>
+<p style="background-color: transparent;">Paragraph text</p>
+</body></html>`)
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const addr = server.address() as { port: number }
+    baseUrl = `http://127.0.0.1:${addr.port}`
+  })
+
+  afterAll(() => {
+    server.close()
+  })
+
+  it('captures real background/text colors as hex, with an example selector, and skips fully-transparent backgrounds', async () => {
+    const browser = await launchHardened()
+    try {
+      const context = await browser.newContext()
+      const page = await context.newPage()
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
+      const palette = await extractColorPalette(page)
+      const bodyBackground = palette.find((s) => s.property === 'background-color' && s.hex === '#ff0000')
+      expect(bodyBackground).toBeDefined()
+      expect(bodyBackground!.exampleSelector.length).toBeGreaterThan(0)
+      const headingColor = palette.find((s) => s.property === 'color' && s.hex === '#0000ff')
+      expect(headingColor).toBeDefined()
+      const buttonBackground = palette.find((s) => s.property === 'background-color' && s.hex === '#008000')
+      expect(buttonBackground).toBeDefined()
+      const transparentBackground = palette.find((s) => s.property === 'background-color' && s.hex === '#000000')
+      expect(transparentBackground).toBeUndefined()
+    } finally {
+      await browser.close()
+    }
+  }, 30000)
+
+  it('includes colorPalette on the real PageState returned by capturePage', async () => {
+    const result = await capturePage(baseUrl)
+    expect(Array.isArray(result.colorPalette)).toBe(true)
+    expect(result.colorPalette.length).toBeGreaterThan(0)
+    for (const swatch of result.colorPalette) {
+      expect(typeof swatch.hex).toBe('string')
+      expect(swatch.hex).toMatch(/^#[0-9a-f]{6}$/)
+      expect(['color', 'background-color']).toContain(swatch.property)
+      expect(swatch.usageCount).toBeGreaterThan(0)
+      expect(typeof swatch.exampleSelector).toBe('string')
     }
   }, 30000)
 })

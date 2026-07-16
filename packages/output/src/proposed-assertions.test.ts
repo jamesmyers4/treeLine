@@ -59,6 +59,7 @@ function makePage(overrides: Partial<CrawledPage> = {}): CrawledPage {
     axeViolations: [],
     axeIncomplete: [],
     forms: [makeForm()],
+    colorPalette: [],
     status: 'ok',
     ...overrides,
   }
@@ -200,6 +201,7 @@ describe('renderProposedAssertionSpec — content-presence', () => {
       axeViolations: [],
       axeIncomplete: [],
       forms: [],
+      colorPalette: [],
       status: 'ok',
       ...overrides,
     }
@@ -292,6 +294,7 @@ describe('generateProposedAssertionSpecs', () => {
       url: 'https://example.com/article',
       title: 'Article',
       forms: [],
+      colorPalette: [],
       interactiveElements: [makeElement()],
     })
     const pages = [formPage, contentPage]

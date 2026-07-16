@@ -1,12 +1,14 @@
 import { AxeBuilder } from '@axe-core/playwright'
 import type { Browser, Page } from 'playwright'
-import type { AcquireOptions, AxeIncompleteResult, AxeViolation, CapturedForm, CaptureHandler, DomInteractiveElement, NetworkEntry, PageState } from './types.js'
+import type { AcquireOptions, AxeIncompleteResult, AxeViolation, CapturedForm, CaptureHandler, ColorSwatch, DomInteractiveElement, NetworkEntry, PageState } from './types.js'
 import { launchHardened } from './launch.js'
 
 const INTERACTIVE_SELECTOR = 'button, a[href], input, select, textarea, [role]'
 const APPEARED_ATTR = 'data-treeline-appeared-at'
 const DEFAULT_MAX_RESPONSE_BODY_BYTES = 512000
 const CAPTURABLE_RESOURCE_TYPES = new Set(['xhr', 'fetch'])
+const COLOR_SELECTOR = 'body, header, nav, main, footer, h1, h2, h3, h4, h5, h6, p, a, button, input, [class*="btn" i]'
+const MAX_COLOR_SWATCHES = 20
 
 async function installAppearanceTracker(page: Page): Promise<void> {
   await page.addInitScript(
@@ -110,6 +112,63 @@ export async function extractForms(page: Page): Promise<CapturedForm[]> {
       return { formIndex, action, method, fields }
     })
   })
+}
+
+export async function extractColorPalette(page: Page): Promise<ColorSwatch[]> {
+  const swatches = await page.$$eval(COLOR_SELECTOR, (els) => {
+    const computeCssPath = (target: Element): string => {
+      if (target === document.body) return 'body'
+      if (target.id && document.querySelectorAll(`#${CSS.escape(target.id)}`).length === 1) {
+        return `#${CSS.escape(target.id)}`
+      }
+      const parts: string[] = []
+      let current: Element | null = target
+      while (current && current !== document.body && current.parentElement) {
+        const currentTag = current.tagName.toLowerCase()
+        let selector = currentTag
+        const classes = Array.from(current.classList)
+        if (classes.length > 0) selector += '.' + classes.map((c) => CSS.escape(c)).join('.')
+        const parent: Element = current.parentElement
+        const siblings = Array.from(parent.children).filter((c) => c.tagName === current!.tagName)
+        if (siblings.length > 1) {
+          const index = siblings.indexOf(current) + 1
+          selector += `:nth-of-type(${index})`
+        }
+        parts.unshift(selector)
+        current = parent
+      }
+      return parts.join(' > ')
+    }
+    const parseColor = (value: string): string | null => {
+      const match = value.match(/rgba?\(\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\s*\)/)
+      if (!match) return null
+      const alpha = match[4] !== undefined ? parseFloat(match[4]) : 1
+      if (alpha === 0) return null
+      const toHex = (n: string) => Math.round(parseFloat(n)).toString(16).padStart(2, '0')
+      return `#${toHex(match[1])}${toHex(match[2])}${toHex(match[3])}`
+    }
+    const counts = new Map<string, { property: 'color' | 'background-color'; hex: string; usageCount: number; exampleSelector: string }>()
+    for (const el of els) {
+      const style = getComputedStyle(el)
+      const candidates: Array<['color' | 'background-color', string]> = [
+        ['color', style.color],
+        ['background-color', style.backgroundColor],
+      ]
+      for (const [property, rawValue] of candidates) {
+        const hex = parseColor(rawValue)
+        if (!hex) continue
+        const key = `${property}:${hex}`
+        const existing = counts.get(key)
+        if (existing) {
+          existing.usageCount += 1
+        } else {
+          counts.set(key, { property, hex, usageCount: 1, exampleSelector: computeCssPath(el) })
+        }
+      }
+    }
+    return Array.from(counts.values()).sort((a, b) => b.usageCount - a.usageCount)
+  })
+  return swatches.slice(0, MAX_COLOR_SWATCHES)
 }
 
 export async function capturePage(url: string, options?: AcquireOptions): Promise<PageState> {
@@ -307,6 +366,7 @@ async function capturePageWithBrowser(url: string, browser: Browser, options?: A
     APPEARED_ATTR,
   )
   const forms = await extractForms(page)
+  const colorPalette = await extractColorPalette(page)
   let screenshot: Buffer | null = null
   try {
     screenshot = await page.screenshot({ type: 'png', fullPage: true })
@@ -327,6 +387,7 @@ async function capturePageWithBrowser(url: string, browser: Browser, options?: A
     axeViolations,
     axeIncomplete,
     forms,
+    colorPalette,
   }
 }
 

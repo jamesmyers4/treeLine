@@ -20,7 +20,8 @@ const mockPageState: PageState = {
   interactiveElements: [],
   axeViolations: [],
   axeIncomplete: [],
-  forms: []
+  forms: [],
+  colorPalette: []
 }
 
 const mockToolUseResponse = {

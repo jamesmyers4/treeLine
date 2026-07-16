@@ -20,6 +20,7 @@ function makePage(url: string, pageLoadMs: number): PageState {
     axeViolations: [],
     axeIncomplete: [],
     forms: [],
+    colorPalette: [],
   }
 }
 

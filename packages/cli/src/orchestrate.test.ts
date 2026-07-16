@@ -143,6 +143,9 @@ describe('runTreelineCrawl', () => {
     const proposalCoverageReport = readFileSync(join(outputDir, 'reports', 'proposal-coverage-report.md'), 'utf-8')
     expect(proposalCoverageReport.length).toBeGreaterThan(0)
     expect(proposalCoverageReport).toContain('# Proposal Coverage Report')
+    const colorReport = readFileSync(join(outputDir, 'reports', 'color-report.md'), 'utf-8')
+    expect(colorReport.length).toBeGreaterThan(0)
+    expect(colorReport).toContain('# Color Report')
     const pomFiles = readdirSync(join(outputDir, 'poms'))
     const specFiles = readdirSync(join(outputDir, 'specs'))
     expect(pomFiles).toHaveLength(Object.keys(pages).length)
@@ -156,6 +159,7 @@ describe('runTreelineCrawl', () => {
     expect(typeof summary.flaggedSlowPages).toBe('number')
     expect(typeof summary.flaggedSlowNetworkRequests).toBe('number')
     expect(typeof summary.flaggedHighLatencyElements).toBe('number')
+    expect(typeof summary.distinctColorsFound).toBe('number')
   }, 120_000)
 
   it('produces two distinct .proposed.spec.ts files, correctly shaped for each proposedAssertion kind, for a form page and a form-less content page', async () => {
@@ -223,6 +227,7 @@ function makePage(
     axeViolations: [],
     axeIncomplete: [],
     forms: [],
+    colorPalette: [],
   }
 }
 

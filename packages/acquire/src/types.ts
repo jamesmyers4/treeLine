@@ -19,6 +19,13 @@ export interface DomInteractiveElement {
   appearedAtMs: number | null
 }
 
+export interface ColorSwatch {
+  hex: string
+  property: 'color' | 'background-color'
+  usageCount: number
+  exampleSelector: string
+}
+
 export interface AxeViolationNode {
   target: string[]
   html: string
@@ -74,6 +81,7 @@ export interface PageState {
   axeViolations: AxeViolation[]
   axeIncomplete: AxeIncompleteResult[]
   forms: CapturedForm[]
+  colorPalette: ColorSwatch[]
 }
 
 export interface AcquireOptions {

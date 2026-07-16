@@ -59,6 +59,7 @@ program
       console.log(`Slow-loading pages: ${summary.flaggedSlowPages}`)
       console.log(`Slow network requests: ${summary.flaggedSlowNetworkRequests}`)
       console.log(`High-latency elements: ${summary.flaggedHighLatencyElements}`)
+      console.log(`Distinct colors found: ${summary.distinctColorsFound}`)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.error(`Error: ${message}`)

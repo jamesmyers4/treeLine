@@ -49,6 +49,7 @@ function makePage(url: string, screenshot: Buffer | null): PageState {
     axeViolations: [],
     axeIncomplete: [],
     forms: [],
+    colorPalette: [],
   }
 }
 

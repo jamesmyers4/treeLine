@@ -32,6 +32,7 @@ function makePage(url: string, interactiveElements: DomInteractiveElement[]): Cr
     axeViolations: [],
     axeIncomplete: [],
     forms: [],
+    colorPalette: [],
     status: 'ok',
   }
 }

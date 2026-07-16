@@ -117,6 +117,7 @@ describe('renderOutputToHtml', () => {
       axeViolations: [],
       axeIncomplete: [],
       forms: [],
+      colorPalette: [],
     })
     db.close()
 

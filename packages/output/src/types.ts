@@ -1,6 +1,6 @@
 export type { LocatorStrategy, SelectorCandidate } from '@treeline/core'
 import type { HardPageEntry, SelectorCandidate } from '@treeline/core'
-import type { CapturedForm } from '@treeline/acquire'
+import type { CapturedForm, ColorSwatch } from '@treeline/acquire'
 
 export interface SelectorReportEntry {
   url: string
@@ -213,4 +213,22 @@ export interface ProposalCoverageReport {
   formsWithoutProposal: FormsWithoutProposalEntry[]
   contentEligibleWithoutProposal: ContentEligibleWithoutProposalEntry[]
   noEligibleElements: string[]
+}
+
+export interface PageColorEntry {
+  url: string
+  swatches: ColorSwatch[]
+}
+
+export interface AggregatedColorEntry {
+  hex: string
+  property: 'color' | 'background-color'
+  totalUsageCount: number
+  pageCount: number
+}
+
+export interface ColorReport {
+  generatedAt: string
+  pages: PageColorEntry[]
+  siteWideScheme: AggregatedColorEntry[]
 }

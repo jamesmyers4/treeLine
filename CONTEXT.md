@@ -1,6 +1,6 @@
 # treeline — CONTEXT.md
 
-_Last updated after session 43. This file reflects what's actually built and
+_Last updated after session 48. This file reflects what's actually built and
 verified, not just the original plan — see the "Status" section for what's
 done vs. remaining._
 
@@ -688,6 +688,86 @@ hasTalentCommunityAlrts`) — the actual case that motivated the session.
       `/api/jobs` now appears in `flow-map.md`'s "Sample Response Bodies"
       section with a real, correctly pretty-printed sample — the specific
       case that was missing before this session.
+- **Color scheme capture** (session 48) — not a `V2.md` roadmap item;
+  prompted by a direct question about whether treeline captures the colors
+  used on a crawled page. Step 0 confirmed it didn't: no color data existed
+  anywhere in `PageState`, `DomInteractiveElement`, or any of the nine
+  existing report generators — axe-core's `color-contrast` rule only
+  reports a pass/fail contrast violation, never the actual color values, on
+  the one element it examines.
+  - **Capture** (`packages/acquire/src/capture.ts`) — new
+    `extractColorPalette(page)`, sampling `getComputedStyle().color` and
+    `.backgroundColor` over a fixed structural selector
+    (`body, header, nav, main, footer, h1–h6, p, a, button, input,
+    [class*="btn" i]`), deliberately narrower than every element on the
+    page (`*`) to avoid an unbounded DOM walk on large pages. `rgb()`/
+    `rgba()` values are normalized to hex; fully-transparent values (alpha
+    `0`, e.g. an unset `background-color`) are dropped rather than reported
+    as a real color. Aggregated by `(property, hex)` into a `ColorSwatch[]`
+    (`hex`, `property: 'color' | 'background-color'`, `usageCount`,
+    `exampleSelector`), sorted by usage and capped at `MAX_COLOR_SWATCHES =
+    20` per page. New `PageState.colorPalette: ColorSwatch[]` field.
+  - **A real bug caught by the mandated manual/test check, not just
+    asserted:** `computeCssPath` — the same selector-path helper duplicated
+    across this file's `$$eval` callbacks (see `naming.ts`/duplication
+    notes elsewhere in this doc) — was written for the interactive-element
+    and form-field cases, where the target is never `document.body`
+    itself, and deliberately stops walking at `document.body` without
+    including it in the path. `extractColorPalette`'s selector list
+    includes `body` directly (it's real, common source of a page's
+    background color), and calling the existing helper on `document.body`
+    itself returned an empty string, not `"body"` — caught by a real
+    Playwright-driven test against a local fixture asserting
+    `exampleSelector.length > 0`, not just that a hex value was captured.
+    Fixed by adding a `target === document.body` special case at the top
+    of this function's own copy of the helper only — the two pre-existing
+    copies (interactive elements, form fields) were left untouched since
+    neither is ever called on `document.body`.
+  - **Persistence** — new `colorPalette` TEXT column on `pages`
+    (`packages/core/src/persistence.ts`), `JSON.stringify`/`parse`,
+    identical pattern to `forms`/`axeViolations`. Round-trip tests added
+    (non-empty, empty-as-`[]`-not-null, isolation across multiple page
+    rows) mirroring the existing `forms persistence` test block.
+  - **Report** — `packages/output/src/color-report.ts` →
+    `reports/color-report.md`, wired into `treeline crawl` as an automatic
+    report alongside the other nine. Two sections: a **site-wide color
+    scheme** (colors aggregated across every captured page, ranked by total
+    usage — the actual answer to "what colors does this site use," not
+    just a per-page dump) and **per-page colors** (top 10 per page, with
+    hex, property, usage count, and example selector). Every dynamic
+    string goes through `sanitizeMarkdownTableCell`, same discipline as
+    every report since session 43's audit.
+  - **Text/hex table only, no generated swatch image** — a deliberate
+    scope decision, confirmed before writing code: `markdown-it`'s
+    `html:false` (session 43, not touched) means a literal colored swatch
+    box can't be rendered as raw HTML in the `.md` report. A real PNG
+    swatch strip (reusing `pngjs`, already a dependency from visual
+    diffing) was considered and explicitly deferred — hex-code text is
+    simpler, faster to verify, and avoids a new artifact type for a first
+    cut. Worth revisiting if real usage asks for it.
+  - **Always-on, not gated behind a flag** — unlike
+    `--capture-response-bodies`, colors are already visible to any human
+    looking at the page in a browser, same posture as every other existing
+    report (selector, axe, timing, etc.). No new CLI flag.
+  - **Shared-type fixture fallout, confirmed the hard way (again) that
+    `vitest` doesn't catch this — only a real `build` does:** adding the
+    required `colorPalette` field to `PageState` broke test fixtures across
+    all six packages (25 files constructing a `PageState`/`CrawledPage`
+    object). Caught entirely via `pnpm --filter <pkg> build` per package,
+    not via `vitest` — one fixture specifically
+    (`packages/output/src/proposed-assertions.test.ts`'s main `makePage`
+    helper) used `forms: [makeForm()]` rather than the `forms: []` pattern
+    most other fixtures used, so a first pass of fixes missed it and it
+    only surfaced once `tsc` ran. Same lesson this doc already documents
+    under "Operational gotchas" — recorded again here as the fourth
+    real instance, not a new lesson.
+  - **Verified against a real site, not just fixtures:** a real crawl of
+    `example.com` (`--skip-interpretation`) produced a real
+    `color-report.md` — `#eeeeee` background (1 usage, `body` selector),
+    `#000000` text (4 usages, correctly aggregated across the page's
+    heading/paragraphs/body), and `#334488` link text (1 usage, a real
+    `div > p:nth-of-type(2) > a` selector) — matching example.com's actual
+    known styling, not fabricated output.
 
 ## GPB judgment call (context, not code — worth knowing regardless)
 
@@ -745,7 +825,7 @@ ideally consent to make that particular run permanent and public.
 ## PageState shape (as actually captured, `@treeline/acquire`)
 
 Grew significantly beyond the original plan through sessions 1, 4.5, 4.6, 9,
-9.5, and 39-40:
+9.5, 39-40, and 48:
 
 - `url`, `title`, `ariaSnapshot`, `links`, `capturedAt`
 - `pageLoadMs: number` (session 39) — wall-clock time from just before
@@ -805,6 +885,14 @@ Grew significantly beyond the original plan through sessions 1, 4.5, 4.6, 9,
   9.5 after discovering the original session 9 capture only mapped
   `violations`, silently dropping real, serious findings (a `serious`-impact
   `color-contrast` issue on primary nav was found this way).
+- `colorPalette: ColorSwatch[]` (session 48) — real `getComputedStyle()`
+  `color`/`background-color` values sampled over a fixed structural
+  selector (not every element on the page), normalized to hex, aggregated
+  by usage count, capped at the top 20 per page. Distinct from axe's
+  `color-contrast` rule above — that reports a pass/fail contrast
+  judgment on flagged elements only; this reports the actual color values
+  used across the page regardless of whether axe flagged anything. Feeds
+  `color-report.md`'s site-wide scheme and per-page sections.
 
 ## Crawl scope & boundaries
 
@@ -972,7 +1060,8 @@ pnpm workspaces monorepo:
   Has its own `vitest.config.ts` excluding `treeline-output/` — see
   CLAUDE.md.
 - `packages/core` — crawler, persistence (pages + interpretations tables,
-  including `pageLoadMs` and `proposedAssertion`), robots/sitemap,
+  including `pageLoadMs`, `proposedAssertion`, and `colorPalette`),
+  robots/sitemap,
   hard-pages writer, `diff.ts` (page + selector-candidate diffing),
   `selector-candidates.ts` (candidate computation), `screenshot-diff.ts`
   (pixel-diff visual comparison, session 23), `origin-scope.ts`
@@ -981,7 +1070,8 @@ pnpm workspaces monorepo:
   name screenshot and diff-image files, session 22/26)
 - `packages/acquire` — hardened Playwright/Patchright capture layer +
   axe-core scanning + Fastify API + timing/appearance-latency
-  instrumentation (sessions 39-40)
+  instrumentation (sessions 39-40) + color-scheme extraction
+  (`extractColorPalette`, session 48)
 - `packages/interpret` — 2-tier AI interpretation with retry + persistence
   orchestration + the `proposedAssertion` AI call (session 42; form-fill
   path for pages with a captured form, content-presence path for
@@ -995,7 +1085,8 @@ pnpm workspaces monorepo:
   (session 43, untrusted-content sanitization used by all nine report
   generators), `proposal-coverage-report.ts` (session 46, derives
   per-page proposal-coverage categories from already-captured data, no
-  new persistence)
+  new persistence), `color-report.ts` (session 48, site-wide + per-page
+  color scheme from `PageState.colorPalette`)
 - `packages/pages` — static HTML renderer for a treeline output directory
   (markdown-it + shiki), `meta.json` capture, multi-run index generation
   (sessions 34-35b), `static/root-redirect.html` (session 37), the
@@ -1004,8 +1095,9 @@ pnpm workspaces monorepo:
 - `packages/cli`'s `orchestrate.ts` — in addition to crawl orchestration,
   writes `reports/visual-diffs/*.png` diff images for pages with a visual
   change (session 26), generates `*.proposed.spec.ts` files alongside
-  POM/spec output for pages with a non-null proposal (session 42), and
-  writes `reports/proposal-coverage-report.md` (session 46)
+  POM/spec output for pages with a non-null proposal (session 42), writes
+  `reports/proposal-coverage-report.md` (session 46), and writes
+  `reports/color-report.md` (session 48)
 - `.github/workflows/crawl.yml` — `workflow_dispatch` CI crawl trigger
   (session 28), opt-in `gh-pages` publish (sessions 34-35b), root-redirect
   write step (session 37)

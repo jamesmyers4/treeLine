@@ -50,6 +50,7 @@ function makePage(overrides: Partial<CrawledPage>): CrawledPage {
     axeViolations: [],
     axeIncomplete: [],
     forms: [],
+    colorPalette: [],
     status: 'ok',
     ...overrides,
   }
