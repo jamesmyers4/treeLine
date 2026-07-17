@@ -2,7 +2,9 @@ import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { crawl, diffCrawls, openCrawlDb, urlHash } from '@treeline/core'
-import type { CrawlConfig, HardPageEntry } from '@treeline/core'
+import type { CrawlConfig, CrawlResult, HardPageEntry } from '@treeline/core'
+import { performLogin, launchHardened } from '@treeline/acquire'
+import type { AuthSession, LoginCredentials } from '@treeline/acquire'
 import { runInterpretation } from '@treeline/interpret'
 import {
   generateSelectorReport,
@@ -50,6 +52,13 @@ export interface TreelineCrawlOptions {
   skipInterpretation: boolean
   captureResponseBodies: boolean
   maxResponseBodyBytes: number
+  loginUrl?: string
+  username?: string
+  usernameSelector?: string
+  passwordSelector?: string
+  submitSelector?: string
+  successIndicator?: string
+  detectAuthWall: boolean
 }
 
 export interface TreelineCrawlSummary {
@@ -67,6 +76,7 @@ export interface TreelineCrawlSummary {
   flaggedSlowNetworkRequests: number
   flaggedHighLatencyElements: number
   distinctColorsFound: number
+  abortedAt?: CrawlResult['abortedAt']
 }
 
 function deriveOutputDir(url: string): string {
@@ -74,10 +84,58 @@ function deriveOutputDir(url: string): string {
   return join('treeline-output', hostname)
 }
 
+export function formatAbortedCrawlMessage(abortedAt: NonNullable<CrawlResult['abortedAt']>, pagesCaptured: number): string {
+  return `Crawl aborted: session expired at ${abortedAt.url} after ${pagesCaptured} pages — fix credentials and re-run to resume from here`
+}
+
+async function resolveAuthSession(options: TreelineCrawlOptions): Promise<AuthSession | undefined> {
+  const authFlagsUsed =
+    options.loginUrl !== undefined ||
+    options.username !== undefined ||
+    options.usernameSelector !== undefined ||
+    options.passwordSelector !== undefined ||
+    options.submitSelector !== undefined ||
+    options.successIndicator !== undefined
+  if (!authFlagsUsed) return undefined
+  if (!options.loginUrl || !options.successIndicator) {
+    throw new Error('Authenticated crawling requires both --login-url and --success-indicator to be set')
+  }
+  if (!options.username) {
+    throw new Error('--username is required when --login-url is set')
+  }
+  const password = process.env.TREELINE_LOGIN_PASSWORD
+  if (!password) {
+    throw new Error('TREELINE_LOGIN_PASSWORD is not set — export it before using --login-url')
+  }
+  const creds: LoginCredentials = {
+    loginUrl: options.loginUrl,
+    username: options.username,
+    password,
+    successIndicator: options.successIndicator,
+    usernameSelector: options.usernameSelector,
+    passwordSelector: options.passwordSelector,
+    submitSelector: options.submitSelector,
+  }
+  const browser = await launchHardened({ stealth: options.stealth })
+  try {
+    const storageState = await performLogin(browser, creds)
+    return { storageState, successIndicator: creds.successIndicator, loginUrl: creds.loginUrl }
+  } finally {
+    await browser.close()
+  }
+}
+
 export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<TreelineCrawlSummary> {
   if (!options.skipInterpretation && !process.env.ANTHROPIC_API_KEY) {
     throw new Error('ANTHROPIC_API_KEY is not set — export it or pass --skip-interpretation')
   }
+  const authSession = await resolveAuthSession(options)
+  if (authSession && options.detectAuthWall) {
+    console.warn(
+      '[treeline] --detect-auth-wall has no effect when --login-url is set — auth-wall detection only applies to crawls with no configured session. Ignoring --detect-auth-wall for this run.',
+    )
+  }
+  const effectiveDetectAuthWall = options.detectAuthWall && !authSession
   const outputDir = options.outputDir ?? deriveOutputDir(options.url)
   const hardPagesDir = join(outputDir, 'hard-pages')
   const reportsDir = join(outputDir, 'reports')
@@ -100,8 +158,9 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
       throttleMs: options.throttleMs,
       captureResponseBodies: options.captureResponseBodies,
       maxResponseBodyBytes: options.maxResponseBodyBytes,
+      detectAuthWall: effectiveDetectAuthWall,
     }
-    await crawl(crawlConfig, dbPath, hardPagesDir)
+    const crawlResult = await crawl(crawlConfig, dbPath, hardPagesDir, authSession)
     if (!options.skipInterpretation) {
       await runInterpretation(dbPath, hardPagesDir)
     }
@@ -155,6 +214,7 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
       flaggedSlowNetworkRequests: timingReport.flaggedNetworkRequestCount,
       flaggedHighLatencyElements: timingReport.flaggedElementCount,
       distinctColorsFound: colorReport.siteWideScheme.length,
+      abortedAt: crawlResult.abortedAt,
     }
   } finally {
     db?.close()

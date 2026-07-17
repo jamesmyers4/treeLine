@@ -8,12 +8,14 @@ export interface CrawlConfig {
   throttleMs?: number
   captureResponseBodies?: boolean
   maxResponseBodyBytes?: number
+  detectAuthWall?: boolean
 }
 
 export type HardPageReasonCode =
   | 'empty-snapshot'
   | 'timeout'
   | 'auth-wall'
+  | 'auth-expired'
   | 'low-confidence'
   | 'parse-error'
 
@@ -32,6 +34,7 @@ export interface HostnameMismatch {
 
 export interface CrawlResult {
   hostnameMismatches: HostnameMismatch[]
+  abortedAt?: { url: string; reason: 'auth-expired' }
 }
 
 export interface ProposedFormFieldValue {

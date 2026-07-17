@@ -427,6 +427,20 @@ status` / look for the `[new branch]`-style confirmation line rather than
   fields). Fix: identity/matching always traces back to real captured
   data; a model may propose values, scenarios, or descriptions, but never
   gets to serve as the key used to look something else up.
+- **`pageExists` is status-blind — `markFailed` permanently poisons
+  resumability for that URL, not just a same-run retry guard.**
+  `packages/core/src/persistence.ts`'s `pageExists(url)` is `SELECT 1 FROM
+pages WHERE url = ?` — true for any row, successful or failed. Any
+  `HardPageReasonCode` written via `markFailed` therefore causes that URL
+  to be silently skipped on every future resumed run, forever, even after
+  the original cause is fixed. Existing `timeout`/`parse-error` already
+  have this property; mostly harmless there since those aren't usually
+  "fixable by re-running with different input." Found while designing the
+  planned auth reason codes (`auth-expired`, `auth-wall` — see CONTEXT.md's
+  "Planned: Authenticated crawling"), both of which deliberately skip
+  `markFailed` for exactly this reason. **Don't assume `markFailed` is the
+  right default for a new `HardPageReasonCode`** — check whether the
+  underlying cause is the kind a human would fix and re-run for, first.
 
 ## Model routing (packages/interpret)
 
@@ -480,7 +494,11 @@ Manifest entry shape (`HardPageEntry`, as actually implemented):
 ```
 
 `reasonCode` values: `empty-snapshot`, `timeout`, `auth-wall`,
-`low-confidence`, `parse-error`. `captureSnapshot` carries a truncated real
+`low-confidence`, `parse-error`. `auth-wall` is defined but has never been
+wired to a detector — see CONTEXT.md's "Planned: Authenticated crawling"
+for the locked design that finally wires it up, plus a new `auth-expired`
+value planned alongside it (not yet added to the `HardPageReasonCode`
+union — both are design-locked, not built). `captureSnapshot` carries a truncated real
 error message when available (session 5.97 fix) — do not hardcode this back
 to always-`null`. A small reader for this manifest was added in
 `packages/cli/src/orchestrate.ts` (session 38) so `coverage-report.md` can
@@ -573,3 +591,26 @@ pattern for new work:
 - Do not `echo` a raw `$ANTHROPIC_API_KEY` (or any other secret) value to
   a terminal that an agent session might read back — check presence, not
   content.
+- Do not add login credentials, `storageState`, or any other authenticated-
+  session data as `CrawlConfig` fields — `crawler.ts` persists the entire
+  `CrawlConfig` into `crawl.sqlite`'s `crawl_meta` table via
+  `db.insertMeta`, and that db file is uploaded wholesale as a public
+  GitHub Actions artifact. See CONTEXT.md's "Planned: Authenticated
+  crawling."
+- Do not call `db.markFailed` for the planned `auth-expired`/`auth-wall`
+  reason codes — see the `pageExists`-is-status-blind gotcha above.
+- Do not give `--success-indicator` (planned authenticated-crawling flag)
+  a URL-substring mode — selector-only, matches this repo's locator-first
+  convention.
+- Do not default `--detect-auth-wall` (planned authenticated-crawling
+  flag) to `true`. Its trigger only ever fires on the no-auth crawl path,
+  and any real existing target mixing public and gated content (a
+  marketing site with a `/login` link, a docs site with a members area,
+  `/wp-admin`) would have that page silently rerouted to `hard-pages/`
+  instead of captured/reported as it is today. Default `false` keeps the
+  no-auth path byte-identical with zero exceptions — see CONTEXT.md's
+  "Resolved: auth-wall detection is opt-in."
+- Do not wire authenticated crawling into `.github/workflows/crawl.yml`
+  as part of building it — same deliberate-opt-in posture already
+  established for `publish_to_pages`; CLI-only until a separate, later
+  decision.

@@ -1,6 +1,6 @@
 # treeline — CONTEXT.md
 
-_Last updated after session 48. This file reflects what's actually built and
+_Last updated after session 52. This file reflects what's actually built and
 verified, not just the original plan — see the "Status" section for what's
 done vs. remaining._
 
@@ -768,6 +768,334 @@ hasTalentCommunityAlrts`) — the actual case that motivated the session.
     heading/paragraphs/body), and `#334488` link text (1 usage, a real
     `div > p:nth-of-type(2) > a` selector) — matching example.com's actual
     known styling, not fabricated output.
+
+## Authenticated crawling (sessions 49-52, built and verified)
+
+Not a `V2.md` roadmap item; prompted by a direct question about crawling
+sites that sit behind a login (motivating example: OpenEMR, an open-source
+EMR with a standard admin/pass login splash). This section is the output
+of a dedicated grill session (`domain-modeling` discipline, run against a
+second-opinion proposal in `CLAUDEAIPROPOSAL.md`) held *before* any code
+was written. The design below was locked before any of the four build
+sessions ran; all four have since run and this reflects what actually got
+built, not just the original plan — real deviations from the original lock
+are called out explicitly in "Session 52 — implementation notes" near the
+end of this section rather than silently folded into the design as if it
+had been the plan all along.
+
+### The structural constraint that shapes everything here
+
+`capturePage()` (`packages/acquire/src/capture.ts`) launches a brand-new
+browser for every single page in a crawl, not once per crawl. So "log in
+once, crawl the whole site" cannot mean "keep one logged-in browser alive"
+— it means capture Playwright's `storageState` (cookies + localStorage)
+once via a real login, then re-seed that state into every subsequent
+per-page browser context via `browser.newContext({ storageState })`. Same
+threading shape already used for `sampledEndpoints` (session 47): one
+shared value resolved before the crawl starts, passed through
+`AcquireOptions` into every `capturePage()` call.
+
+### Terms (glossary)
+
+- **Login credentials** — username + password supplied for an
+  authenticated crawl. Never persisted anywhere, in any form, at any
+  point — see "Credential and session-state handling" below.
+- **Session state** — Playwright's `storageState`, captured once after a
+  *verified* successful login. Held in memory only, for the lifetime of
+  one `treeline crawl` invocation. Never written to disk, never part of
+  `CrawlConfig`.
+- **Success indicator** — a required, user-supplied CSS selector that is
+  present if and only if the current session is authenticated (e.g. a
+  logout link, a user-menu element). Selector-only, deliberately — no
+  URL-substring mode; matches this repo's existing locator-first
+  convention (role → testid → CSS → XPath ranking).
+- **Auth wall** — a page that appears to require authentication,
+  encountered while no login was configured for this crawl at all.
+  Detection is opt-in (`--detect-auth-wall`, default `false`) — see
+  "Resolved: auth-wall detection is opt-in" below.
+- **Auth expiry** — loss of a *previously-verified* authenticated session
+  partway through a crawl.
+
+Auth wall and auth expiry are two distinct detection mechanisms for two
+distinct preconditions, not two names for the same thing — conflating them
+was considered and rejected during the grill session (see below).
+
+### Why two mechanisms, not one
+
+The obvious single mechanism — "does this page contain a password-type
+form field," free from already-captured `PageState.forms`, no new DOM work
+— has a real false positive against the actual motivating target: OpenEMR
+has an admin "change password" page reachable while fully, legitimately
+authenticated. Detecting auth loss via password-field presence alone would
+misfire on it.
+
+Resolution: the required success indicator is reused for *two* jobs, and
+the password-field heuristic is scoped to exactly the one case where it
+can't produce that false positive:
+
+- **Auth expiry** (auth WAS configured): checked via `checkAuthStillValid`
+  (below) — the success indicator's absence, or a redirect back to
+  `loginUrl`. A change-password page still shows the indicator (nav
+  chrome, logout link), so it doesn't false-positive.
+- **Auth wall** (auth was NOT configured at all): checked via the
+  password-field-in-`forms` heuristic — safe here specifically *because*
+  no legitimate authenticated content exists in this scenario to
+  false-positive against.
+
+### `checkAuthStillValid` — the auth-expiry check
+
+Lives in `packages/acquire/src/auth.ts`, used both to verify the initial
+login (`performLogin`) and, per page, during the crawl:
+
+```ts
+function normalizeForComparison(url: string): string {
+  try {
+    const u = new URL(url)
+    return `${u.origin}${u.pathname.replace(/\/$/, '')}${u.search}`
+  } catch {
+    return url
+  }
+}
+
+async function checkAuthStillValid(page: Page, indicator: string, loginUrl: string): Promise<boolean> {
+  if (normalizeForComparison(page.url()) === normalizeForComparison(loginUrl)) return false
+  return (await page.locator(indicator).count()) > 0
+}
+```
+
+Two signals, not one: OpenEMR-class server-session PHP apps commonly
+redirect straight to the login route on session expiry with no
+authenticated-looking chrome rendered at all — a selector-only check would
+miss that case entirely. `normalizeForComparison` is a small,
+`acquire`-local helper (trailing-slash tolerant) — deliberately NOT
+`core`'s `normalizeUrl` (fragment-stripping, query-sorting, built for
+crawl-dedup/diff-matching — overkill here, and importing it would create a
+circular workspace dependency: `core` already depends on `acquire`, not
+the other way around).
+
+**Check ordering vs. timeout, deliberately:** this check runs as the
+*last* step of `capturePageWithBrowser`, after DOM/axe/forms/color/
+screenshot capture all complete — not before. `page.goto`'s own timeout
+sits early in the function and propagates through `crawler.ts`'s existing
+`err.message.includes('timeout')` branch untouched, before this check ever
+runs — a slow-rendering page fails into `timeout`, never gets
+misattributed as `auth-expired`. Cost: a page about to be discarded still
+pays for full capture first; accepted, since an auth-expired hit aborts
+the whole crawl immediately afterward anyway (below) — a one-time cost,
+not a recurring one.
+
+**Verification requirement, not an assumption:** before this check is
+trusted as a circuit breaker, session 4 (below) must verify the chosen
+success-indicator selector is actually present on every authenticated
+OpenEMR page template it's tested against — including print views,
+modals, and iframe-heavy screens — against a real instance, not asserted
+from reading OpenEMR's markup once.
+
+### Credential and session-state handling — locked
+
+- `--username <user>` is a CLI flag (not sensitive — same posture as a
+  username displayed on-screen by the login UI itself).
+- Password is `TREELINE_LOGIN_PASSWORD`, an env var only, never a CLI
+  flag — same reasoning as this repo's existing `ANTHROPIC_API_KEY`
+  gotcha (shell history / `ps` exposure, see CLAUDE.md). `runTreelineCrawl`
+  fails fast if `--username` is set but the env var isn't, mirroring the
+  existing `ANTHROPIC_API_KEY` check at the top of that function.
+- `storageState` and raw credentials are threaded as their own function
+  parameters (`crawl(config, dbPath, hardPagesDir, authSession?)`),
+  **never** added as `CrawlConfig` fields. `crawler.ts` already does
+  `db.insertMeta(config.seedUrl, config)`, which `JSON.stringify`s the
+  *entire* `CrawlConfig` into `crawl.sqlite`'s `crawl_meta` table — and
+  that db file sits inside `treeline-output/`, which
+  `.github/workflows/crawl.yml` uploads wholesale as a public GitHub
+  Actions artifact. Anything added to `CrawlConfig` would leak into a
+  public artifact — the same class of mistake as the `ANTHROPIC_API_KEY`
+  echo incident, just a new instance of it, avoided here by keeping
+  credentials and session state structurally outside the type that gets
+  persisted rather than by remembering to scrub them later.
+- No caching of `storageState` to disk to skip re-login on a resumed
+  crawl — every `treeline crawl` invocation with auth flags does a fresh
+  login. A session cookie is functionally as sensitive as the password
+  itself (anyone holding it can act as that user); this is the GPB
+  judgment call (below), one level worse, if it were ever cached under
+  `treeline-output/`.
+
+### Resumability — the `markFailed` gap this design specifically avoids
+
+`persistence.ts`'s `pageExists(url)` is status-blind: `SELECT 1 FROM pages
+WHERE url = ?` returns true for *any* row, successful or failed. The
+existing `timeout`/`parse-error` reason codes already call `markFailed`,
+which means those, too, already cause permanent resume-skip on a re-run —
+a pre-existing property of the whole system, surfaced (not introduced) by
+this design. It hasn't bitten anyone yet because those reason codes aren't
+usually "fixable by re-running with different input" the way an expired
+session or a missing `--username` are.
+
+Both new reason codes deliberately do **not** call `markFailed`:
+
+- **`auth-expired`** — page 8 of a crawl that already correctly captured
+  pages 1–7 must not be permanently poisoned in `pages`; a future resumed
+  run (fresh session) needs to actually retry it, not silently skip it
+  forever.
+- **`auth-wall`** — a page hit with no `--username` configured must be
+  retried on a later run where the user *does* provide credentials — same
+  reasoning.
+
+The `hard-pages/` manifest entry is written in both cases regardless
+(separate file from `crawl.sqlite`), so nothing about visibility to
+`coverage-report.md` is lost — only the SQLite resumability record is
+handled differently, deliberately, for these two reason codes. (Worth
+revisiting for any *future* `HardPageReasonCode` too — `markFailed` is not
+automatically the right default; see CLAUDE.md's gotchas.)
+
+### Crawl-abort behavior — `auth-expired` only
+
+`auth-expired` breaks the crawl's while loop immediately rather than
+continuing to the next frontier item — continuing to crawl against a dead
+session produces nothing but noise. `auth-wall` does **not** abort — a
+site can have a small gated subsection alongside real public content, and
+losing the rest of an otherwise-legitimate crawl over one gated page would
+be an overcorrection; OpenEMR-class apps are gated end-to-end, but the
+mechanism shouldn't assume every target is.
+
+`CrawlResult` gains a new field: `abortedAt: { url: string; reason:
+'auth-expired' } | null`, so the CLI can print something honest ("Crawl
+aborted: session expired at `<url>` after 14 pages — fix credentials and
+re-run to resume from here") instead of a summary line indistinguishable
+from a normal, complete run.
+
+### Resolved: auth-wall detection is opt-in, `--detect-auth-wall` (default `false`)
+
+Auth-wall detection's trigger (no credentials configured + a password-type
+field in `pageState.forms`) only ever fires on the plain, existing, no-auth
+crawl path — that's structural, not incidental. Initially considered
+narrowing the byte-identical guarantee instead (mirroring the session 48
+color-report precedent of an always-on, no-flag improvement), but that
+precedent doesn't hold here: color capture has no existing users whose
+output it changes, while auth-wall detection would silently change output
+for *any current, real, already-being-crawled target* that mixes public
+and gated content — a marketing site with a `/login` link, a docs site
+with a members area, a WordPress install with `/wp-admin`. That page
+captures and generates a POM/spec today; under the original design it
+would instead silently reroute to `hard-pages/`. Not a hypothetical edge
+case, so the guarantee doesn't get weakened to make room for it.
+
+Resolved by gating the trigger instead: a new `--detect-auth-wall` flag,
+**default `false`**. Off (the default): zero exceptions, every existing
+crawl target's output is byte-identical to today, full stop — no asterisk
+about `AcquireOptions` plumbing needed. On: the forms-heuristic behaves
+exactly as originally designed (still scoped to `!authSession`, since
+`auth-expired` already covers the credentials-configured case). This
+doesn't touch anything else locked in this section — `checkAuthStillValid`,
+the `markFailed`/resumability fix, or the abort-vs-continue split — it's
+one added condition (`options?.detectAuthWall`) on the existing trigger in
+`capturePageWithBrowser`, threaded the same way `captureResponseBodies`
+already is: CLI flag → `CrawlConfig.detectAuthWall` → `crawler.ts` →
+`AcquireOptions.detectAuthWall` → the throw condition in `capture.ts`. Not
+sensitive data, so — unlike `authSession`/credentials — it's fine to live
+on `CrawlConfig` and get persisted into `crawl_meta` normally.
+
+### Explicit non-goals for this pass
+
+- No CI wiring — `.github/workflows/crawl.yml` untouched. Same posture
+  already established for `publish_to_pages`: a new capability touching a
+  public, artifact-uploading, potentially-publishing workflow gets a
+  deliberate later decision, not a default bundled in.
+- No auto-relogin on `auth-expired` — abort and let a human re-run.
+- No MFA / CSRF-token / multi-step login support — single-step
+  username+password form only.
+- No resume-without-relogin caching of `storageState` to disk (see above).
+
+### Session split (as actually run)
+
+Per CLAUDE.md's own session-splitting practice (multi-package sessions
+have been the highest-risk ones on this build):
+
+1. **`packages/acquire`, session 49** — `auth.ts` (`performLogin`,
+   `LoginCredentials`, `AuthSession`, `checkAuthStillValid`,
+   `normalizeForComparison`) + a local fixture login page for testing —
+   same "can't induce this against a live site" principle already used for
+   visual-diff and appearance-latency testing. Built as designed.
+2. **`packages/acquire`, session 50** — threaded `AuthSession` through
+   `AcquireOptions`/`capturePageWithBrowser` (`newContext({ storageState
+})`, the end-of-capture `checkAuthStillValid` call, new
+   `AuthExpiredError`/`AuthWallError`), local-fixture tests for both —
+   including a fixture that can simulate mid-crawl session expiry,
+   matching session 40's delayed-response-fixture technique. Built as
+   designed.
+3. **`packages/core`, session 51** — `crawler.ts` takes `authSession` as
+   its own `crawl()` parameter, never a `CrawlConfig` field; `CrawlConfig`
+   gained `detectAuthWall?: boolean` (not sensitive, persists normally);
+   `instanceof` dispatch on `AuthExpiredError`/`AuthWallError` in the catch
+   block (checked before the existing timeout/parse-error string-
+   matching); `auth-expired` breaks the loop and skips `markFailed`;
+   `auth-wall` continues the loop and also skips `markFailed`;
+   `CrawlResult` gained `abortedAt`. Tests explicitly assert
+   `authSession`/credentials never appear in `crawl_meta`, that a page
+   marked `auth-expired`/`auth-wall` is retried (not skipped) on a
+   simulated resumed run, **and that `detectAuthWall: false`/unset
+   produces byte-identical output to today's crawler on a fixture with a
+   mixed public/login-page target** — the actual regression guarantee, now
+   unconditional rather than asterisked. Built as designed.
+4. **`packages/cli`, session 52** — `--login-url`, `--username`,
+   `--success-indicator` (required alongside `--login-url`),
+   `--username-selector`/`--password-selector`/`--submit-selector`
+   overrides, `--detect-auth-wall` (default `false`), `TREELINE_LOGIN_PASSWORD`
+   env var, `orchestrate.ts` wiring (fail fast on missing `--username`/env
+   var before any network activity, call `performLogin` before `crawl()`,
+   fail loudly on `LoginFailedError` before crawl activity begins). Built
+   as designed, with two real deviations — see "Session 52 —
+   implementation notes" immediately below. **Verification gap, recorded
+   honestly rather than glossed over:** the original plan called for real
+   verification against a local OpenEMR Docker instance, checking the
+   success-indicator selector's presence across print views, modals, and
+   iframe-heavy screens (the "Verification requirement, not an assumption"
+   note above). That did not happen — session 52 verified end-to-end
+   against a local Node fixture server only (same class of fixture as
+   sessions 49-51), not a real OpenEMR instance. `checkAuthStillValid`'s
+   circuit-breaker behavior is therefore proven correct against a
+   controlled fixture, not against OpenEMR's actual template variety. Real
+   OpenEMR verification remains open before treating this feature as
+   proven against its original motivating target.
+
+#### Session 52 — implementation notes (deviations from the lock, recorded honestly)
+
+- **`launchHardened` exported from `@treeline/acquire`'s `index.ts`.**
+  `performLogin(browser, creds)` needs a real `Browser` instance, and the
+  only function that constructs one correctly (respecting `--stealth`/
+  proxy) is `launchHardened` — which wasn't part of `acquire`'s public
+  surface before this session. Rather than have `packages/cli` launch a
+  second, parallel, unhardened Playwright browser just for the login step
+  (which would silently drop `--stealth` for login specifically), one
+  export line was added to `packages/acquire/src/index.ts`. This is a
+  deliberate, narrow exception to session 52's own "packages/cli only, do
+  not touch acquire" scoping — flagged to and confirmed by the repo owner
+  before making it, not decided unilaterally.
+- **`--detect-auth-wall` + login flags: warn-and-ignore, not error.**
+  `runTreelineCrawl` prints a `console.warn` naming both flags and forces
+  the effective `CrawlConfig.detectAuthWall` to `false` for that run
+  (auth-wall detection is structurally scoped to `!authSession` downstream
+  anyway, per the "Resolved: auth-wall detection is opt-in" note below —
+  this makes the persisted `crawl_meta` value match what actually
+  happened, rather than persisting `true` for a flag that never fired).
+  Chosen over a hard error so a wrapper script that always passes
+  `--detect-auth-wall` doesn't break the moment login flags are added to
+  the same invocation.
+- **`CrawlResult.abortedAt` → CLI message extracted as a testable
+  function**, `formatAbortedCrawlMessage(abortedAt, pagesCaptured)` in
+  `orchestrate.ts`, rather than inlined directly in `index.ts`'s Commander
+  action. `index.ts`'s action handler calls `process.exit()`, which makes
+  it untestable in-process; extracting the formatting into a pure,
+  exported function let the session 52 test suite assert the exact
+  wording (names the URL and page count, doesn't read like a normal
+  completed-run summary) without spawning a subprocess.
+- **Username is a CLI flag (`--username`), matching the lock above, not an
+  env var.** Session 52's own task instructions initially specified both
+  username and password as env vars (`TREELINE_LOGIN_USERNAME` +
+  `TREELINE_LOGIN_PASSWORD`), which conflicts with this section's locked
+  design. Flagged to the repo owner before writing any code; resolved in
+  favor of the original lock (`--username` flag, `TREELINE_LOGIN_PASSWORD`
+  env var only) — recorded here so a future session doesn't rediscover the
+  same conflict from a stale prompt.
 
 ## GPB judgment call (context, not code — worth knowing regardless)
 

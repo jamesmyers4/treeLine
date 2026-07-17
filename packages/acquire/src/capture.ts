@@ -1,7 +1,8 @@
 import { AxeBuilder } from '@axe-core/playwright'
-import type { Browser, Page } from 'playwright'
+import type { Browser, BrowserContext, Page } from 'playwright'
 import type { AcquireOptions, AxeIncompleteResult, AxeViolation, CapturedForm, CaptureHandler, ColorSwatch, DomInteractiveElement, NetworkEntry, PageState } from './types.js'
 import { launchHardened } from './launch.js'
+import { AuthExpiredError, AuthWallError, SeedAuthenticationError, checkAuthStillValid } from './auth.js'
 
 const INTERACTIVE_SELECTOR = 'button, a[href], input, select, textarea, [role]'
 const APPEARED_ATTR = 'data-treeline-appeared-at'
@@ -180,8 +181,42 @@ export async function capturePage(url: string, options?: AcquireOptions): Promis
   }
 }
 
-async function capturePageWithBrowser(url: string, browser: Browser, options?: AcquireOptions): Promise<PageState> {
-  const context = await browser.newContext()
+export async function capturePageWithBrowser(url: string, browser: Browser, options?: AcquireOptions): Promise<PageState> {
+  const context = await browser.newContext(options?.authSession ? { storageState: options.authSession.storageState } : undefined)
+  try {
+    return await captureWithContext(url, context, options)
+  } finally {
+    await context.close()
+  }
+}
+
+export async function resolveSeedUrl(url: string, options?: AcquireOptions): Promise<{ resolvedUrl: string; html: string | null }> {
+  const browser = await launchHardened(options)
+  try {
+    return await resolveSeedUrlWithBrowser(url, browser, options)
+  } finally {
+    await browser.close()
+  }
+}
+
+export async function resolveSeedUrlWithBrowser(url: string, browser: Browser, options?: AcquireOptions): Promise<{ resolvedUrl: string; html: string | null }> {
+  const context = await browser.newContext(options?.authSession ? { storageState: options.authSession.storageState } : undefined)
+  try {
+    const page = await context.newPage()
+    await page.goto(url, { waitUntil: 'domcontentloaded' })
+    const resolvedUrl = page.url()
+    const html = await page.content()
+    if (options?.authSession) {
+      const stillValid = await checkAuthStillValid(page, options.authSession.successIndicator, options.authSession.loginUrl)
+      if (!stillValid) throw new SeedAuthenticationError(url, resolvedUrl)
+    }
+    return { resolvedUrl, html }
+  } finally {
+    await context.close()
+  }
+}
+
+async function captureWithContext(url: string, context: BrowserContext, options?: AcquireOptions): Promise<PageState> {
   const page = await context.newPage()
   const networkLog: NetworkEntry[] = []
   const pending = new Map<string, { method: string; resourceType: string; startedAt: number }>()
@@ -374,7 +409,7 @@ async function capturePageWithBrowser(url: string, browser: Browser, options?: A
     console.warn(`screenshot capture failed for ${url}`, err)
   }
   await Promise.all(bodyReads)
-  return {
+  const pageState: PageState = {
     url,
     title,
     ariaSnapshot,
@@ -389,6 +424,15 @@ async function capturePageWithBrowser(url: string, browser: Browser, options?: A
     forms,
     colorPalette,
   }
+  if (options?.detectAuthWall && !options?.authSession) {
+    const hasPasswordField = forms.some((form) => form.fields.some((field) => field.inputType === 'password'))
+    if (hasPasswordField) throw new AuthWallError(url)
+  }
+  if (options?.authSession) {
+    const stillValid = await checkAuthStillValid(page, options.authSession.successIndicator, options.authSession.loginUrl)
+    if (!stillValid) throw new AuthExpiredError(url)
+  }
+  return pageState
 }
 
 export const defaultCaptureHandler: CaptureHandler = {

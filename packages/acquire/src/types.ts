@@ -1,3 +1,5 @@
+import type { StorageState } from './auth.js'
+
 export interface NetworkEntry {
   url: string
   method: string
@@ -68,6 +70,12 @@ export interface CapturedForm {
   fields: CapturedFormField[]
 }
 
+export interface AuthSession {
+  storageState: StorageState
+  successIndicator: string
+  loginUrl: string
+}
+
 export interface PageState {
   url: string
   title: string
@@ -90,6 +98,8 @@ export interface AcquireOptions {
   captureResponseBodies?: boolean
   maxResponseBodyBytes?: number
   sampledEndpoints?: Set<string>
+  authSession?: AuthSession
+  detectAuthWall?: boolean
 }
 
 export interface CaptureHandler {

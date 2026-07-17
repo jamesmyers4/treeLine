@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import { runTreelineCrawl, runTreelineDiff } from './orchestrate.js'
+import { runTreelineCrawl, runTreelineDiff, formatAbortedCrawlMessage } from './orchestrate.js'
 import type { TreelineCrawlOptions, TreelineDiffOptions } from './orchestrate.js'
 
 interface RawCrawlOptions {
@@ -11,6 +11,13 @@ interface RawCrawlOptions {
   skipInterpretation: boolean
   captureResponseBodies: boolean
   maxResponseBodyBytes: string
+  loginUrl?: string
+  username?: string
+  usernameSelector?: string
+  passwordSelector?: string
+  submitSelector?: string
+  successIndicator?: string
+  detectAuthWall: boolean
 }
 
 interface RawDiffOptions {
@@ -32,6 +39,13 @@ program
   .option('--skip-interpretation', 'skip AI interpretation of captured pages', false)
   .option('--capture-response-bodies', 'capture a sample response body for JSON API calls', false)
   .option('--max-response-body-bytes <n>', 'maximum response body size to capture, in bytes', '512000')
+  .option('--login-url <url>', 'URL of the login page, for authenticated crawling (required alongside --success-indicator)')
+  .option('--username <user>', 'username for authenticated crawling (required alongside --login-url)')
+  .option('--username-selector <selector>', 'CSS selector for the login form username field')
+  .option('--password-selector <selector>', 'CSS selector for the login form password field')
+  .option('--submit-selector <selector>', 'CSS selector for the login form submit control')
+  .option('--success-indicator <selector>', 'CSS selector present only when authenticated (required alongside --login-url)')
+  .option('--detect-auth-wall', 'flag pages that appear to require authentication when no credentials are configured', false)
   .action(async (url: string, rawOptions: RawCrawlOptions) => {
     const options: TreelineCrawlOptions = {
       url,
@@ -43,9 +57,19 @@ program
       skipInterpretation: rawOptions.skipInterpretation,
       captureResponseBodies: rawOptions.captureResponseBodies,
       maxResponseBodyBytes: Number(rawOptions.maxResponseBodyBytes),
+      loginUrl: rawOptions.loginUrl,
+      username: rawOptions.username,
+      usernameSelector: rawOptions.usernameSelector,
+      passwordSelector: rawOptions.passwordSelector,
+      submitSelector: rawOptions.submitSelector,
+      successIndicator: rawOptions.successIndicator,
+      detectAuthWall: rawOptions.detectAuthWall,
     }
     try {
       const summary = await runTreelineCrawl(options)
+      if (summary.abortedAt) {
+        console.log(formatAbortedCrawlMessage(summary.abortedAt, summary.pagesCaptured))
+      }
       console.log(`Output directory: ${summary.outputDir}`)
       console.log(`Pages captured: ${summary.pagesCaptured}`)
       console.log(`Pages interpreted: ${summary.pagesInterpreted}`)
