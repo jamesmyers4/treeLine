@@ -1832,6 +1832,11 @@ pnpm workspaces monorepo:
 - `.github/workflows/crawl.yml` — `workflow_dispatch` CI crawl trigger
   (session 28), opt-in `gh-pages` publish (sessions 34-35b), root-redirect
   write step (session 37)
+- `packages/verify` — independent, target-agnostic nav-map auditor
+  (session 57, `VERIFY-BUILDOUT.md`): logs into a live authenticated target
+  and clicks through a human-supplied `{label, expectedUrl, clickPath}` map,
+  reporting real vs. expected destinations. Not CI-gated, not wired into
+  `treeline crawl`/`treeline diff`. See "Nav-map verification" below.
 
 ## Stack
 
@@ -1841,6 +1846,124 @@ playwright`, `pixelmatch` + `pngjs` (visual diff comparison), `markdown-it`
 
 - `shiki` (GitHub Pages HTML rendering), pnpm workspaces, Vitest,
   commander (CLI).
+
+## Nav-map verification (session 57, `packages/verify`, `VERIFY-BUILDOUT.md`)
+
+Built to answer a specific question `OPENEMR-QA/CONTEXT.md` raised: the
+authenticated crawl's "Fees > Payment" URL (`interface/billing/new_payment.php`)
+doesn't match where the real OpenEMR top-nav actually navigates
+(`interface/patient_file/front_payment.php`) — is that a treeLine defect or
+something else? `packages/verify` is the general-purpose tool built to answer
+this class of question for any authenticated target, not a one-off script;
+see full detail and the real report in
+`treeline-output/openemr-verify/verify-report.md`.
+
+**Root cause, confirmed via two independent lines of evidence, not a
+treeLine defect:** OpenEMR's own client-side navigation state
+(`window.menu_objects`) is unambiguous — `Fees > Payment` really does resolve
+to `interface/patient_file/front_payment.php`. The URL treeLine's crawl
+recorded (`interface/billing/new_payment.php`) is real, but it's the correct
+destination for a *different*, adjacent top-nav item, `Fees > Batch
+Payments`. A live click-through (real patient selected, real today's
+encounter, confirmed via direct MariaDB query against the shared
+OPENEMR-QA container) reproduced this exactly: the click loaded a real,
+newly-created `enc`-named iframe pointing at `front_payment.php`, never at
+`new_payment.php`. This is a one-off mislabeling in the manual
+`window.menu_objects`-extraction seed-building process session 53 already
+documents as a workaround done *outside* treeLine, not a systematic pattern
+— cross-checking twelve other logical-label-to-URL pairs from that same
+crawl against the live menu tree found every one of them correct, and the
+tool's own automated run independently confirms this (6 of 7
+automatically-completed comparisons matched exactly). **No treeLine code
+change followed from this finding** — an explicitly valid outcome per
+`VERIFY-BUILDOUT.md`'s own non-goals section, not a failure to find a bug.
+
+**A real design problem found and fixed during Step 0, generalizable beyond
+OpenEMR:** `VERIFY-BUILDOUT.md`'s own mechanics section described logging in
+once via `performLogin`, then reusing the resulting `StorageState` in a
+*fresh* `browser.newContext({storageState})` for the whole run — the same
+pattern already used for authenticated crawling. Confirmed via direct
+probing that this **does not work for OpenEMR**: a brand-new context seeded
+with valid `storageState` cookies still gets redirected to the login page
+when navigating to `main.php`, even though the session itself is genuinely
+valid — the same `token_main` per-login-nonce gotcha CLAUDE.md already
+documents for crawl seed URLs, but here it blocks reaching the top-nav
+frameset itself, which is `packages/verify`'s entire reason for existing.
+Confirmed further that re-hitting `login.php` with valid cookies doesn't
+auto-redirect either — OpenEMR always re-shows the login form regardless of
+cookie state, and only a genuine form-submission POST mints a valid
+`token_main`. Fixed with a small, additive, non-breaking change to
+`packages/acquire/src/auth.ts`: the existing `performLogin` was refactored
+to share its core logic (`submitLogin`) with a new exported sibling,
+`performLoginSession`, which performs the same login but returns the live,
+still-open `{context, page}` instead of closing them — letting the caller
+keep working in the exact browser tab that received the real post-login
+redirect, rather than discarding it. `performLogin`'s existing behavior and
+every existing caller (the crawler) are unchanged; `performLoginSession` is
+new and used only by `packages/verify`.
+
+**A second real, generalizable finding: OpenEMR's own submenu items aren't
+real ARIA roles.** `VERIFY-BUILDOUT.md`'s mechanics section specified
+`getByRole('link'|'button', {name: segment})` for clicking each `clickPath`
+segment. Confirmed via direct DOM inspection that this only holds for
+OpenEMR's *top-level* dropdown triggers (`role="button"` present); every
+sub-item (e.g. "Payment", "Billing Manager") is a plain, role-less `<div>`
+with a knockout.js click binding. A pure role-based implementation would
+have silently failed to click almost every real sub-menu item. Fixed with a
+second-tier fallback in `packages/verify/src/nav-audit.ts`'s `clickSegment`:
+if no role-based match exists in any frame, fall back to a generic
+`:text-is("segment"):visible` locator — not OpenEMR-specific, and
+consistent with this repo's own established locator-ranking convention
+(`getByRole` → testid → CSS → XPath) applied to a real gap in the brief's
+literal spec. Proven against a dedicated fixture case (a plain `<div
+onclick>` nav item with no ARIA role) before trusting it against the real
+target.
+
+**A third Step-0 finding, handled via a new optional `--dismiss-selector`
+flag (not in `VERIFY-BUILDOUT.md`'s original locked flag list, added because
+the tool is otherwise unusable against this real target):** a fresh OpenEMR
+login shows a blocking "OpenEMR Product Registration" modal that intercepts
+all pointer events until dismissed. `packages/verify`'s CLI gained an
+optional `--dismiss-selector <selector>` clicked once after login if
+present — generic (any target with a similar first-login overlay can use
+it), not OpenEMR-specific hardcoding.
+
+**Also fixed:** `sanitizeMarkdownTableCell` was implemented in
+`packages/output/src/markdown-safety.ts` (session 43) but never re-exported
+from `@treeline/output`'s `index.ts` — `VERIFY-BUILDOUT.md`'s locked
+decision #5 explicitly assumed it was already exported and told Step 0 to
+confirm this rather than assume it. Confirmed false; added the missing
+export line. Pure addition, no behavior change for any existing caller.
+
+**Real run against OpenEMR — 13 nav-map entries, honestly reported, not
+massaged to look cleaner than it is:** 6 matches, 1 confirmed mismatch (the
+motivating Fees > Payment case, structurally excluded from the automated
+table via the new optional `precondition` field on `NavMapEntry` and
+covered instead by the root-cause finding above), 1 skipped (again, Fees >
+Payment's precondition), 5 errors. Reproduced twice with identical results,
+confirming these are stable findings, not flakiness. Two are genuine,
+undiagnosed target-specific complexity, documented plainly rather than
+chased to zero (same "know when to stop" discipline session 53 already
+established for this target):
+- **`Fees > Posting Payments` lands on a help-documentation page**
+  (`Documentation/help_files/sl_eob_help.php`) instead of its real
+  `menu_objects` destination (`interface/billing/sl_eob_search.php`) — a
+  different failure mode than the `menuDisabled`-CSS-class pattern `Fees >
+  Payment`/`Fee Sheet` use for the same kind of "needs more state" gating.
+  Not root-caused.
+- **`Admin > Config` and the three `Admin > System > *` entries that
+  followed it in the same run all failed** — each works correctly when
+  retried in isolation against a fresh session, but fails when run as part
+  of the same long entry sequence in one shared browser context. Plausibly
+  a leftover Bootstrap dropdown/backdrop element from an earlier click
+  interfering with a later one; not root-caused. Worth investigating if
+  `packages/verify` sees continued real use across longer nav-maps.
+
+Docker environment torn down and reset (`docker compose down -v`) after
+verification, per the disposable-environment discipline session 53 already
+established, with explicit confirmation before doing so since the container
+had already been running for hours before this session started and could
+plausibly have held another session's in-progress state.
 
 ## Open items
 
@@ -1889,5 +2012,14 @@ playwright`, `pixelmatch` + `pngjs` (visual diff comparison), `markdown-it`
   enough (confirmed real on OpenEMR — see "Authenticated crawling" above)
   can require an OR-selector workaround per target rather than one clean
   selector. Not fixed; no redesign attempted yet.
+- **Two real, undiagnosed navigation quirks found by `packages/verify`'s
+  live OpenEMR run (session 57), not root-caused:** `Fees > Posting
+  Payments` lands on a help-documentation page instead of its real
+  `menu_objects` destination; `Admin > Config` and every `Admin > System >
+  *` entry after it in the same run failed, despite each working in
+  isolation, suggesting some form of DOM/session state accumulating across
+  a long sequence of nav-map entries in one shared browser context. See
+  "Nav-map verification" above and `treeline-output/openemr-verify/
+verify-report.md`'s own "Findings" section for full detail.
 
 **Phase 2 backlog (unchanged):** interaction-reachable page discovery.

@@ -32,6 +32,12 @@ is escalation (fixing `hard-pages/` entries), not the crawl runtime.
   markdown-safety sanitizer used by every report generator
 - `packages/pages` — static HTML renderer that turns a crawl/diff output
   directory into a browsable site (used by the GitHub Pages publish flow)
+- `packages/verify` — independent, target-agnostic nav-map auditor: logs
+  into a live authenticated target and clicks through a human-supplied
+  `{label, expectedUrl, clickPath}` map, reporting real vs. expected
+  destinations to `verify-report.md`. Not wired into `treeline crawl`/
+  `treeline diff`, not CI-gated (needs live credentials). See "Nav-map
+  verification" in CONTEXT.md and `VERIFY-BUILDOUT.md` for the full design.
 
 ## Conventions
 
@@ -83,7 +89,20 @@ pnpm --filter @treeline/cli dev -- crawl <url> [--stealth] [--max-pages n]
   [--capture-request-bodies] [--max-request-body-bytes n]
 pnpm --filter @treeline/cli dev -- diff <baselineDir> <currentDir>
   [--output dir] [--fail-on-regression]
+pnpm --filter @treeline/verify verify -- <navMapFile> --base-url <url>
+  --login-url <url> --username <user> --success-indicator <selector>
+  [--output dir] [--insecure-certs] [--dismiss-selector <selector>]
+  [--findings-file <path>]
 ```
+
+`verify` is manual/on-demand only, never wired into `crawl`/`diff` or CI —
+same `TREELINE_LOGIN_PASSWORD` env var posture as authenticated crawling
+(never a CLI flag). Writes `verify-report.md` (plus `verify-mismatches/
+<slug>.png` screenshots for mismatches/errors) to `--output`, defaulted from
+`--base-url`'s hostname the same way `crawl` defaults from the crawl URL's.
+See "Nav-map verification" in CONTEXT.md for the real, non-obvious problems
+this command's design has to work around on a real target (a per-login
+`token_main` nonce, non-ARIA menu items, a first-login blocking modal).
 
 Real example, from `packages/cli`:
 
@@ -303,6 +322,36 @@ stop and figure out why before writing new code — something regressed.
   shape: if a fresh, validly-seeded context still redirects to login on the
   natural seed URL, suspect a URL-level nonce before suspecting the
   session/cookie plumbing.
+- **The same `token_main` nonce above also blocks reaching the top-nav
+  frameset at all from a fresh `browser.newContext({storageState})` — not
+  just an inconvenient seed URL, a structural blocker for any tool that
+  needs to click through the live top-nav (`packages/verify`, session 57).**
+  Confirmed further that re-hitting `login.php` with already-valid session
+  cookies doesn't help either — OpenEMR always re-renders the login form
+  regardless of cookie state; only a genuine form-submission POST mints a
+  valid `token_main`. Fixed by adding `performLoginSession` alongside the
+  existing `performLogin` in `packages/acquire/src/auth.ts` (both share a
+  `submitLogin` internal helper) — it performs the same login but returns
+  the live, still-open `{context, page}` instead of closing them, so a
+  caller can keep working in the exact tab that received the real
+  post-login redirect rather than discarding it for a fresh, nonce-less
+  one. `performLogin`'s existing signature/behavior is unchanged; the
+  crawler still uses it as-is. Any future tool that needs to interact with
+  (not just capture) an authenticated target with this nonce shape should
+  use `performLoginSession`, not `performLogin` + a fresh context.
+- **Not every clickable-looking menu item has a real ARIA role — confirmed
+  real on OpenEMR (session 57), and worth checking on any target before
+  writing role-only click automation.** OpenEMR's top-level dropdown
+  triggers (`Fees`, `Admin`, ...) have `role="button"`, but essentially
+  every real sub-item (`Payment`, `Billing Manager`, ...) is a plain,
+  role-less `<div>` with a knockout.js click binding — `getByRole('link'
+| 'button', {name: ...})` alone silently finds nothing for these.
+  `packages/verify/src/nav-audit.ts`'s `clickSegment` falls back to a
+  generic `:text-is("segment"):visible` locator when no role-based match
+  exists in any frame — not OpenEMR-specific, and consistent with this
+  repo's own locator-ranking convention (`getByRole` → testid → CSS →
+  XPath) applied one rung further down than the original brief assumed was
+  necessary.
 - **`--success-indicator` is one selector reused for two different
   checks (`performLogin`'s post-login check and every ongoing
   `checkAuthStillValid` check) — a target whose login-landing template and

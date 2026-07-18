@@ -1,4 +1,4 @@
-import type { Browser, Page } from 'playwright'
+import type { Browser, BrowserContext, Page } from 'playwright'
 
 export interface LoginCredentials {
   loginUrl: string
@@ -60,23 +60,40 @@ export class SeedAuthenticationError extends Error {
   }
 }
 
+async function submitLogin(page: Page, creds: LoginCredentials): Promise<void> {
+  await page.goto(creds.loginUrl, { waitUntil: 'domcontentloaded' })
+  await page.locator(creds.usernameSelector ?? DEFAULT_USERNAME_SELECTOR).first().fill(creds.username)
+  await page.locator(creds.passwordSelector ?? DEFAULT_PASSWORD_SELECTOR).first().fill(creds.password)
+  await page.locator(creds.submitSelector ?? DEFAULT_SUBMIT_SELECTOR).first().click()
+  await page.waitForLoadState('networkidle').catch(() => undefined)
+  const indicatorCount = await page.locator(creds.successIndicator).count()
+  if (indicatorCount === 0) {
+    throw new LoginFailedError(creds.loginUrl)
+  }
+}
+
 export async function performLogin(browser: Browser, creds: LoginCredentials, options?: { insecureCerts?: boolean }): Promise<StorageState> {
   const context = await browser.newContext(options?.insecureCerts ? { ignoreHTTPSErrors: true } : undefined)
   const page = await context.newPage()
   try {
-    await page.goto(creds.loginUrl, { waitUntil: 'domcontentloaded' })
-    await page.locator(creds.usernameSelector ?? DEFAULT_USERNAME_SELECTOR).first().fill(creds.username)
-    await page.locator(creds.passwordSelector ?? DEFAULT_PASSWORD_SELECTOR).first().fill(creds.password)
-    await page.locator(creds.submitSelector ?? DEFAULT_SUBMIT_SELECTOR).first().click()
-    await page.waitForLoadState('networkidle').catch(() => undefined)
-    const indicatorCount = await page.locator(creds.successIndicator).count()
-    if (indicatorCount === 0) {
-      throw new LoginFailedError(creds.loginUrl)
-    }
+    await submitLogin(page, creds)
     return await context.storageState()
   } finally {
     await page.close()
     await context.close()
+  }
+}
+
+export async function performLoginSession(browser: Browser, creds: LoginCredentials, options?: { insecureCerts?: boolean }): Promise<{ context: BrowserContext; page: Page }> {
+  const context = await browser.newContext(options?.insecureCerts ? { ignoreHTTPSErrors: true } : undefined)
+  const page = await context.newPage()
+  try {
+    await submitLogin(page, creds)
+    return { context, page }
+  } catch (err) {
+    await page.close()
+    await context.close()
+    throw err
   }
 }
 

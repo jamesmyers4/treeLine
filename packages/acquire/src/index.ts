@@ -3,6 +3,7 @@ export { capturePage, capturePageWithBrowser, resolveSeedUrl, resolveSeedUrlWith
 export { launchHardened } from './launch.js'
 export {
   performLogin,
+  performLoginSession,
   checkAuthStillValid,
   normalizeForComparison,
   LoginFailedError,

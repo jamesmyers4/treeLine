@@ -191,6 +191,34 @@ importers:
         specifier: ^2.0.0
         version: 2.1.9(@types/node@22.20.0)
 
+  packages/verify:
+    dependencies:
+      '@treeline/acquire':
+        specifier: workspace:*
+        version: link:../acquire
+      '@treeline/output':
+        specifier: workspace:*
+        version: link:../output
+      commander:
+        specifier: ^12.1.0
+        version: 12.1.0
+      playwright:
+        specifier: ^1.47.0
+        version: 1.61.1
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.0
+      tsx:
+        specifier: ^4.16.0
+        version: 4.23.0
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.0.0
+        version: 2.1.9(@types/node@22.20.0)
+
 packages:
 
   '@anthropic-ai/sdk@0.27.3':

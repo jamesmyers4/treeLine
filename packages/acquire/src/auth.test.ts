@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeAll, afterAll } from 'vitest'
 import type { Browser } from 'playwright'
-import { performLogin, checkAuthStillValid, normalizeForComparison, LoginFailedError, type LoginCredentials } from './auth.js'
+import { performLogin, performLoginSession, checkAuthStillValid, normalizeForComparison, LoginFailedError, type LoginCredentials } from './auth.js'
 import { buildAuthFixtureServer, FIXTURE_USERNAME, FIXTURE_PASSWORD, SESSION_COOKIE_NAME } from './auth-fixture-server.js'
 import { launchHardened } from './launch.js'
 import type { FastifyInstance } from 'fastify'
@@ -41,6 +41,35 @@ describe('auth', () => {
       try {
         await expect(
           performLogin(browser, { ...validCreds, username: 'wronguser', password: 'wrongpass' }),
+        ).rejects.toThrow(LoginFailedError)
+      } finally {
+        await browser.close()
+      }
+    }, 30000)
+  })
+
+  describe('performLoginSession', () => {
+    it('returns a live context and page still on the authenticated page, without closing them', async () => {
+      const browser = await launchHardened()
+      try {
+        const { context, page } = await performLoginSession(browser, validCreds)
+        try {
+          expect(await page.locator(validCreds.successIndicator).count()).toBeGreaterThan(0)
+          expect(page.isClosed()).toBe(false)
+        } finally {
+          await page.close()
+          await context.close()
+        }
+      } finally {
+        await browser.close()
+      }
+    }, 30000)
+
+    it('closes its context and rethrows on login failure, same as performLogin', async () => {
+      const browser = await launchHardened()
+      try {
+        await expect(
+          performLoginSession(browser, { ...validCreds, username: 'wronguser', password: 'wrongpass' }),
         ).rejects.toThrow(LoginFailedError)
       } finally {
         await browser.close()
