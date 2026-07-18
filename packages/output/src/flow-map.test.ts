@@ -32,6 +32,11 @@ function makeNetworkEntry(overrides: Partial<NetworkEntry>): NetworkEntry {
     resourceType: 'xhr',
     durationMs: 50,
     responseBodySample: null,
+    responseBodySchema: null,
+    requestBody: null,
+    requestHeaderNames: [],
+    queryParams: {},
+    requiresAuth: false,
     ...overrides,
   }
 }

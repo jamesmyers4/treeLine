@@ -1,6 +1,6 @@
 # treeline — CONTEXT.md
 
-_Last updated after session 53. This file reflects what's actually built and
+_Last updated after session 54. This file reflects what's actually built and
 verified, not just the original plan — see the "Status" section for what's
 done vs. remaining._
 
@@ -768,6 +768,158 @@ hasTalentCommunityAlrts`) — the actual case that motivated the session.
     heading/paragraphs/body), and `#334488` link text (1 usage, a real
     `div > p:nth-of-type(2) > a` selector) — matching example.com's actual
     known styling, not fabricated output.
+- **API capture buildout, capture-layer only (session 54)** — not a
+  `V2.md` roadmap item; a dedicated session brief
+  (`API-CAPTURE-BUILDOUT.md`) written before any code existed, following
+  the same grill-then-lock discipline as the authenticated-crawling design
+  below. Closes the gap that `NetworkEntry` recorded an endpoint existed but
+  nothing about how to actually call it — no request body, headers,
+  query-param structure, or response shape summary. **Deliberately no new
+  report and no `packages/output` changes this session** — richer
+  persisted data only; a follow-on task owns `api-test-scaffold.md` and any
+  DB-schema-hint derivation.
+  - **A real conflict in the brief itself, flagged before writing any
+    code, not resolved unilaterally** — mirroring the session-52 precedent
+    of flagging a lock conflict to the repo owner rather than guessing.
+    The brief's locked decision #4 said to add a `{field: inferredType}`
+    response-schema summary directly to `ApiSurfaceEntry`, which lives in
+    `packages/output/src/types.ts` — but the same brief's non-goals and
+    session-split sections stated twice, explicitly, that `packages/output`
+    is untouched this pass. Resolved by the repo owner: compute the schema
+    summary but keep it out of `packages/output` entirely. Landed as a new
+    `responseBodySchema: Record<string, string> | null` field on
+    `NetworkEntry` itself (`packages/acquire/src/types.ts`), right next to
+    the existing `responseBodySample` it summarizes — computed in
+    `capture.ts`'s response handler only when a response body was actually
+    sampled, via a small `inferShallowSchema`/`safeJsonParse` pair (shallow,
+    top-level-object only; `null` for a top-level JSON array or primitive,
+    confirmed via a dedicated test). No `ApiSurfaceEntry`/report change at
+    all — a follow-on report task wires this into `flow-map.md` or its
+    successor later.
+  - **`NetworkEntry` extended directly** (per the brief's decision #3), not
+    a parallel structure: `requestBody: string[] | null`, `requestHeaderNames:
+string[]`, `queryParams: Record<string, string>`, `requiresAuth: boolean`,
+    plus the `responseBodySchema` field above. Persistence is additive —
+    `networkLog` was already a JSON `TEXT` column
+    (`packages/core/src/persistence.ts`), confirmed via a real Step-0 read
+    before writing any persistence code, so no migration was needed, just
+    new keys inside the existing blob.
+  - **A gating judgment call, resolved by default and recorded here rather
+    than silently assumed** (same "resolved by default, easy to flip
+    later" posture the brief itself used for its own two additional
+    decisions): the brief named exactly two new CLI flags
+    (`--capture-request-bodies`, `--max-request-body-bytes`) and didn't
+    explicitly say whether `requestHeaderNames`/`queryParams`/`requiresAuth`
+    ride along under the same opt-in gate as `requestBody`, or are always
+    computed. Resolved by flag-name symmetry with the existing
+    `--capture-response-bodies` (which only gates the body *sample*, not
+    `status`/`durationMs`/every other `NetworkEntry` field): **`requestBody`
+    and `requestHeaderNames` are gated behind `--capture-request-bodies`**
+    (new, potentially sensitive-adjacent capture — header names reveal auth
+    mechanisms in use, body field names can reveal PII categories);
+    **`queryParams` and `requiresAuth` are always computed, no flag** —
+    `queryParams` is a pure restructuring of the `url` field, already
+    unconditionally captured and rendered today (the brief's own
+    clarification: "exposes nothing new"), and `requiresAuth` is a
+    zero-cost derived boolean (`Boolean(authSession)`), not new data
+    capture. Off by default (`--capture-request-bodies` defaults `false`,
+    matching every other capture-that-can-touch-sensitive-data flag in this
+    codebase) — when off, `requestBody` is `null` and `requestHeaderNames`
+    is `[]`, never populated.
+  - **Request-body field-name extraction, not raw body capture** —
+    `extractRequestBodyFieldNames` in `capture.ts` reads Playwright's
+    synchronous `request.postData()`/`request.headers()` (confirmed
+    synchronous, unlike session 47's response-body `Promise`-gated read —
+    no new `bodyReads`-style tracking array needed for this half), gates on
+    content-type (`application/json` or `application/x-www-form-urlencoded`
+    only, matching the brief's locked scope), and returns only
+    `Object.keys(...)` for JSON or `Array.from(new
+URLSearchParams(...).keys())` for form-urlencoded — the actual field
+    *values* are never read into memory as part of the returned entry,
+    structurally, not by remembering to scrub them (same posture as the
+    authenticated-crawling design's credential handling).
+  - **Dedup reuses the existing `sampledEndpoints` Set instance** (per the
+    brief's instruction), but with a `'REQ '`-prefixed key
+    (`` `REQ ${method} ${url}` ``) distinct from the response-body dedup
+    key (`` `${method} ${url}` ``, unprefixed) — deliberate, to avoid a real
+    collision bug: without the prefix, sampling a response body for an
+    endpoint would silently mark that same endpoint "already sampled" for
+    request-body purposes too (and vice versa), even though the two capture
+    types are independently flag-gated and could easily be sampled on
+    different pages of the same crawl. Same "one endpoint, sampled once,
+    marked only after a conclusive read" discipline as session 47b's
+    lockout fix — `sampledEndpoints.add(key)` happens only after a
+    successful parse, never before.
+  - **Size cap:** new `--max-request-body-bytes` CLI flag, threaded
+    identically to `--max-response-body-bytes` (CLI → `CrawlConfig` →
+    `crawler.ts` → `AcquireOptions` → `capture.ts`'s
+    `DEFAULT_MAX_REQUEST_BODY_BYTES` fallback), default **65536** (64KB) —
+    *not* copied from the 512000-byte response-body default, per the
+    brief's own warning not to assume the same number is right. Checked
+    against real captured sizes, not assumed correct by analogy (see
+    verification below).
+  - **Verified against the real, already-running local OpenEMR target from
+    session 53, not just fixtures:** a real authenticated crawl
+    (`--login-url`/`--username admin`/the session-53 OR-selector
+    `--success-indicator`/`--insecure-certs`/`--capture-request-bodies`
+    `--capture-response-bodies`) against four real pages that trigger
+    genuine background XHR/fetch POSTs (`messages.php` → real POST to
+    `dated_reminders.php`; `patient_tracker.php` → real POST to itself)
+    produced correctly-redacted `NetworkEntry` rows: real field names
+    (`drR`, `csrf_token_form`, `flb_table`, `form_from_date`, 12 fields
+    total on the largest one) present, real values (dates, csrf tokens)
+    absent from every captured entry — confirmed by inspecting the raw
+    `networkLog` JSON in `crawl.sqlite` directly, not just asserting a
+    field count. `requiresAuth: true` on every entry captured during the
+    authenticated crawl, confirmed the same way (the `false` case was only
+    fixture-verified — see the open item below). Real observed request-body
+    sizes: **83–244 bytes** across four real samples (including a direct
+    probe of the real login POST itself, see below) — the 65536-byte
+    default has enormous headroom over anything actually observed, kept
+    generous rather than tightened further, same "headroom over the
+    largest confirmed case" posture as the 512000-byte response-body
+    default.
+  - **A structural finding, not a bug: the real login POST itself is never
+    captured as a `NetworkEntry` by the shipped pipeline**, because
+    `performLogin` (session 49) runs on its own browser context before
+    `capture.ts`'s network listeners ever attach — the two are
+    structurally separate by design (see "The structural constraint that
+    shapes everything here" above). Verified what the real login POST looks
+    like via a direct one-off probe (not wired into the pipeline): a real
+    POST to `main_screen.php?auth=login&site=default`,
+    `application/x-www-form-urlencoded`, 94 bytes, with real field names
+    `new_login_session_management`, `languageChoice`, `authUser`,
+    `clearPass` — confirming the underlying extraction logic handles a real
+    credential-shaped login POST correctly (names captured, values never
+    read into the returned structure) even though this specific POST
+    doesn't flow through the shipped capture path today. Recorded as a real
+    gap in CLAUDE.md's "Operational gotchas," not silently glossed over.
+  - **Two more real findings from the same verification pass, both
+    expected/by-design, not bugs:** a real `multipart/form-data` POST
+    (OpenEMR's `dated_reminders_counter.php`) correctly returned
+    `requestBody: null` (multipart is out of scope per the brief's locked
+    content-type list — confirmed a real target actually sends it, so this
+    isn't hypothetical); a real `application/x-www-form-urlencoded;
+charset=UTF-8` content-type (with a trailing charset parameter) matched
+    correctly via the existing `startsWith` check — added as a permanent
+    regression test (`packages/acquire/src/capture-request-body.test.ts`)
+    since it's a real-world shape the original fixture tests hadn't
+    exercised.
+  - **Cleanup matched the brief's recommendation:** `docker compose down -v
+&& up -d` was run against the same disposable OpenEMR instance after
+    verification, same disposable-environment discipline as session 53 —
+    confirmed both containers healthy again afterward (`mariadb` healthy
+    immediately, `openemr` took ~4 minutes to reinitialize from the fresh
+    volume before reporting healthy).
+  - **Open item, not fixed this session:** `requiresAuth: false` (the
+    no-`authSession` case) was verified only against a local fixture
+    (`packages/acquire/src/capture-request-body.test.ts`), not against a
+    real target — OpenEMR is gated end-to-end (per session 53's own
+    finding), so there's no real public page on this specific target to
+    verify the `false` case against. Not a gap in the mechanism (the logic
+    is a one-line `Boolean(authSession)`, identical regardless of target),
+    just an honest note that the `false` branch's *real-target* evidence is
+    thinner than the `true` branch's.
 
 ## Authenticated crawling (sessions 49-52, built and verified)
 

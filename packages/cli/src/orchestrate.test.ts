@@ -113,6 +113,8 @@ describe('runTreelineCrawl', () => {
       skipInterpretation: true,
       captureResponseBodies: false,
       maxResponseBodyBytes: 512000,
+      captureRequestBodies: false,
+      maxRequestBodyBytes: 65536,
       detectAuthWall: false,
       insecureCerts: false,
     })
@@ -179,6 +181,8 @@ describe('runTreelineCrawl', () => {
         skipInterpretation: false,
         captureResponseBodies: false,
         maxResponseBodyBytes: 512000,
+        captureRequestBodies: false,
+        maxRequestBodyBytes: 65536,
         detectAuthWall: false,
         insecureCerts: false,
       })

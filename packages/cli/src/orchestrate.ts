@@ -52,6 +52,8 @@ export interface TreelineCrawlOptions {
   skipInterpretation: boolean
   captureResponseBodies: boolean
   maxResponseBodyBytes: number
+  captureRequestBodies: boolean
+  maxRequestBodyBytes: number
   loginUrl?: string
   username?: string
   usernameSelector?: string
@@ -159,6 +161,8 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
       throttleMs: options.throttleMs,
       captureResponseBodies: options.captureResponseBodies,
       maxResponseBodyBytes: options.maxResponseBodyBytes,
+      captureRequestBodies: options.captureRequestBodies,
+      maxRequestBodyBytes: options.maxRequestBodyBytes,
       detectAuthWall: effectiveDetectAuthWall,
       insecureCerts: options.insecureCerts,
     }

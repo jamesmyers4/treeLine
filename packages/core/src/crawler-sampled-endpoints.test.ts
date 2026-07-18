@@ -84,4 +84,48 @@ describe('crawl — sampledEndpoints threading', () => {
       expect((call[1] as { captureResponseBodies: boolean }).captureResponseBodies).toBe(true)
     }
   }, 30_000)
+
+  it('threads captureRequestBodies and maxRequestBodyBytes through to every capturePage call', async () => {
+    const requestBodyDbPath = join(tmpDir, 'crawl-request-body-threading.db')
+    capturePageMock.mockReset()
+    capturePageMock.mockImplementation(async (url: string) => {
+      const path = new URL(url).pathname
+      return {
+        url,
+        title: 'mock',
+        ariaSnapshot: '',
+        links: (linksByPath[path] ?? []).map((p) => `${baseUrl}${p}`),
+        networkLog: [],
+        screenshot: null,
+        capturedAt: new Date().toISOString(),
+        pageLoadMs: 1,
+        interactiveElements: [],
+        axeViolations: [],
+        axeIncomplete: [],
+        forms: [],
+        colorPalette: [],
+      }
+    })
+    await crawl(
+      {
+        seedUrl: `${baseUrl}/`,
+        sameOriginOnly: true,
+        maxDepth: 5,
+        maxPages: 3,
+        stealth: false,
+        respectRobotsTxt: false,
+        throttleMs: 0,
+        captureRequestBodies: true,
+        maxRequestBodyBytes: 65536,
+      },
+      requestBodyDbPath,
+      join(tmpDir, 'hard-pages-request-body-threading'),
+    )
+    expect(capturePageMock).toHaveBeenCalledTimes(3)
+    for (const call of capturePageMock.mock.calls) {
+      const opts = call[1] as { captureRequestBodies: boolean; maxRequestBodyBytes: number }
+      expect(opts.captureRequestBodies).toBe(true)
+      expect(opts.maxRequestBodyBytes).toBe(65536)
+    }
+  }, 30_000)
 })

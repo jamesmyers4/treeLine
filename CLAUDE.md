@@ -1,6 +1,6 @@
 # CLAUDE.md — treeline
 
-_Last updated after session 53._
+_Last updated after session 54._
 
 Full design rationale lives in `CONTEXT.md` — read that first for the "why."
 This file is the operational guide: conventions, commands, and hard-won
@@ -79,7 +79,8 @@ pnpm --filter @treeline/<package> build
 pnpm --filter @treeline/<package> test
 pnpm --filter @treeline/cli dev -- crawl <url> [--stealth] [--max-pages n]
   [--max-depth n] [--throttle-ms n] [--output dir] [--skip-interpretation]
-  [--insecure-certs]
+  [--insecure-certs] [--capture-response-bodies] [--max-response-body-bytes n]
+  [--capture-request-bodies] [--max-request-body-bytes n]
 pnpm --filter @treeline/cli dev -- diff <baselineDir> <currentDir>
   [--output dir] [--fail-on-regression]
 ```
@@ -535,6 +536,54 @@ status` / look for the `[new branch]`-style confirmation line rather than
   fields). Fix: identity/matching always traces back to real captured
   data; a model may propose values, scenarios, or descriptions, but never
   gets to serve as the key used to look something else up.
+- **`performLogin`'s own login POST is never captured as a `NetworkEntry` —
+  it happens on a separate browser context outside `capture.ts`'s network
+  listeners, by design (session 54).** `--capture-request-bodies` only sees
+  traffic that occurs during `capturePageWithBrowser`'s own page load; the
+  authentication handshake itself (a real POST to
+  `main_screen.php?auth=login&site=default` on OpenEMR, confirmed via a
+  direct probe against the real target) never passes through that code path
+  at all. Not a bug — `performLogin` and `capture.ts` are structurally
+  separate on purpose (see "The structural constraint that shapes
+  everything here" in CONTEXT.md's authenticated-crawling section) — but
+  worth knowing before assuming `requestBody`/`requestHeaderNames` capture
+  covers 100% of a crawl's real POST traffic. If a future session wants the
+  login POST itself captured, that's a deliberate extension to
+  `performLogin`, not something `--capture-request-bodies` already does.
+- **A real authenticated crawl never submits a form — the only POST traffic
+  `--capture-request-bodies` will ever see during ordinary crawling is
+  whatever a page's own JavaScript fires automatically on load** (session-
+  keepalive pings, notification-counter AJAX, CSRF-token-carrying
+  background calls) — confirmed real against OpenEMR (session 54): four
+  distinct real form-urlencoded POSTs captured across a real authenticated
+  crawl (`dated_reminders.php`, `patient_tracker.php`, plus the login POST
+  probed directly) ranged **83–244 bytes**, nowhere close to the
+  65536-byte `--max-request-body-bytes` default. This is structural, not
+  target-specific: since treeLine is read-only by design and never fills or
+  submits a real form (see the "Do not" list), the request bodies it can
+  ever observe are bounded by how small a page's own background AJAX calls
+  are, not by how large that page's actual `<form>` elements could get if a
+  human filled and submitted them. Don't be surprised if
+  `requestBody`/real captured sizes stay small even on a target with huge
+  admin forms — that's expected, not a sign the capture is broken.
+- **A real `multipart/form-data` POST (session 54, OpenEMR's
+  `dated_reminders_counter.php`) correctly returns `requestBody: null`, not
+  a bug.** Only `application/json` and `application/x-www-form-urlencoded`
+  are in scope for request-body field-name extraction (locked decision,
+  `API-CAPTURE-BUILDOUT.md`) — confirmed a real target actually sends
+  `multipart/form-data` traffic during ordinary authenticated page loads, so
+  this isn't a hypothetical gap. If a future session wants multipart
+  coverage, that's a new, separate scope decision — don't assume the
+  content-type gate needs "fixing" if you see `null` against a real
+  multipart request.
+- **Content-type matching for request-body extraction must tolerate a
+  trailing parameter (e.g. `application/x-www-form-urlencoded;
+charset=UTF-8`), and `startsWith` already handles this correctly** —
+  confirmed against real OpenEMR traffic (session 54), not just a fixture
+  guess; a permanent regression test now covers this exact shape in
+  `packages/acquire/src/capture-request-body.test.ts`. Don't switch this
+  match to an exact string comparison — a real target sending a charset
+  parameter is normal, not malformed.
 - **`pageExists` is status-blind — `markFailed` permanently poisons
   resumability for that URL, not just a same-run retry guard.**
   `packages/core/src/persistence.ts`'s `pageExists(url)` is `SELECT 1 FROM

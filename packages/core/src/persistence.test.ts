@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import type { CapturedForm, ColorSwatch, DomInteractiveElement, PageState } from '@treeline/acquire'
+import type { CapturedForm, ColorSwatch, DomInteractiveElement, NetworkEntry, PageState } from '@treeline/acquire'
 import type { CrawlConfig, StoredInterpretation } from './types.js'
 import { openCrawlDb } from './persistence.js'
 
@@ -38,6 +38,41 @@ function makeColorSwatch(overrides: Partial<ColorSwatch> = {}): ColorSwatch {
     usageCount: 3,
     exampleSelector: 'body',
     ...overrides,
+  }
+}
+
+function makeNetworkEntry(overrides: Partial<NetworkEntry> = {}): NetworkEntry {
+  return {
+    url: 'https://example.com/api/submit',
+    method: 'POST',
+    status: 200,
+    resourceType: 'fetch',
+    durationMs: 42,
+    responseBodySample: null,
+    responseBodySchema: null,
+    requestBody: null,
+    requestHeaderNames: [],
+    queryParams: {},
+    requiresAuth: false,
+    ...overrides,
+  }
+}
+
+function makePageWithNetworkLog(url: string, networkLog: NetworkEntry[]): PageState {
+  return {
+    url,
+    title: 'Title',
+    ariaSnapshot: '',
+    links: [],
+    networkLog,
+    screenshot: null,
+    capturedAt: new Date().toISOString(),
+    pageLoadMs: 842,
+    interactiveElements: [],
+    axeViolations: [],
+    axeIncomplete: [],
+    forms: [],
+    colorPalette: [],
   }
 }
 
@@ -158,6 +193,56 @@ describe('colorPalette persistence', () => {
     expect(pageA.colorPalette).toEqual(paletteA)
     expect(pageB.colorPalette).toEqual(paletteB)
     expect(pageC.colorPalette).toEqual([])
+  })
+})
+
+describe('networkLog API capture fields persistence', () => {
+  it('round-trips a non-empty, fully-populated NetworkEntry (request body field names, headers, query params, requiresAuth, response schema)', () => {
+    const entry = makeNetworkEntry({
+      requestBody: ['patientDOB', 'ssn'],
+      requestHeaderNames: ['content-type', 'authorization'],
+      queryParams: { page: '2' },
+      requiresAuth: true,
+      responseBodySample: JSON.stringify({ id: 1, active: true }),
+      responseBodySchema: { id: 'number', active: 'boolean' },
+    })
+    const db = openCrawlDb(dbPath)
+    db.recordPageState(makePageWithNetworkLog('https://example.com/', [entry]))
+    const pages = db.getAllPages()
+    db.close()
+    expect(pages).toHaveLength(1)
+    expect(pages[0].networkLog).toEqual([entry])
+  })
+
+  it('round-trips the redacted default case: requestBody null and requestHeaderNames still present as names only, never values', () => {
+    const entry = makeNetworkEntry({ requestHeaderNames: ['authorization', 'cookie'] })
+    const db = openCrawlDb(dbPath)
+    db.recordPageState(makePageWithNetworkLog('https://example.com/redacted', [entry]))
+    const pages = db.getAllPages()
+    db.close()
+    const stored = pages[0].networkLog[0]
+    expect(stored.requestBody).toBeNull()
+    expect(stored.requestHeaderNames).toEqual(['authorization', 'cookie'])
+    const serialized = JSON.stringify(stored)
+    expect(serialized).not.toContain('Bearer')
+    expect(serialized).not.toContain('sessionid=')
+  })
+
+  it('keeps networkLog API capture fields isolated per page across multiple rows', () => {
+    const entryA = makeNetworkEntry({ url: 'https://example.com/api/a', requiresAuth: true, requestBody: ['fieldA'] })
+    const entryB = makeNetworkEntry({ url: 'https://example.com/api/b', queryParams: { q: 'b' } })
+    const db = openCrawlDb(dbPath)
+    db.recordPageState(makePageWithNetworkLog('https://example.com/a', [entryA]))
+    db.recordPageState(makePageWithNetworkLog('https://example.com/b', [entryB]))
+    db.recordPageState(makePageWithNetworkLog('https://example.com/c', []))
+    const pages = db.getAllPages()
+    db.close()
+    const pageA = pages.find((p) => p.url === 'https://example.com/a')!
+    const pageB = pages.find((p) => p.url === 'https://example.com/b')!
+    const pageC = pages.find((p) => p.url === 'https://example.com/c')!
+    expect(pageA.networkLog).toEqual([entryA])
+    expect(pageB.networkLog).toEqual([entryB])
+    expect(pageC.networkLog).toEqual([])
   })
 })
 

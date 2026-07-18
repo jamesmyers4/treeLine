@@ -7,6 +7,11 @@ export interface NetworkEntry {
   resourceType: string
   durationMs: number
   responseBodySample: string | null
+  responseBodySchema: Record<string, string> | null
+  requestBody: string[] | null
+  requestHeaderNames: string[]
+  queryParams: Record<string, string>
+  requiresAuth: boolean
 }
 
 export interface DomInteractiveElement {
@@ -97,6 +102,8 @@ export interface AcquireOptions {
   proxy?: string
   captureResponseBodies?: boolean
   maxResponseBodyBytes?: number
+  captureRequestBodies?: boolean
+  maxRequestBodyBytes?: number
   sampledEndpoints?: Set<string>
   authSession?: AuthSession
   detectAuthWall?: boolean

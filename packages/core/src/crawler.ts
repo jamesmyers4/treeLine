@@ -92,6 +92,8 @@ async function runCrawl(
         stealth: config.stealth,
         captureResponseBodies: config.captureResponseBodies,
         maxResponseBodyBytes: config.maxResponseBodyBytes,
+        captureRequestBodies: config.captureRequestBodies,
+        maxRequestBodyBytes: config.maxRequestBodyBytes,
         sampledEndpoints,
         authSession,
         detectAuthWall: config.detectAuthWall,

@@ -11,6 +11,8 @@ interface RawCrawlOptions {
   skipInterpretation: boolean
   captureResponseBodies: boolean
   maxResponseBodyBytes: string
+  captureRequestBodies: boolean
+  maxRequestBodyBytes: string
   loginUrl?: string
   username?: string
   usernameSelector?: string
@@ -40,6 +42,8 @@ program
   .option('--skip-interpretation', 'skip AI interpretation of captured pages', false)
   .option('--capture-response-bodies', 'capture a sample response body for JSON API calls', false)
   .option('--max-response-body-bytes <n>', 'maximum response body size to capture, in bytes', '512000')
+  .option('--capture-request-bodies', 'capture request body field names (values redacted) for JSON and form-urlencoded POSTs', false)
+  .option('--max-request-body-bytes <n>', 'maximum request body size to read for field-name extraction, in bytes', '65536')
   .option('--login-url <url>', 'URL of the login page, for authenticated crawling (required alongside --success-indicator)')
   .option('--username <user>', 'username for authenticated crawling (required alongside --login-url)')
   .option('--username-selector <selector>', 'CSS selector for the login form username field')
@@ -59,6 +63,8 @@ program
       skipInterpretation: rawOptions.skipInterpretation,
       captureResponseBodies: rawOptions.captureResponseBodies,
       maxResponseBodyBytes: Number(rawOptions.maxResponseBodyBytes),
+      captureRequestBodies: rawOptions.captureRequestBodies,
+      maxRequestBodyBytes: Number(rawOptions.maxRequestBodyBytes),
       loginUrl: rawOptions.loginUrl,
       username: rawOptions.username,
       usernameSelector: rawOptions.usernameSelector,

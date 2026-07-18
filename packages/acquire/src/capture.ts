@@ -1,5 +1,5 @@
 import { AxeBuilder } from '@axe-core/playwright'
-import type { Browser, BrowserContext, Page } from 'playwright'
+import type { Browser, BrowserContext, Page, Request } from 'playwright'
 import type { AcquireOptions, AxeIncompleteResult, AxeViolation, CapturedForm, CaptureHandler, ColorSwatch, DomInteractiveElement, NetworkEntry, PageState } from './types.js'
 import { launchHardened } from './launch.js'
 import { AuthExpiredError, AuthWallError, SeedAuthenticationError, checkAuthStillValid } from './auth.js'
@@ -7,9 +7,64 @@ import { AuthExpiredError, AuthWallError, SeedAuthenticationError, checkAuthStil
 const INTERACTIVE_SELECTOR = 'button, a[href], input, select, textarea, [role]'
 const APPEARED_ATTR = 'data-treeline-appeared-at'
 const DEFAULT_MAX_RESPONSE_BODY_BYTES = 512000
+const DEFAULT_MAX_REQUEST_BODY_BYTES = 65536
 const CAPTURABLE_RESOURCE_TYPES = new Set(['xhr', 'fetch'])
 const COLOR_SELECTOR = 'body, header, nav, main, footer, h1, h2, h3, h4, h5, h6, p, a, button, input, [class*="btn" i]'
 const MAX_COLOR_SWATCHES = 20
+
+function parseQueryParams(url: string): Record<string, string> {
+  try {
+    const params: Record<string, string> = {}
+    for (const [key, value] of new URL(url).searchParams) params[key] = value
+    return params
+  } catch {
+    return {}
+  }
+}
+
+function inferShallowSchema(value: unknown): Record<string, string> | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
+  const schema: Record<string, string> = {}
+  for (const [key, fieldValue] of Object.entries(value as Record<string, unknown>)) {
+    schema[key] = fieldValue === null ? 'null' : Array.isArray(fieldValue) ? 'array' : typeof fieldValue
+  }
+  return schema
+}
+
+function safeJsonParse(text: string): unknown {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
+function extractRequestBodyFieldNames(req: Request, maxBytes: number, sampledEndpoints: Set<string>): string[] | null {
+  const key = `REQ ${req.method()} ${req.url()}`
+  // 'REQ ' keeps this in its own namespace within the shared sampledEndpoints Set
+  // so it can never collide with the unprefixed response-body dedup key below.
+  if (sampledEndpoints.has(key)) return null
+  const postData = req.postData()
+  if (!postData) return null
+  if (Buffer.byteLength(postData, 'utf-8') > maxBytes) return null
+  const contentType = (req.headers()['content-type'] ?? '').toLowerCase()
+  try {
+    if (contentType.startsWith('application/json')) {
+      const parsed = JSON.parse(postData)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+      sampledEndpoints.add(key)
+      return Object.keys(parsed)
+    }
+    if (contentType.startsWith('application/x-www-form-urlencoded')) {
+      const fields = Array.from(new Set(new URLSearchParams(postData).keys()))
+      sampledEndpoints.add(key)
+      return fields
+    }
+    return null
+  } catch {
+    return null
+  }
+}
 
 async function installAppearanceTracker(page: Page): Promise<void> {
   await page.addInitScript(
@@ -225,12 +280,24 @@ export async function resolveSeedUrlWithBrowser(url: string, browser: Browser, o
 async function captureWithContext(url: string, context: BrowserContext, options?: AcquireOptions): Promise<PageState> {
   const page = await context.newPage()
   const networkLog: NetworkEntry[] = []
-  const pending = new Map<string, { method: string; resourceType: string; startedAt: number }>()
+  const pending = new Map<
+    string,
+    { method: string; resourceType: string; startedAt: number; requestHeaderNames: string[]; queryParams: Record<string, string>; requestBody: string[] | null }
+  >()
   const bodyReads: Promise<void>[] = []
   const sampledEndpoints = options?.sampledEndpoints ?? new Set<string>()
   const maxResponseBodyBytes = options?.maxResponseBodyBytes ?? DEFAULT_MAX_RESPONSE_BODY_BYTES
+  const maxRequestBodyBytes = options?.maxRequestBodyBytes ?? DEFAULT_MAX_REQUEST_BODY_BYTES
+  const requiresAuth = Boolean(options?.authSession)
   page.on('request', (req) => {
-    pending.set(req.url(), { method: req.method(), resourceType: req.resourceType(), startedAt: Date.now() })
+    pending.set(req.url(), {
+      method: req.method(),
+      resourceType: req.resourceType(),
+      startedAt: Date.now(),
+      requestHeaderNames: Object.keys(req.headers()),
+      queryParams: parseQueryParams(req.url()),
+      requestBody: options?.captureRequestBodies ? extractRequestBodyFieldNames(req, maxRequestBodyBytes, sampledEndpoints) : null,
+    })
   })
   page.on('response', (res) => {
     const req = pending.get(res.url())
@@ -242,6 +309,11 @@ async function captureWithContext(url: string, context: BrowserContext, options?
       resourceType: req.resourceType,
       durationMs: Date.now() - req.startedAt,
       responseBodySample: null,
+      responseBodySchema: null,
+      requestBody: req.requestBody,
+      requestHeaderNames: req.requestHeaderNames,
+      queryParams: req.queryParams,
+      requiresAuth,
     }
     networkLog.push(entry)
     if (!options?.captureResponseBodies) return
@@ -257,6 +329,7 @@ async function captureWithContext(url: string, context: BrowserContext, options?
           sampledEndpoints.add(key)
           if (Buffer.byteLength(body, 'utf-8') <= maxResponseBodyBytes) {
             entry.responseBodySample = body
+            entry.responseBodySchema = inferShallowSchema(safeJsonParse(body))
           }
         } catch {
           // response body unreadable (redirected, already consumed) — leave unsampled, eligible for retry

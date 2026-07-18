@@ -8,6 +8,8 @@ export interface CrawlConfig {
   throttleMs?: number
   captureResponseBodies?: boolean
   maxResponseBodyBytes?: number
+  captureRequestBodies?: boolean
+  maxRequestBodyBytes?: number
   detectAuthWall?: boolean
   insecureCerts?: boolean
 }

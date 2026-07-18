@@ -26,7 +26,12 @@ Each crawl produces nine reports plus generated test code, all under
   needing human review
 - **Flow map** — every form's fields and validation, plus the site's
   informal API surface (XHR/fetch activity worth knowing about), with an
-  opt-in sampled JSON response body per endpoint (`--capture-response-bodies`)
+  opt-in sampled JSON response body per endpoint (`--capture-response-bodies`).
+  Richer per-request capture is also available opt-in
+  (`--capture-request-bodies`): redacted request-body field names (JSON and
+  form-urlencoded, values never captured), header names (never values),
+  decomposed query params, and a per-request `requiresAuth` flag — capture-
+  layer data only in this pass, not yet surfaced in a report (see CONTEXT.md)
 - **Coverage-gap report** — zero-coverage and high-skip pages, forms with
   no generated field-level assertions, and unresolved `hard-pages/` entries
 - **Timing report** — slow-loading pages, slow network requests, and
@@ -132,6 +137,14 @@ a pre-baked CSRF token — no form fill, no JS execution required. There is
 no mitigation for this yet (no URL-pattern denylist, no CLI warning on
 `--login-url`) — read CLAUDE.md's "Operational gotchas" before running an
 authenticated crawl anywhere write access matters.
+
+Most recently, capture-layer groundwork for future API test scaffolding was
+built and verified against the same real authenticated OpenEMR target:
+opt-in, redacted request-body/header/query-param capture
+(`--capture-request-bodies`) plus a deterministic response-body schema
+summary alongside the existing raw sample. No new report yet — this is
+richer persisted data only, see CONTEXT.md for what's deferred to a
+follow-on report task.
 
 See `CONTEXT.md`'s Status and Open Items sections for exact scope, every
 known limitation, and the full authenticated-crawling design writeup.
