@@ -920,6 +920,87 @@ charset=UTF-8` content-type (with a trailing charset parameter) matched
     is a one-line `Boolean(authSession)`, identical regardless of target),
     just an honest note that the `false` branch's *real-target* evidence is
     thinner than the `true` branch's.
+- **API test scaffold report, closing the follow-on task** (session 55,
+  `API-REPORT-BUILDOUT.md`) — renders session 54's richer `NetworkEntry`
+  capture into `reports/api-test-scaffold.md`, per-endpoint sections (not a
+  table, per the brief's decision #1 — avoids repeating `flow-map.md`'s
+  session-38 table-overflow bug with a wider column set).
+  - **New file, `packages/output/src/api-test-scaffold.ts`** — mirrors
+    `flow-map.ts`'s actual shape confirmed via Step 0: `buildApiSurface` is
+    already a small dedicated function there, so `buildApiTestScaffoldEntries`
+    follows the same pattern (dedupe on `${method} ${url}`, reusing
+    `flow-map.ts`'s exported `isApiSurfaceCandidate` filter rather than
+    duplicating it), plus `generateApiTestScaffold` and
+    `renderApiTestScaffoldMarkdown`. New types on `packages/output/src/
+types.ts`: `ApiTestScaffoldEntry`, `ApiTestScaffoldRequestFields`,
+    `ApiTestScaffoldResponseSchema`, `ApiTestScaffoldReport`,
+    `CaptureFieldStatus` (`'captured' | 'not-applicable' | 'not-captured'`).
+  - **Conditional generation** (decision #2) — `packages/cli/src/
+orchestrate.ts` only calls `generateApiTestScaffold`/writes the file when
+    `crawlConfig.captureRequestBodies || crawlConfig.captureResponseBodies`
+    was true; neither flag means the file is never written, no CLI change.
+    New `TreelineCrawlSummary.apiTestScaffoldGenerated: boolean`, printed by
+    `index.ts` only when true.
+  - **A real gap found and handled honestly, not silently patched:** the
+    brief's decision #7 asked for "not applicable (multipart/form-data)" to
+    render differently from "not captured (flag off)." Implementing this
+    found that `NetworkEntry` has no content-type field — `requestBody`/
+    `responseBodySchema` being `null` for a *flag-on* entry can mean
+    multipart, a non-JSON response, an oversized body, or (for responses) a
+    non-object top-level JSON value, and nothing on the persisted entry
+    distinguishes which. Per the brief's own instruction ("that's a finding
+    to report back before proceeding, not something to patch silently"),
+    this was not solved by adding new capture-layer fields (out of scope per
+    both this brief's and the capture brief's non-goals) — instead the
+    "not-applicable" note is worded honestly as a category
+    ("no eligible request body was captured for this endpoint (e.g.
+    multipart/form-data, or a content type outside JSON/form-urlencoded)")
+    rather than falsely asserting the specific reason. The **crawl-level**
+    flag-off case is still unambiguous and precisely worded, since that's
+    known from `CrawlConfig`, not inferred per-entry — only the flag-on/
+    still-null case is a genuine category rather than a specific cause.
+  - **Verified against real, freshly-captured data on the same disposable
+    OpenEMR instance sessions 53/54 used** (already running at session
+    start; see below on why it was left running rather than recycled) — not
+    just fixtures: a real authenticated crawl seeded at
+    `interface/main/messages/messages.php` with both flags on produced a
+    real `POST .../dated_reminders/dated_reminders.php` section with real
+    field names (`drR`, `skip_timeout_reset`, `csrf_token_form`),
+    `requiresAuth: Yes`, and a correctly-worded "not applicable" response
+    section (that endpoint's response isn't JSON). Re-run with only
+    `--capture-request-bodies` correctly labeled the response section "not
+    captured (`--capture-response-bodies` was off for this crawl)"; re-run
+    with only `--capture-response-bodies` correctly labeled the request
+    section "not captured (`--capture-request-bodies` was off for this
+    crawl)" instead. A run with neither flag produced no
+    `api-test-scaffold.md` at all and no other report changed. A direct
+    attempt to seed the known real multipart endpoint
+    (`dated_reminders_counter.php`, per session 54) directly failed with a
+    `SeedAuthenticationError` — it's an AJAX-only fragment endpoint, not a
+    real navigable page template, so it can't serve as a crawl seed; not
+    chased further per this repo's own "know when to stop" discipline (see
+    session 53's documented precedent) — the flag-on/still-null "not
+    applicable" wording is proven correct in the (more common, per session
+    54's own real-traffic sample) non-JSON-response case instead, which
+    exercises the same code path.
+  - **Repo-state note, unrelated to this feature but found at session
+    start:** the repo had an unrelated, stuck `git am` (a patch from a
+    completely different project) and a locally-deleted
+    `API-CAPTURE-BUILDOUT.md`. Both were flagged to and resolved by the
+    repo owner before any feature work began — `git am --abort` (nothing
+    had been committed), and the repo owner manually restored
+    `API-CAPTURE-BUILDOUT.md` plus refined the wording of both session-brief
+    files to clarify they stay on disk permanently once closed. Recorded
+    here only so a future session isn't puzzled by why those two files show
+    non-trivial diffs unrelated to `NetworkEntry`/API-test-scaffold work.
+  - **Docker cleanup intentionally skipped, deviating from the documented
+    `docker compose down -v && up -d` discipline** — the OpenEMR instance at
+    `C:\Users\james\Documents\OPENEMR-QA\docker` was already running (~4
+    hours) when this session started, i.e. not spun up by this session.
+    Asked the repo owner rather than assuming; told to leave it running
+    since it predates this session and may still be in use for other work.
+    Worth remembering for a future session: don't assume disposal is
+    automatically correct for a shared resource you didn't create.
 
 ## Authenticated crawling (sessions 49-52, built and verified)
 

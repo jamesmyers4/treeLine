@@ -93,6 +93,9 @@ program
       console.log(`Slow network requests: ${summary.flaggedSlowNetworkRequests}`)
       console.log(`High-latency elements: ${summary.flaggedHighLatencyElements}`)
       console.log(`Distinct colors found: ${summary.distinctColorsFound}`)
+      if (summary.apiTestScaffoldGenerated) {
+        console.log('API test scaffold: reports/api-test-scaffold.md')
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.error(`Error: ${message}`)

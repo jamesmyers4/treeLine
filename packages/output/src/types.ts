@@ -232,3 +232,34 @@ export interface ColorReport {
   pages: PageColorEntry[]
   siteWideScheme: AggregatedColorEntry[]
 }
+
+export type CaptureFieldStatus = 'captured' | 'not-applicable' | 'not-captured'
+
+export interface ApiTestScaffoldRequestFields {
+  status: CaptureFieldStatus
+  fields: string[]
+  note: string | null
+}
+
+export interface ApiTestScaffoldResponseSchema {
+  status: CaptureFieldStatus
+  schema: Record<string, string> | null
+  note: string | null
+}
+
+export interface ApiTestScaffoldEntry {
+  method: string
+  endpoint: string
+  queryParams: Record<string, string>
+  requiresAuth: boolean
+  requestFields: ApiTestScaffoldRequestFields
+  responseSchema: ApiTestScaffoldResponseSchema
+  schemaHints: string[]
+}
+
+export interface ApiTestScaffoldReport {
+  generatedAt: string
+  captureRequestBodies: boolean
+  captureResponseBodies: boolean
+  entries: ApiTestScaffoldEntry[]
+}

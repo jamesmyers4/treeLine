@@ -91,13 +91,19 @@ Real example, from `packages/cli`:
 pnpm exec tsx src/index.ts crawl https://example.com --max-pages 5
 ```
 
-`crawl` generates seven reports per run, under `<output>/reports/`:
+`crawl` generates nine reports per run, under `<output>/reports/`:
 `selector-report.md`, `testid-audit.md`, `atlas.md`, `axe-report.md`,
 `flow-map.md`, `coverage-report.md` (session 38), `timing-report.md`
-(session 41) — plus, for any page with a captured form and a meaningful
+(session 41), `proposal-coverage-report.md` (session 46), `color-report.md`
+(session 48) — plus, for any page with a captured form and a meaningful
 proposed scenario, a `<page>.proposed.spec.ts` alongside the trusted
 generated specs (session 42, always `test.skip`-wrapped, never merged into
-the trusted spec).
+the trusted spec). A tenth report, `reports/api-test-scaffold.md` (session
+55), is **conditional, not automatic** — it's only written when the crawl
+had `--capture-request-bodies` and/or `--capture-response-bodies` set; with
+neither flag, it isn't written at all (no new CLI flag of its own — see
+`TreelineCrawlSummary.apiTestScaffoldGenerated`). Don't be surprised by its
+absence on an ordinary crawl; that's correct, not a regression.
 
 `diff` writes `reports/diff-report.md` into the current-run output
 directory, plus `reports/visual-diffs/*.png` — one pixel-diff image per
@@ -584,6 +590,23 @@ charset=UTF-8`), and `startsWith` already handles this correctly** —
   `packages/acquire/src/capture-request-body.test.ts`. Don't switch this
   match to an exact string comparison — a real target sending a charset
   parameter is normal, not malformed.
+- **`NetworkEntry` has no content-type field, so a `null` `requestBody`/
+  `responseBodySchema` on a flag-on entry can't be attributed to a specific
+  cause (multipart, non-JSON, oversized, non-object top-level JSON) — only
+  to the general category "not eligible."** Found building
+  `api-test-scaffold.md` (session 55), which needed to render "not
+  applicable" (flag on, structurally ineligible) distinctly from "not
+  captured" (flag off) per `API-REPORT-BUILDOUT.md`'s decision #7. The
+  flag-off case is unambiguous (known from `CrawlConfig`, not inferred per
+  entry). The flag-on-but-null case is not — `packages/output/src/
+api-test-scaffold.ts` deliberately words its "not applicable" note as a
+  category ("e.g. multipart/form-data, or a content type outside JSON/
+  form-urlencoded") rather than asserting a specific cause it can't actually
+  confirm from the persisted data. Don't "fix" this by having the report
+  layer guess more specifically — if per-entry cause attribution is ever
+  wanted, that's a new capture-layer field (a content-type or
+  ineligibility-reason column on `NetworkEntry`), a deliberate scope
+  decision for a future session, not something to infer at render time.
 - **`pageExists` is status-blind — `markFailed` permanently poisons
   resumability for that URL, not just a same-run retry guard.**
   `packages/core/src/persistence.ts`'s `pageExists(url)` is `SELECT 1 FROM

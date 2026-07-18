@@ -164,6 +164,8 @@ describe('runTreelineCrawl', () => {
     expect(typeof summary.flaggedSlowNetworkRequests).toBe('number')
     expect(typeof summary.flaggedHighLatencyElements).toBe('number')
     expect(typeof summary.distinctColorsFound).toBe('number')
+    expect(summary.apiTestScaffoldGenerated).toBe(false)
+    expect(existsSync(join(outputDir, 'reports', 'api-test-scaffold.md'))).toBe(false)
   }, 120_000)
 
   it('produces two distinct .proposed.spec.ts files, correctly shaped for each proposedAssertion kind, for a form page and a form-less content page', async () => {
@@ -197,6 +199,75 @@ describe('runTreelineCrawl', () => {
       if (previousKey === undefined) delete process.env.ANTHROPIC_API_KEY
       else process.env.ANTHROPIC_API_KEY = previousKey
     }
+  }, 120_000)
+
+  it('does not write api-test-scaffold.md when neither capture flag is set', async () => {
+    const gateOutputDir = join(tmpDir, 'output-scaffold-off')
+    const summary = await runTreelineCrawl({
+      url: `${baseUrl}/`,
+      stealth: false,
+      maxPages: 10,
+      maxDepth: 5,
+      throttleMs: 0,
+      outputDir: gateOutputDir,
+      skipInterpretation: true,
+      captureResponseBodies: false,
+      maxResponseBodyBytes: 512000,
+      captureRequestBodies: false,
+      maxRequestBodyBytes: 65536,
+      detectAuthWall: false,
+      insecureCerts: false,
+    })
+    expect(summary.apiTestScaffoldGenerated).toBe(false)
+    expect(existsSync(join(gateOutputDir, 'reports', 'api-test-scaffold.md'))).toBe(false)
+  }, 120_000)
+
+  it('writes api-test-scaffold.md, correctly labeling the off flag as "not captured", when only --capture-response-bodies is set', async () => {
+    const gateOutputDir = join(tmpDir, 'output-scaffold-response-only')
+    const summary = await runTreelineCrawl({
+      url: `${baseUrl}/`,
+      stealth: false,
+      maxPages: 10,
+      maxDepth: 5,
+      throttleMs: 0,
+      outputDir: gateOutputDir,
+      skipInterpretation: true,
+      captureResponseBodies: true,
+      maxResponseBodyBytes: 512000,
+      captureRequestBodies: false,
+      maxRequestBodyBytes: 65536,
+      detectAuthWall: false,
+      insecureCerts: false,
+    })
+    expect(summary.apiTestScaffoldGenerated).toBe(true)
+    const report = readFileSync(join(gateOutputDir, 'reports', 'api-test-scaffold.md'), 'utf-8')
+    expect(report).toContain('# API Test Scaffold')
+    expect(report).toContain('/api/ping')
+    expect(report).toContain('not captured (`--capture-request-bodies` was off for this crawl)')
+    expect(report).not.toContain('not captured (`--capture-response-bodies`')
+  }, 120_000)
+
+  it('writes api-test-scaffold.md when only --capture-request-bodies is set', async () => {
+    const gateOutputDir = join(tmpDir, 'output-scaffold-request-only')
+    const summary = await runTreelineCrawl({
+      url: `${baseUrl}/`,
+      stealth: false,
+      maxPages: 10,
+      maxDepth: 5,
+      throttleMs: 0,
+      outputDir: gateOutputDir,
+      skipInterpretation: true,
+      captureResponseBodies: false,
+      maxResponseBodyBytes: 512000,
+      captureRequestBodies: true,
+      maxRequestBodyBytes: 65536,
+      detectAuthWall: false,
+      insecureCerts: false,
+    })
+    expect(summary.apiTestScaffoldGenerated).toBe(true)
+    const report = readFileSync(join(gateOutputDir, 'reports', 'api-test-scaffold.md'), 'utf-8')
+    expect(report).toContain('not captured (`--capture-response-bodies` was off for this crawl)')
+    expect(report).not.toContain('not captured (`--capture-request-bodies`')
   }, 120_000)
 })
 

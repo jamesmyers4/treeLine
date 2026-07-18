@@ -67,10 +67,26 @@ accident.
    `requiresAuth: boolean`. Do not create a parallel structure; everything
    already correlates by the existing per-request record.
 4. **Response schema summary lives alongside the existing raw sample**, not
-   in place of it. Session 47's raw pretty-printed sample stays exactly as
-   built. Add a shallow `{field: inferredType}` summary next to it on
-   `ApiSurfaceEntry` — deterministic, no AI call, same posture as every other
-   report field in this codebase that doesn't need model judgment.
+   in place of it — but computed and persisted at the `packages/acquire`/
+   `packages/core` layer, on `NetworkEntry`, **not** on `ApiSurfaceEntry`.
+   _(Resolved after Claude Code caught a real conflict between this decision
+   and the non-goals section below during its own review of this brief,
+   before writing any code — flagged rather than resolved unilaterally, same
+   practice session 52 used. The original wording locked this onto
+   `ApiSurfaceEntry`, which lives in `packages/output` and directly
+   contradicted the non-goals stated twice in this file.)_ Session 47's raw
+   pretty-printed sample stays exactly as built, unchanged. Add a shallow
+   `{field: inferredType}` summary next to the raw body wherever it's
+   actually held at the acquire/core layer — deterministic, no AI call, same
+   posture as every other capture-layer derived field in this codebase
+   (`colorPalette`, `computeSelectorCandidates`, timing-diff).
+   **Step 0, before implementing this specific piece:** confirm the raw
+   response body string is actually a field on `NetworkEntry` or otherwise
+   persisted at the core layer, not something assembled only inside
+   `packages/output`'s `flow-map.ts` construction. If that assumption
+   doesn't hold, this piece falls back to the follow-on report task
+   entirely, same as everything else in decision #4 originally deferred —
+   don't touch `packages/output` to make the assumption true.
 5. **New report, not an extension of `flow-map.md`** — deferred to the
    follow-on task, but locking the decision now so nobody bolts this onto
    `flow-map.md`'s API Surface table later out of convenience. That table
@@ -193,11 +209,15 @@ ones on this build (stated directly in the auth-crawling section above):
 
 1. **`packages/acquire`** — `NetworkEntry` type extension, request-body
    read (sync `postData()`/`postDataJSON()`), header-name-only capture with
-   redaction list, query-param decomposition, `requiresAuth` tagging, local
-   fixture tests (a small local server posting both JSON and
-   form-urlencoded, same "can't induce this against a live site" principle
-   used for every other capture-layer feature in this repo — visual diff,
-   appearance latency, response-body capture, auth expiry).
+   redaction list, query-param decomposition, `requiresAuth` tagging, and
+   (pending the Step 0 check in decision #4 above) the shallow response-
+   schema-summary computation alongside the existing response-body read —
+   same file, same async-resolution point, no new plumbing beyond what
+   session 47 already built. Local fixture tests (a small local server
+   posting both JSON and form-urlencoded, same "can't induce this against a
+   live site" principle used for every other capture-layer feature in this
+   repo — visual diff, appearance latency, response-body capture, auth
+   expiry).
 2. **`packages/core`** — thread new `CrawlConfig` fields (`captureRequestBodies?: boolean`, `maxRequestBodyBytes?: number`) →
    `crawler.ts` → `AcquireOptions`. Persistence extension per the Step 0
    verification above. Round-trip tests.
@@ -207,7 +227,10 @@ ones on this build (stated directly in the auth-crawling section above):
    documented.
 
 `packages/output` is untouched this pass — no session for it here, by design
-(see non-goals).
+(see non-goals). This now holds without exception, including for the schema
+summary in decision #4: it's computed and persisted one layer down, so
+wiring it onto `ApiSurfaceEntry` for actual rendering is real work still
+owned entirely by the follow-on report task, not this one.
 
 ## Verification requirement
 
@@ -236,42 +259,10 @@ separate, explicit step. Follow that same discipline here.
 
 - The follow-on report (`api-test-scaffold.md`) and any DB schema-hint
   derivation — both explicitly deferred, see non-goals.
+- Wiring the schema summary computed in decision #4 onto `ApiSurfaceEntry`
+  so it actually renders — the computation lands this session (pending its
+  Step 0 check), the `packages/output` wiring does not.
 - Session-53's GET-mutation risk remains unmitigated — orthogonal to this
   work, not touched or worsened by it.
 - Per-request (not page-level) `requiresAuth` granularity — known
   simplification, not solved here.
-
-## Before closing this session out
-
-Update the docs — this isn't optional bookkeeping, it's how every other
-session in this repo stays honest about what was actually built vs. planned:
-
-- **CONTEXT.md** — add a new dated/numbered entry under the relevant section
-  (or a new section, if this is a new capability) describing what was
-  actually built, same "verified against real crawls, not just fixtures"
-  discipline the rest of the file uses. Explicitly call out any deviation
-  from this brief's locked decisions — don't fold a deviation silently into
-  the description as if it had been the plan all along (see "Session 52 —
-  implementation notes" for the pattern). If nothing deviated, say so
-  explicitly rather than leaving it unstated.
-- **CLAUDE.md** — add an entry to "Operational gotchas" for any real bug
-  found during implementation, not a hypothetical one — same bar as every
-  existing entry: found against real data or a real target. If a genuinely
-  new lesson about this codebase surfaced (a wrong assumption, a fixture
-  that didn't catch something only a real build did), record it so it
-  isn't rediscovered later.
-- **README.md** — update only if something user-facing changed: a new CLI
-  flag, a new report in the output list, a changed Quick Start command, a
-  changed Status section. Skip if this was purely internal.
-- **V2.md** — if this closes out or partially closes a roadmap item, mark
-  it done/in-progress. If this was reactive work rather than a planned V2
-  item, note that explicitly rather than retrofitting it into the roadmap.
-- **This file** — once implemented, this brief is historical, not living
-  documentation. Don't keep editing it after the fact; CONTEXT.md is the
-  source of truth going forward.
-
-Do not consider this session done until the above is actually written, not
-just intended — a build that works but isn't reflected in CONTEXT.md is the
-exact gap this project has already had to catch itself on before (the
-`screenshot: null` placeholder documented as "captured" when it wasn't is the
-clearest prior example — don't add a second one).

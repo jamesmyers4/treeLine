@@ -10,7 +10,8 @@ findings, and structured data — not just a written summary of the site.
 ## What you get
 
 Each crawl produces nine reports plus generated test code, all under
-`<output>/reports/`:
+`<output>/reports/`, plus a tenth, conditional report when request/response
+body capture is on (see below):
 
 - **Page Object Models + Playwright specs** — one class per page, one
   locator per interactive element with a selector safe to bake into
@@ -30,8 +31,14 @@ Each crawl produces nine reports plus generated test code, all under
   Richer per-request capture is also available opt-in
   (`--capture-request-bodies`): redacted request-body field names (JSON and
   form-urlencoded, values never captured), header names (never values),
-  decomposed query params, and a per-request `requiresAuth` flag — capture-
-  layer data only in this pass, not yet surfaced in a report (see CONTEXT.md)
+  decomposed query params, and a per-request `requiresAuth` flag
+- **API test scaffold** (`reports/api-test-scaffold.md`) — only written when
+  `--capture-request-bodies` and/or `--capture-response-bodies` was set;
+  one section per distinct endpoint (method + path) with query params, auth
+  requirement, redacted request field names, an inferred `{field: type}`
+  response schema, and a clearly-labeled "possible schema hints — inferred,
+  unverified" list, giving a human enough to actually write an API test
+  against — no new CLI flag, it renders off the same two flags above
 - **Coverage-gap report** — zero-coverage and high-skip pages, forms with
   no generated field-level assertions, and unresolved `hard-pages/` entries
 - **Timing report** — slow-loading pages, slow network requests, and
@@ -138,13 +145,20 @@ no mitigation for this yet (no URL-pattern denylist, no CLI warning on
 `--login-url`) — read CLAUDE.md's "Operational gotchas" before running an
 authenticated crawl anywhere write access matters.
 
-Most recently, capture-layer groundwork for future API test scaffolding was
-built and verified against the same real authenticated OpenEMR target:
-opt-in, redacted request-body/header/query-param capture
-(`--capture-request-bodies`) plus a deterministic response-body schema
-summary alongside the existing raw sample. No new report yet — this is
-richer persisted data only, see CONTEXT.md for what's deferred to a
-follow-on report task.
+Capture-layer groundwork for API test scaffolding — opt-in, redacted
+request-body/header/query-param capture (`--capture-request-bodies`) plus a
+deterministic response-body schema summary alongside the existing raw
+sample — was built and verified against the same real authenticated
+OpenEMR target.
+
+Most recently, that capture data was rendered into a report:
+`reports/api-test-scaffold.md`, one section per endpoint (query params, auth
+requirement, redacted request fields, inferred response schema, and a
+labeled "possible schema hints — inferred, unverified" list), written only
+when either capture flag was set. Verified against real, freshly-captured
+data on the same OpenEMR target across all three flag combinations
+(both/request-only/response-only), plus a neither-flag run confirming the
+file isn't written at all.
 
 See `CONTEXT.md`'s Status and Open Items sections for exact scope, every
 known limitation, and the full authenticated-crawling design writeup.

@@ -27,6 +27,8 @@ import {
   renderProposalCoverageReportMarkdown,
   generateColorReport,
   renderColorReportMarkdown,
+  generateApiTestScaffold,
+  renderApiTestScaffoldMarkdown,
   classifyChange,
   renderDiffReportMarkdown,
 } from '@treeline/output'
@@ -79,6 +81,7 @@ export interface TreelineCrawlSummary {
   flaggedSlowNetworkRequests: number
   flaggedHighLatencyElements: number
   distinctColorsFound: number
+  apiTestScaffoldGenerated: boolean
   abortedAt?: CrawlResult['abortedAt']
 }
 
@@ -205,6 +208,14 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
     await writeFile(join(reportsDir, 'proposal-coverage-report.md'), renderProposalCoverageReportMarkdown(proposalCoverageReport))
     const colorReport = generateColorReport(pages)
     await writeFile(join(reportsDir, 'color-report.md'), renderColorReportMarkdown(colorReport))
+    const apiTestScaffoldGenerated = crawlConfig.captureRequestBodies === true || crawlConfig.captureResponseBodies === true
+    if (apiTestScaffoldGenerated) {
+      const apiTestScaffold = generateApiTestScaffold(pages, {
+        captureRequestBodies: crawlConfig.captureRequestBodies === true,
+        captureResponseBodies: crawlConfig.captureResponseBodies === true,
+      })
+      await writeFile(join(reportsDir, 'api-test-scaffold.md'), renderApiTestScaffoldMarkdown(apiTestScaffold))
+    }
     return {
       outputDir,
       pagesCaptured: capturedPages.length,
@@ -220,6 +231,7 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
       flaggedSlowNetworkRequests: timingReport.flaggedNetworkRequestCount,
       flaggedHighLatencyElements: timingReport.flaggedElementCount,
       distinctColorsFound: colorReport.siteWideScheme.length,
+      apiTestScaffoldGenerated,
       abortedAt: crawlResult.abortedAt,
     }
   } finally {
