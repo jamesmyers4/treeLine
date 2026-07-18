@@ -114,6 +114,7 @@ describe('runTreelineCrawl', () => {
       captureResponseBodies: false,
       maxResponseBodyBytes: 512000,
       detectAuthWall: false,
+      insecureCerts: false,
     })
     expect(summary.pagesCaptured).toBe(Object.keys(pages).length)
     expect(summary.pagesInterpreted).toBe(0)
@@ -179,6 +180,7 @@ describe('runTreelineCrawl', () => {
         captureResponseBodies: false,
         maxResponseBodyBytes: 512000,
         detectAuthWall: false,
+        insecureCerts: false,
       })
       expect(summary.proposedAssertionSpecsGenerated).toBe(2)
       const homeSpec = readFileSync(join(mixedOutputDir, 'specs', 'home.proposed.spec.ts'), 'utf-8')

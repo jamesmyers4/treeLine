@@ -1,6 +1,6 @@
 # CLAUDE.md — treeline
 
-_Last updated after session 43._
+_Last updated after session 53._
 
 Full design rationale lives in `CONTEXT.md` — read that first for the "why."
 This file is the operational guide: conventions, commands, and hard-won
@@ -79,6 +79,7 @@ pnpm --filter @treeline/<package> build
 pnpm --filter @treeline/<package> test
 pnpm --filter @treeline/cli dev -- crawl <url> [--stealth] [--max-pages n]
   [--max-depth n] [--throttle-ms n] [--output dir] [--skip-interpretation]
+  [--insecure-certs]
 pnpm --filter @treeline/cli dev -- diff <baselineDir> <currentDir>
   [--output dir] [--fail-on-regression]
 ```
@@ -249,6 +250,113 @@ stop and figure out why before writing new code — something regressed.
 
 ## Operational gotchas (learned the hard way — read before debugging)
 
+- **A same-origin, link-following crawl is only as read-only as the target
+  makes it — treeLine itself never fills or submits a form, but that does
+  not mean an ordinary crawl can't mutate data.** If a target exposes a
+  state-changing action via a plain `<a href>` with a valid token already
+  baked into the URL (rather than requiring a POST, with the token supplied
+  only at submit time), a same-origin link-following crawl reaching that
+  link is enough to trigger it — no form-fill, no JS execution, just a
+  normal `page.goto()` during ordinary frontier traversal. **Confirmed real,
+  not hypothetical** (session 53): a real authenticated crawl of a local
+  OpenEMR instance followed `forms_admin.php`'s per-module "disable" link
+  (`forms_admin.php?...&id=18&method=disable&csrf_token_form=<live-token>`)
+  during normal same-origin link discovery, and this genuinely disabled two
+  real form modules (`registry.state = 0` for ids 18 and 20) — confirmed via
+  OpenEMR's own `log` audit table (`security-administration-update` rows,
+  decoded from base64 `comments`), not inferred from reading source. This is
+  a materially bigger risk on an *authenticated* crawl than an anonymous
+  one — a logged-in session is far more likely to reach a privileged admin
+  surface with real destructive actions than a public, unauthenticated
+  crawl would ever encounter. **Not yet mitigated in this codebase**: there
+  is no URL-pattern denylist option, and `--login-url` prints no warning
+  about this risk even though that's exactly the flag that makes reaching a
+  privileged surface likely. Worth building at least one of: a denylist
+  option for URL patterns/query params (e.g. a configurable block on
+  `method=disable`-shaped links) or a loud, unconditional CLI warning
+  whenever `--login-url` is used, reminding the operator that an
+  authenticated crawl is not guaranteed read-only. See CONTEXT.md's
+  "Authenticated crawling" section (session 53 addendum) for the full
+  writeup, including why the earlier per-page POST+CSRF source check for
+  this same real crawl didn't catch it (it only covered the specific pages
+  flagged as write-sounding ahead of time, not `forms_admin.php`).
+- **A per-login nonce in the URL can make the "obvious" seed URL
+  unreachable even with a perfectly valid session.** OpenEMR gates its
+  top-level frame (`interface/main/tabs/main.php`) behind a `token_main`
+  query-string value minted fresh at login time — a brand-new browser
+  context seeded only with a valid `storageState` (no cookie problem at
+  all) and pointed at the site root or at `main.php` directly gets
+  redirected straight back to the login page, because the check is on the
+  URL's nonce, not the session. Confirmed real via direct probing (session
+  53), not assumed from reading the app. **The seed URL for an
+  authenticated crawl of a target like this must be a real content-pane
+  URL** — whatever actually loads inside the gated frame's iframes —
+  never the root or the frame-container page itself. Worth checking for on
+  any future target that uses a similar top-level-frame-plus-iframes
+  shape: if a fresh, validly-seeded context still redirects to login on the
+  natural seed URL, suspect a URL-level nonce before suspecting the
+  session/cookie plumbing.
+- **`--success-indicator` is one selector reused for two different
+  checks (`performLogin`'s post-login check and every ongoing
+  `checkAuthStillValid` check) — a target whose login-landing template and
+  its regular content-page template diverge enough can make a single
+  selector impossible.** On OpenEMR, `performLogin` lands on `main.php`,
+  whose only real "authenticated" marker is a knockout-rendered logout menu
+  item (`[data-bind*="logout"]`); real content-pane pages never render that
+  chrome (they're bare fragments meant for iframe embedding) but do carry
+  `onsubmit`/`onclick` attributes calling `top.restoreSession()` (OpenEMR's
+  session-keepalive convention) — and `main.php` itself only mentions
+  `restoreSession` inside a JS *comment*, not a real attribute, so neither
+  marker alone satisfies both checks. Confirmed real via direct probing of
+  both templates (session 53), not assumed. **Fix: combine the markers with
+  a CSS OR-selector** rather than searching for one universal marker:
+  `[data-bind*="logout"], [onsubmit*="restoreSession"],
+[onclick*="restoreSession"], input[type=hidden][name*=csrf i]` — verified
+  present on `main.php` and on every content-pane template tried, and
+  absent on the login page itself (the last clause was checked absent from
+  the login page specifically before adding it, since a false positive
+  there would silently break auth-failure detection). This selector is
+  OpenEMR-specific, not portable as-is, but the OR-selector *technique* is
+  the reusable lesson for any future target with the same template split.
+- **`window.menu_objects` (or an equivalent client-side nav-state object)
+  can be the only real way to discover pages on a knockout.js/JS-nav-driven
+  authenticated site — treeLine's Phase-1 discovery (link-following +
+  sitemap.xml) can come back nearly empty otherwise.** OpenEMR's `main.php`
+  has exactly one real same-origin `<a href>` on the entire page (an
+  external link to open-emr.org) — every actual in-app navigation is a
+  knockout.js click handler swapping an iframe `src` client-side, invisible
+  to link-following. Confirmed real (session 53): a single-seed crawl of
+  `main.php` or any one content page discovers essentially nothing beyond
+  its own seed. **Not a treeLine feature and not Phase 2 interaction-
+  reachable discovery** (still backlog, still not being built per "Do not"
+  below) — a one-off workaround: OpenEMR's real menu tree is reachable via
+  `page.evaluate(() => window.menu_objects)` (a JS object the app's own
+  top-frame JS holds, recursively `label`/`url`/`children`), which was
+  extracted once, flattened to real URLs, and fed as many separate
+  `treeline crawl <url> --output <same-dir>` invocations accumulating into
+  one `crawl.sqlite`/report set via ordinary resumability (`pageExists`
+  skip) — no new treeLine mechanism, just many seeds. Worth checking any
+  future heavily-JS-driven authenticated target for an equivalent
+  client-side nav-state object before assuming Phase-1 discovery will find
+  its pages.
+- **Chasing 100% seed-URL coverage on a real authenticated target has real
+  diminishing returns — know when to stop and document the gap instead.**
+  A real OpenEMR crawl (session 53) using the combined selector above still
+  left 17 of 98 attempted seed URLs uncaptured: some failed outright
+  (`SeedAuthenticationError` — the indicator genuinely absent on that
+  specific page template, e.g. the Zend-modules pages, the orders module,
+  the DICOM viewer, `controller.php` dispatcher endpoints), a few tripped a
+  false `auth-expired` mid-invocation on a same-origin link discovered at
+  depth 1 that landed on yet another marker-less template. Widening the
+  selector once already recovered 18 of an original 35 failures: a good
+  return on one iteration, a bad one on further template-specific
+  micro-fixes. **This is now a documented, known limitation** (see
+  CONTEXT.md's "Authenticated crawling" section and "Open items"), not an
+  open bug to keep chasing — the same discipline this file already applies
+  to `accessibleName`'s known gaps and the API-surface-dedup known gap:
+  state the limitation plainly with real numbers, don't silently claim
+  completeness, and don't burn unbounded time closing the last few percent
+  of an inherently template-diverse target.
 - **`tsx` is not hoisted to the workspace root.** Each package that needs to
   run a script directly (throwaway sanity scripts, `dev` scripts) needs
   `tsx` as its own devDependency: `pnpm add -D tsx --filter @treeline/<pkg>`.
@@ -436,9 +544,10 @@ pages WHERE url = ?` — true for any row, successful or failed. Any
   the original cause is fixed. Existing `timeout`/`parse-error` already
   have this property; mostly harmless there since those aren't usually
   "fixable by re-running with different input." Found while designing the
-  planned auth reason codes (`auth-expired`, `auth-wall` — see CONTEXT.md's
-  "Planned: Authenticated crawling"), both of which deliberately skip
-  `markFailed` for exactly this reason. **Don't assume `markFailed` is the
+  `auth-expired`/`auth-wall` reason codes (built and verified against a
+  real target as of session 53 — see CONTEXT.md's "Authenticated crawling"
+  section), both of which deliberately skip `markFailed` for exactly this
+  reason. **Don't assume `markFailed` is the
   right default for a new `HardPageReasonCode`** — check whether the
   underlying cause is the kind a human would fix and re-run for, first.
 
@@ -494,11 +603,11 @@ Manifest entry shape (`HardPageEntry`, as actually implemented):
 ```
 
 `reasonCode` values: `empty-snapshot`, `timeout`, `auth-wall`,
-`low-confidence`, `parse-error`. `auth-wall` is defined but has never been
-wired to a detector — see CONTEXT.md's "Planned: Authenticated crawling"
-for the locked design that finally wires it up, plus a new `auth-expired`
-value planned alongside it (not yet added to the `HardPageReasonCode`
-union — both are design-locked, not built). `captureSnapshot` carries a truncated real
+`auth-expired`, `low-confidence`, `parse-error`. `auth-wall`/`auth-expired`
+are built, wired to real detectors, and verified against a real
+authenticated target (OpenEMR, session 53) — see CONTEXT.md's
+"Authenticated crawling" section for the full design and verification
+history. `captureSnapshot` carries a truncated real
 error message when available (session 5.97 fix) — do not hardcode this back
 to always-`null`. A small reader for this manifest was added in
 `packages/cli/src/orchestrate.ts` (session 38) so `coverage-report.md` can
@@ -583,6 +692,13 @@ pattern for new work:
   with known gaps (see CONTEXT.md).
 - Do not default `treeline diff --fail-on-regression` to on.
 - Do not default `publish_to_pages` to `true`.
+- Do not default `--insecure-certs` to `true` — same opt-in posture as
+  every other flag that changes the crawl's trust/security surface
+  (`--stealth`, `--detect-auth-wall`).
+- Do not assume an authenticated crawl is read-only merely because
+  treeLine itself never fills or submits a form — see the link-following
+  GET-mutation gotcha above before running `--login-url` against any
+  target where write access actually matters.
 - Do not merge a `*.proposed.spec.ts` file's content into the trusted
   generated `.spec.ts`, and do not generate a proposed test that isn't
   wrapped in `test.skip(...)`.

@@ -59,6 +59,7 @@ export interface TreelineCrawlOptions {
   submitSelector?: string
   successIndicator?: string
   detectAuthWall: boolean
+  insecureCerts: boolean
 }
 
 export interface TreelineCrawlSummary {
@@ -118,7 +119,7 @@ async function resolveAuthSession(options: TreelineCrawlOptions): Promise<AuthSe
   }
   const browser = await launchHardened({ stealth: options.stealth })
   try {
-    const storageState = await performLogin(browser, creds)
+    const storageState = await performLogin(browser, creds, { insecureCerts: options.insecureCerts })
     return { storageState, successIndicator: creds.successIndicator, loginUrl: creds.loginUrl }
   } finally {
     await browser.close()
@@ -159,6 +160,7 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
       captureResponseBodies: options.captureResponseBodies,
       maxResponseBodyBytes: options.maxResponseBodyBytes,
       detectAuthWall: effectiveDetectAuthWall,
+      insecureCerts: options.insecureCerts,
     }
     const crawlResult = await crawl(crawlConfig, dbPath, hardPagesDir, authSession)
     if (!options.skipInterpretation) {

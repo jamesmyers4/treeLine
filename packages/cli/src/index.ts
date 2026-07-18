@@ -18,6 +18,7 @@ interface RawCrawlOptions {
   submitSelector?: string
   successIndicator?: string
   detectAuthWall: boolean
+  insecureCerts: boolean
 }
 
 interface RawDiffOptions {
@@ -46,6 +47,7 @@ program
   .option('--submit-selector <selector>', 'CSS selector for the login form submit control')
   .option('--success-indicator <selector>', 'CSS selector present only when authenticated (required alongside --login-url)')
   .option('--detect-auth-wall', 'flag pages that appear to require authentication when no credentials are configured', false)
+  .option('--insecure-certs', 'ignore TLS certificate errors (self-signed/invalid certs) — for local/internal targets only, never a public site', false)
   .action(async (url: string, rawOptions: RawCrawlOptions) => {
     const options: TreelineCrawlOptions = {
       url,
@@ -64,6 +66,7 @@ program
       submitSelector: rawOptions.submitSelector,
       successIndicator: rawOptions.successIndicator,
       detectAuthWall: rawOptions.detectAuthWall,
+      insecureCerts: rawOptions.insecureCerts,
     }
     try {
       const summary = await runTreelineCrawl(options)

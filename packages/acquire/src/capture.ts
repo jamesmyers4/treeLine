@@ -182,7 +182,10 @@ export async function capturePage(url: string, options?: AcquireOptions): Promis
 }
 
 export async function capturePageWithBrowser(url: string, browser: Browser, options?: AcquireOptions): Promise<PageState> {
-  const context = await browser.newContext(options?.authSession ? { storageState: options.authSession.storageState } : undefined)
+  const context = await browser.newContext({
+    ...(options?.authSession ? { storageState: options.authSession.storageState } : {}),
+    ...(options?.insecureCerts ? { ignoreHTTPSErrors: true } : {}),
+  })
   try {
     return await captureWithContext(url, context, options)
   } finally {
@@ -200,7 +203,10 @@ export async function resolveSeedUrl(url: string, options?: AcquireOptions): Pro
 }
 
 export async function resolveSeedUrlWithBrowser(url: string, browser: Browser, options?: AcquireOptions): Promise<{ resolvedUrl: string; html: string | null }> {
-  const context = await browser.newContext(options?.authSession ? { storageState: options.authSession.storageState } : undefined)
+  const context = await browser.newContext({
+    ...(options?.authSession ? { storageState: options.authSession.storageState } : {}),
+    ...(options?.insecureCerts ? { ignoreHTTPSErrors: true } : {}),
+  })
   try {
     const page = await context.newPage()
     await page.goto(url, { waitUntil: 'domcontentloaded' })

@@ -60,8 +60,8 @@ export class SeedAuthenticationError extends Error {
   }
 }
 
-export async function performLogin(browser: Browser, creds: LoginCredentials): Promise<StorageState> {
-  const context = await browser.newContext()
+export async function performLogin(browser: Browser, creds: LoginCredentials, options?: { insecureCerts?: boolean }): Promise<StorageState> {
+  const context = await browser.newContext(options?.insecureCerts ? { ignoreHTTPSErrors: true } : undefined)
   const page = await context.newPage()
   try {
     await page.goto(creds.loginUrl, { waitUntil: 'domcontentloaded' })

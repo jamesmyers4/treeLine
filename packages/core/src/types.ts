@@ -9,6 +9,7 @@ export interface CrawlConfig {
   captureResponseBodies?: boolean
   maxResponseBodyBytes?: number
   detectAuthWall?: boolean
+  insecureCerts?: boolean
 }
 
 export type HardPageReasonCode =

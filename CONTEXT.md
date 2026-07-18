@@ -1,6 +1,6 @@
 # treeline — CONTEXT.md
 
-_Last updated after session 52. This file reflects what's actually built and
+_Last updated after session 53. This file reflects what's actually built and
 verified, not just the original plan — see the "Status" section for what's
 done vs. remaining._
 
@@ -1053,9 +1053,11 @@ have been the highest-risk ones on this build):
    against a local Node fixture server only (same class of fixture as
    sessions 49-51), not a real OpenEMR instance. `checkAuthStillValid`'s
    circuit-breaker behavior is therefore proven correct against a
-   controlled fixture, not against OpenEMR's actual template variety. Real
-   OpenEMR verification remains open before treating this feature as
-   proven against its original motivating target.
+   controlled fixture, not against OpenEMR's actual template variety.
+   **Closed in session 53** — see below for the real-target verification,
+   the real gaps it found (a seed-URL constraint, a template-split problem
+   with the single-selector design, and a real data-mutation risk), and
+   CLAUDE.md's "Operational gotchas" for the operational writeup of each.
 
 #### Session 52 — implementation notes (deviations from the lock, recorded honestly)
 
@@ -1096,6 +1098,77 @@ have been the highest-risk ones on this build):
   favor of the original lock (`--username` flag, `TREELINE_LOGIN_PASSWORD`
   env var only) — recorded here so a future session doesn't rediscover the
   same conflict from a stale prompt.
+
+### Session 53 — real OpenEMR verification (gap closed), plus a real mutation-via-GET finding
+
+Closes the verification gap session 52 recorded honestly rather than
+glossed over. This session ran a real authenticated crawl against a local
+OpenEMR 7.0.3 Docker instance (`OPENEMR-QA`, `admin`/`pass`, self-signed
+TLS) for a real structural-map deliverable, not a fixture test — and found
+several real things the fixture-only verification in sessions 49-52
+couldn't have surfaced. **Full operational detail for every finding below
+lives in CLAUDE.md's "Operational gotchas"** (five entries, in priority
+order, headed by the mutation finding) rather than being duplicated here —
+this section records what was found and what it means for the feature's
+design status, not how to reproduce the fix.
+
+- **New: `--insecure-certs` flag**, threaded the same way every other
+  opt-in crawl-behavior flag is (`--stealth`, `--detect-auth-wall`):
+  `CrawlConfig.insecureCerts?: boolean` → `AcquireOptions.insecureCerts?:
+  boolean` → `ignoreHTTPSErrors: true` on every `newContext()` call in
+  `capture.ts` and on `auth.ts`'s `performLogin`. Needed because treeLine
+  had no mechanism at all for a self-signed-cert target before this
+  session. Default `false`.
+- **Confirmed real: the natural seed URL (site root / `main.php`) doesn't
+  work even with a fully valid session**, because of a per-login
+  URL-nonce gate unrelated to cookies. The design's assumption that a
+  target's top-level authenticated URL is a valid crawl seed does not hold
+  universally — see CLAUDE.md.
+- **Confirmed real: the single-selector `--success-indicator` design (one
+  selector reused for both `performLogin` and every `checkAuthStillValid`
+  check) has a genuine limitation** when a target's login-landing template
+  and regular content-page template diverge enough that no one selector
+  satisfies both. Worked around per-target with an OR-selector; the
+  underlying one-selector design itself is unchanged and unrevisited — see
+  CLAUDE.md for the technique and "Open items" below for the open design
+  question.
+- **Confirmed real: Phase-1 discovery (link-following + sitemap.xml) finds
+  almost nothing on a JS-nav-driven authenticated target** — OpenEMR's
+  `main.php` has exactly one same-origin `<a href>` on the entire page.
+  Worked around by extracting the target's own client-side nav-state object
+  (`window.menu_objects`) and feeding many seeds into accumulating crawl
+  invocations — not a treeLine feature, not Phase 2 discovery (still
+  backlog, still not being built per "Do not build Phase 2... yet"). See
+  CLAUDE.md for the technique.
+- **Real crawl result**: 95 pages captured (of 98 attempted seeds), 88 with
+  forms / 112 forms total, 8 distinct API endpoints, 607 axe violations /
+  104 needs-review, 15 distinct colors — a real, usable structural
+  inventory, delivered to the repo owner for a separate test-plan doc. 17
+  of 98 seeds never captured (template-inconsistent auth markers, see
+  CLAUDE.md) — documented as a known limitation, not chased to 100%; same
+  discipline as every other "known limitation, not fixed yet" entry in this
+  doc.
+- **Headline finding: a real, confirmed data mutation caused by ordinary
+  same-origin link-following, not a form submission or any action
+  treeLine itself took.** `forms_admin.php`'s per-module "disable" link
+  carries an already-valid CSRF token baked into its `href`, so a plain GET
+  during normal link discovery was sufficient to disable two real form
+  modules (`registry.state = 0` for ids 18/20 — "Care Plan," "Clinical
+  Instructions"). Confirmed via OpenEMR's own audit log, not inferred from
+  source — and every other non-`-select` log entry in the crawl window was
+  independently checked and confirmed harmless (dashboard widget AJAX,
+  lazy UI-preference bootstrapping, internal UUID backfill; no
+  `patient-record-*`/`billing-*`/clinical category showed anything but
+  `-select`). Root cause is a real OpenEMR anti-pattern (a state-changing
+  action reachable via GET with a pre-baked token, unlike every other
+  write-sounding page checked this session, which correctly gates behind
+  `$_POST` + CSRF verified at submit time) — but the *risk class* is
+  generalizable to any authenticated crawl of any target, which is why it's
+  the headline entry in CLAUDE.md rather than an OpenEMR-only note. **Not
+  yet mitigated in this codebase** — no URL-pattern denylist option, no CLI
+  warning on `--login-url` — see "Open items" below. Environment was
+  disposable by design for exactly this reason (`docker compose down -v &&
+up -d`, confirmed both containers healthy again afterward).
 
 ## GPB judgment call (context, not code — worth knowing regardless)
 
@@ -1473,5 +1546,18 @@ playwright`, `pixelmatch` + `pngjs` (visual diff comparison), `markdown-it`
 - Axe report's `exampleSelector` doesn't show all affected elements.
 - Atlas's "not yet interpreted" message doesn't distinguish skipped vs.
   failed interpretation.
+- **No mitigation exists yet for authenticated crawls reaching a
+  state-changing action exposed via a plain GET link (session 53) — no
+  URL-pattern denylist option, no CLI warning on `--login-url`.** Confirmed
+  real, not hypothetical, against a live OpenEMR target; see "Authenticated
+  crawling" above and CLAUDE.md's "Operational gotchas" for the full
+  writeup. Worth prioritizing before the next real authenticated-crawl
+  target where write access matters.
+- `--success-indicator` is a single selector reused for both `performLogin`
+  and every ongoing `checkAuthStillValid` check; a target whose
+  authenticated-chrome template and authenticated-content template diverge
+  enough (confirmed real on OpenEMR — see "Authenticated crawling" above)
+  can require an OR-selector workaround per target rather than one clean
+  selector. Not fixed; no redesign attempted yet.
 
 **Phase 2 backlog (unchanged):** interaction-reachable page discovery.

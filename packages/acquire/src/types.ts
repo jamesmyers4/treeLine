@@ -100,6 +100,7 @@ export interface AcquireOptions {
   sampledEndpoints?: Set<string>
   authSession?: AuthSession
   detectAuthWall?: boolean
+  insecureCerts?: boolean
 }
 
 export interface CaptureHandler {

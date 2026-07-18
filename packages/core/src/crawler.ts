@@ -35,7 +35,7 @@ async function runCrawl(
   db: ReturnType<typeof openCrawlDb>,
 ): Promise<CrawlResult> {
   db.insertMeta(config.seedUrl, config)
-  const { resolvedUrl, html } = await fetchSeedPage(config.seedUrl, authSession)
+  const { resolvedUrl, html } = await fetchSeedPage(config.seedUrl, authSession, config.insecureCerts)
   const seedNorm = normalizeUrl(resolvedUrl)
   const seedOrigin = new URL(seedNorm).origin
   const isAllowed = config.respectRobotsTxt ? await fetchRobotsRules(seedOrigin) : () => true
@@ -95,6 +95,7 @@ async function runCrawl(
         sampledEndpoints,
         authSession,
         detectAuthWall: config.detectAuthWall,
+        insecureCerts: config.insecureCerts,
       })
       db.recordPageState(pageState)
       pageCount++

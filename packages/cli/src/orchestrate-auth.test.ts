@@ -128,6 +128,7 @@ function baseOptions(outputDir: string, url: string): TreelineCrawlOptions {
     captureResponseBodies: false,
     maxResponseBodyBytes: 512000,
     detectAuthWall: false,
+    insecureCerts: false,
   }
 }
 

@@ -2,10 +2,10 @@ import { resolveSeedUrl, SeedAuthenticationError } from '@treeline/acquire'
 import type { AuthSession } from '@treeline/acquire'
 import type { HostnameMismatch } from './types.js'
 
-export async function fetchSeedPage(seedUrl: string, authSession?: AuthSession): Promise<{ resolvedUrl: string; html: string | null }> {
+export async function fetchSeedPage(seedUrl: string, authSession?: AuthSession, insecureCerts?: boolean): Promise<{ resolvedUrl: string; html: string | null }> {
   if (authSession) {
     try {
-      return await resolveSeedUrl(seedUrl, { authSession })
+      return await resolveSeedUrl(seedUrl, { authSession, insecureCerts })
     } catch (err) {
       if (err instanceof SeedAuthenticationError) throw err
       return { resolvedUrl: seedUrl, html: null }
