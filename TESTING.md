@@ -1,25 +1,34 @@
 # TESTING.md — treeline
 
-_Written at the end of the `VERIFY-BUILDOUT.md` session (session 57). Read
-`CONTEXT.md` and `CLAUDE.md` first — this file is a snapshot of where
-testing actually stands, not a design doc. It will go stale; trust `pnpm -r
-test` and this file's own "how to reproduce" commands over its prose if
-they ever disagree._
+_Written at the end of the `VERIFY-BUILDOUT.md` session (session 57);
+updated at the end of the `GOLDEN-MASTER-BUILDOUT.md` session (session 58)
+to reflect CI and golden-master tests landing. Read `CONTEXT.md` and
+`CLAUDE.md` first — this file is a snapshot of where testing actually
+stands, not a design doc. It will go stale; trust `pnpm -r test` and this
+file's own "how to reproduce" commands over its prose if they ever
+disagree._
 
 ## What exists today
 
-Two layers of testing, doing two different jobs:
+Three layers of testing, doing three different jobs:
 
-1. **Unit/fixture tests, one `vitest` suite per package, run locally on
-   demand.** These are real — they launch real browsers against real local
-   fixture servers (`node:http`/Fastify), not mocks of Playwright. Nothing
-   in CI runs them yet; see "What's missing" below.
-2. **`packages/verify`, a new, independent, manual/on-demand tool** (this
-   session's deliverable) that logs into a real, live authenticated target
-   and confirms real navigation destinations against a human-supplied
-   expectation. Not a `vitest` suite, not CI-gated, not wired into `crawl`
-   or `diff` — a standalone verification instrument, same posture as
-   authenticated crawling itself.
+1. **Unit/fixture tests, one `vitest` suite per package, run locally and in
+   CI.** These are real — they launch real browsers against real local
+   fixture servers (`node:http`/Fastify), not mocks of Playwright.
+   `.github/workflows/test.yml` (session 58) now runs `pnpm -r test` on
+   every push/PR to `main`.
+2. **Golden-master pipeline tests, `packages/cli/test/`** (session 58) —
+   three real end-to-end crawls against real local fixture servers, each
+   compared byte-for-byte (after normalizing known-nondeterministic
+   values) against checked-in golden output. Catches real-output
+   regressions unit tests miss by construction, since a unit test only
+   proves an individual function's isolated behavior. See below.
+3. **`packages/verify`, an independent, manual/on-demand tool** (session 57)
+   that logs into a real, live authenticated target and confirms real
+   navigation destinations against a human-supplied expectation. Not a
+   `vitest` suite, not CI-gated, not wired into `crawl` or `diff` — a
+   standalone verification instrument, same posture as authenticated
+   crawling itself.
 
 ## Per-package unit/fixture test status (confirmed this session)
 
@@ -34,9 +43,9 @@ file. All green:
 | `@treeline/interpret` | 3 | 40 | Mocked Anthropic SDK boundary (real API calls aren't run) |
 | `@treeline/output` | 15 | 187 | Includes `injection-safety`-style escaping tests |
 | `@treeline/pages` | 5 | 21 | GitHub Pages HTML rendering |
-| `@treeline/cli` | 2 | 26 | Full pipeline via `runTreelineCrawl`, real local fixtures |
-| `@treeline/verify` | 1 | 2 | New this session — see below |
-| **Total** | **43** | **428** | |
+| `@treeline/cli` | 5 | 29 | Full pipeline via `runTreelineCrawl`, real local fixtures, incl. 3 golden-master scenarios (session 58) |
+| `@treeline/verify` | 1 | 2 | Built session 57 — see below |
+| **Total** | **46** | **431** | |
 
 Reproduce with the exact sequence `CLAUDE.md`'s "Verify the repo is
 actually in the state described" section already documents:
@@ -150,18 +159,84 @@ pnpm --filter @treeline/verify verify -- \
 cd OPENEMR-QA/docker && docker compose down -v
 ```
 
+## Golden-master pipeline tests and CI (session 58, `GOLDEN-MASTER-BUILDOUT.md`)
+
+Both items this file previously listed under "What's missing" are now
+built.
+
+- **`.github/workflows/test.yml`** — new, separate from `crawl.yml`.
+  Triggers on `push`/`pull_request` targeting `main`, runs `pnpm -r test`
+  under Xvfb with a cached Playwright chromium install, mirroring
+  `crawl.yml`'s existing browser/display setup. Step 0 confirmed this is
+  necessary, not assumed: `launchHardened` (`packages/acquire/src/
+launch.ts`) hardcodes `headless: false` for the non-stealth path with no
+  test-time override, and no fixture test anywhere in the workspace sets
+  `stealth: true`, so every real-browser test — not just `crawl` — needs a
+  display. A single `playwright install --with-deps chromium` covers both
+  `@treeline/acquire` and `@treeline/verify` (confirmed via `pnpm-lock.yaml`:
+  both resolve the same `playwright@1.61.1`). Patchright's `channel:
+'chrome'` path is never exercised by any test, so no separate browser
+  install is needed for it.
+- **Golden-master fixture tests, `packages/cli/test/`** — three locked
+  scenarios (`static-site`, `form-and-api`, `duplicate-destinations`),
+  each with a real `node:http` fixture server, driven through
+  `runTreelineCrawl` directly (same pattern as `orchestrate.test.ts`), with
+  checked-in golden files under `test/golden/<scenario>/` compared via a
+  shared `test/normalize-golden.ts` helper.
+  - **A real nondeterminism found beyond the brief's own named list:**
+    every fixture server binds `server.listen(0, ...)` for a random
+    ephemeral port (deliberately, so parallel test files never collide on
+    a fixed port — same reasoning `orchestrate.test.ts` already
+    established). That port number lands in every report table, every POM
+    locator's `goto()` call, and every spec's `toHaveURL` assertion — an
+    exact-match comparison without normalizing it would never pass twice
+    in a row. Fixed by adding an `https?://127\.0\.0\.1:\d+` → `<BASE_URL>`
+    replacement to `normalizeGoldenContent`, alongside the brief's own
+    named timestamp (`Generated: <ISO>` → `<TIMESTAMP>`) and
+    `pageLoadMs`/`durationMs`/`appearedAtMs` table-cell normalizations.
+    Verified for real, not assumed: ran each golden test twice back to
+    back and confirmed a pass both times despite a different real port
+    each run.
+  - **A second real bug found by actually running the full `@treeline/cli`
+    suite together, not just the three new files in isolation:** the
+    checked-in golden `specs/*.spec.ts` files (real generated Playwright
+    spec code, same as `treeline-output/**`'s generated specs) got picked
+    up by vitest's own default test-file glob and failed importing
+    `@playwright/test` — the exact class of bug this file's sibling
+    section already documents `treeline-output/**`'s exclusion for.
+    Fixed the same way: `packages/cli/vitest.config.ts`'s `exclude` array
+    gained `'test/golden/**'` alongside the existing `'treeline-output/**'`
+    entry.
+  - **Mismatch detection and first-run-failure behavior both verified for
+    real, not just asserted correct by construction:** deliberately
+    corrupted a checked-in golden file's content and confirmed a real,
+    informative line-level diff (plus full normalized before/after) rather
+    than a silent pass; deliberately renamed a golden directory away and
+    confirmed a clear "no golden file, run with `UPDATE_GOLDEN=1`" failure
+    rather than an auto-write. Both restored before proceeding.
+  - **Report scope deliberately narrower than "every report," matching the
+    brief's own per-scenario list rather than the full nine-report set:**
+    `static-site` compares `atlas.md`/`selector-report.md`/
+    `testid-audit.md`/`coverage-report.md` plus every POM/spec file;
+    `form-and-api` compares `flow-map.md` plus POM/spec files;
+    `duplicate-destinations` compares `selector-report.md` plus POM/spec
+    files. `axe-report.md`, `color-report.md`, and `timing-report.md` were
+    deliberately left out of exact-match comparison — all three depend on
+    real browser rendering (accessibility-tree computation, computed
+    style, paint timing) that golden files generated once on one OS/GPU
+    combination have no guarantee of reproducing byte-for-byte on a
+    different one (these goldens were generated on Windows locally; CI
+    runs Ubuntu). The four report types actually compared are pure DOM/
+    accessibility-tree structural output with no visual-rendering
+    dependency, matching what the brief named per scenario.
+- **Reproduce:** `pnpm --filter @treeline/cli test` (or `pnpm -r test` for
+  the whole workspace) runs the three new golden files automatically,
+  alongside every existing suite, with no additional wiring — confirmed by
+  running the full `@treeline/cli` suite (not just the three new files)
+  and the full workspace `pnpm -r test` after the fix above.
+
 ## What's missing (known, not this session's job)
 
-- **No CI workflow runs any test suite at all yet.** `.github/workflows/
-crawl.yml` is `workflow_dispatch`-only; nothing runs `pnpm -r test` on push
-  or pull request. This is exactly `GOLDEN-MASTER-BUILDOUT.md`'s item 1 —
-  a separate, independent session track, not started by this session, not
-  blocked by it either.
-- **No golden-master pipeline tests** — nothing asserts a full `treeline
-  crawl` run's actual generated output (reports, POMs, specs) against a
-  known-correct baseline; only that individual functions behave correctly
-  in isolation and that a real crawl doesn't crash. This is
-  `GOLDEN-MASTER-BUILDOUT.md`'s item 2, same status as above.
 - **`packages/verify` is not CI-gated and not expected to become so** — it
   needs live Docker plus real credentials, same explicit non-goal
   authenticated crawling itself already has. Manual/on-demand by design,

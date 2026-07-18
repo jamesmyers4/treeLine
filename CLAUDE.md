@@ -1,6 +1,6 @@
 # CLAUDE.md — treeline
 
-_Last updated after session 56._
+_Last updated after session 58._
 
 Full design rationale lives in `CONTEXT.md` — read that first for the "why."
 This file is the operational guide: conventions, commands, and hard-won
@@ -18,7 +18,11 @@ is escalation (fixing `hard-pages/` entries), not the crawl runtime.
 
 - `packages/cli` — the real `treeline crawl <url>` command. Has its own
   `vitest.config.ts` — see "Operational gotchas" below for why this exists
-  and must not be removed.
+  and must not be removed. `packages/cli/test/` (session 58) holds
+  golden-master fixture tests — real fixture servers under `test/
+fixtures/<scenario>/`, checked-in expected output under `test/
+golden/<scenario>/`, compared via `test/normalize-golden.ts` — separate
+  from the package's own unit tests under `src/`.
 - `packages/core` — crawler, persistence (`pages` + `interpretations`
   tables), robots/sitemap, hard-pages writer
 - `packages/acquire` — Patchright-hardened Playwright layer, axe-core
@@ -127,6 +131,18 @@ absence on an ordinary crawl; that's correct, not a regression.
 `diff` writes `reports/diff-report.md` into the current-run output
 directory, plus `reports/visual-diffs/*.png` — one pixel-diff image per
 page with a genuine visual change — automatically, with no new CLI flag.
+
+### CI — running the test suite
+
+`.github/workflows/test.yml` (session 58, `GOLDEN-MASTER-BUILDOUT.md`) runs
+`pnpm -r test` on every push and pull request targeting `main` — separate
+file from `crawl.yml` below, different trigger model
+(`workflow_dispatch` vs. `push`/`pull_request`). Same browser/display setup
+`crawl.yml` already uses (cached Playwright chromium install, Xvfb via
+`xvfb-run -a`), needed because `launchHardened`'s non-stealth path
+hardcodes `headless: false` with no test-time override — every real-browser
+test across the workspace needs a display, not just a real crawl. See
+`TESTING.md` for what this closed and how it was verified.
 
 ### GitHub Action
 
@@ -440,7 +456,13 @@ stop and figure out why before writing new code — something regressed.
 glob picks those up as if they were real test suites and they fail
 importing `@playwright/test`(which isn't a dependency of this repo's own
 test setup). If you see a wall of unrelated-looking test failures in`packages/cli`, check this file hasn't been reverted/removed before
-  assuming something's actually broken.
+  assuming something's actually broken. **The same file also excludes
+  `test/golden/**`, for the identical reason** (session 58,
+  `GOLDEN-MASTER-BUILDOUT.md`) — the checked-in golden `specs/*.spec.ts`
+  fixture files under `packages/cli/test/golden/<scenario>/specs/` are real
+  generated Playwright spec code, not vitest tests, and hit the exact same
+  `@playwright/test`-import failure if vitest's default glob is allowed to
+  collect them. Don't remove this second exclusion entry either.
 - **Re-running a crawl against the same `--output` path resumes, it doesn't
   restart.** The crawler skips URLs already in that db's `pages` table.
   Comparing two "identical" runs will show fewer newly-captured pages on

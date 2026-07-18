@@ -1965,6 +1965,99 @@ established, with explicit confirmation before doing so since the container
 had already been running for hours before this session started and could
 plausibly have held another session's in-progress state.
 
+## Golden-master pipeline tests and CI (session 58, `GOLDEN-MASTER-BUILDOUT.md`)
+
+Not a `V2.md` roadmap item; closes the two gaps `GOLDEN-MASTER-BUILDOUT.md`
+named together because they're the same underlying need — a trustworthy,
+automatic check that the pipeline still produces correct output. Full
+locked-decision brief there; this section is the outcome summary. See
+`TESTING.md` for the fuller writeup, including exact reproduction commands.
+
+- **`.github/workflows/test.yml`** — new, separate from `crawl.yml`,
+  triggers on `push`/`pull_request` to `main`, runs `pnpm -r test`. Step 0
+  (per the brief's own instruction to confirm rather than assume) found
+  every real-browser test across the workspace needs the same browser/
+  display setup `crawl.yml` already established, not just a real crawl —
+  `launchHardened`'s non-stealth path hardcodes `headless: false` with no
+  test-time override, and grepping the whole workspace found no fixture
+  test anywhere sets `stealth: true`, so Patchright's `channel: 'chrome'`
+  path is never exercised and needs no separate browser install. A single
+  `playwright install --with-deps chromium` covers both `@treeline/acquire`
+  and `@treeline/verify`, confirmed via `pnpm-lock.yaml` resolving both to
+  the identical `playwright@1.61.1`.
+- **Golden-master fixture tests, `packages/cli/test/`** — three locked
+  scenarios, each a real `node:http` fixture server driven through
+  `runTreelineCrawl` directly (`orchestrate.test.ts`'s existing pattern),
+  compared against checked-in golden output via a shared
+  `test/normalize-golden.ts` helper:
+  - **`static-site`** — plain pages with header+footer nav repeating the
+    same links (exercises `.nth()` occurrence-index disambiguation within
+    a page). Compared: `atlas.md`, `selector-report.md`, `testid-audit.md`,
+    `coverage-report.md`, every POM/spec file.
+  - **`form-and-api`** — a real `<form>` on one page, a real `fetch()` XHR
+    call to a JSON endpoint on another. Compared: `flow-map.md` (forms
+    table + API surface table together), every POM/spec file.
+  - **`duplicate-destinations`** — two same-text "Read more" links pointing
+    at genuinely different URLs (`/article-1`, `/article-2`). Deliberately
+    locks in the documented, known POM-property-naming limitation (see
+    "Open items" below) as accepted current behavior, not a bug — both
+    links produce `readMoreLink1`/`readMoreLink2`, disambiguated only by
+    occurrence order, with no indication of which points where. Compared:
+    `selector-report.md`, every POM/spec file. If a future session adds
+    `href` capture and fixes this, these goldens are expected to change
+    deliberately at that point.
+  - **Report scope deliberately narrower than all nine reports**, matching
+    the brief's own per-scenario list rather than a blanket "compare
+    everything": `axe-report.md`, `color-report.md`, and `timing-report.md`
+    were left out of exact-match comparison for all three scenarios,
+    since all three depend on real browser rendering (accessibility-tree
+    computation, computed style, paint timing) with no guarantee of
+    byte-for-byte reproducibility across OS/GPU combinations — these
+    goldens were generated on Windows locally, but CI runs Ubuntu. The
+    report types actually compared are pure DOM/accessibility-tree
+    structural output with no visual-rendering dependency.
+  - **A real nondeterminism found beyond the brief's own named list
+    (timestamps, `pageLoadMs`/`durationMs`/`appearedAtMs`):** every fixture
+    server binds an ephemeral port (`server.listen(0, ...)`, deliberately,
+    matching `orchestrate.test.ts`'s existing reasoning — parallel test
+    files must never collide on a fixed port), and that port number lands
+    in every report table, every POM locator's `goto()` call, and every
+    spec's `toHaveURL` assertion. Fixed by adding an
+    `https?://127\.0\.0\.1:\d+` → `<BASE_URL>` replacement to
+    `normalizeGoldenContent`, verified for real by running each golden
+    test twice back to back and confirming a pass both times despite a
+    genuinely different port each run — not just assumed correct from
+    reading the regex.
+  - **A second real bug, found by running the full `@treeline/cli` suite
+    together rather than trusting the three new files in isolation:** the
+    checked-in golden `specs/*.spec.ts` files are real generated
+    Playwright spec code, same shape as `treeline-output/**`'s generated
+    specs — vitest's own default test-file glob picked them up and failed
+    importing `@playwright/test`, the exact class of bug
+    `packages/cli/vitest.config.ts`'s existing `treeline-output/**`
+    exclusion already exists to prevent (see CLAUDE.md's gotchas). Fixed
+    the same way: added `'test/golden/**'` to the same `exclude` array.
+  - **Mismatch detection and first-run-failure behavior verified for real,
+    not just asserted correct by construction:** deliberately corrupted a
+    checked-in golden file and confirmed a real, informative line-level
+    diff plus full normalized before/after content, per the brief's
+    decision #8; deliberately renamed a golden directory away and
+    confirmed a clear "no golden file, run with `UPDATE_GOLDEN=1`" failure
+    rather than a silent auto-write, per the brief's own "First-run golden
+    generation" mechanic. Both restored before proceeding.
+- **Resolves one of `GOLDEN-MASTER-BUILDOUT.md`'s own carried-forward open
+  items without a separate decision needed:** `pnpm -r test` runs every
+  workspace package, including `@treeline/verify`'s fixture-tested (non-
+  live) suite — so `test.yml` already covers it, automatically, with no
+  extra wiring. This is distinct from `packages/verify`'s real, on-demand
+  live-target run (`verify -- <navMapFile> --base-url ...`), which stays
+  manual/not-CI-gated exactly as designed — only the fixture suite runs in
+  CI, same as every other package's unit tests.
+- **Verification requirement satisfied per the brief:** not called done on
+  "passes locally" alone — pushed a real branch (`golden-master-ci`),
+  opened a real PR, and confirmed `test.yml` went green in GitHub's own UI
+  before considering this session's work complete.
+
 ## Open items
 
 **Remaining v1 work:** none. All 8 v1 output-set items are done — see
