@@ -51,6 +51,8 @@ function makeNetworkEntry(overrides: Partial<NetworkEntry> = {}): NetworkEntry {
     responseBodySample: null,
     responseBodySchema: null,
     requestBody: null,
+    requestBodyContentTypeCategory: null,
+    requestBodyExceededSizeCap: false,
     requestHeaderNames: [],
     queryParams: {},
     requiresAuth: false,
@@ -200,6 +202,8 @@ describe('networkLog API capture fields persistence', () => {
   it('round-trips a non-empty, fully-populated NetworkEntry (request body field names, headers, query params, requiresAuth, response schema)', () => {
     const entry = makeNetworkEntry({
       requestBody: ['patientDOB', 'ssn'],
+      requestBodyContentTypeCategory: 'form-urlencoded',
+      requestBodyExceededSizeCap: false,
       requestHeaderNames: ['content-type', 'authorization'],
       queryParams: { page: '2' },
       requiresAuth: true,
@@ -212,6 +216,22 @@ describe('networkLog API capture fields persistence', () => {
     db.close()
     expect(pages).toHaveLength(1)
     expect(pages[0].networkLog).toEqual([entry])
+  })
+
+  it('round-trips a multipart/oversized NetworkEntry: requestBody null, requestBodyContentTypeCategory and requestBodyExceededSizeCap preserved', () => {
+    const entry = makeNetworkEntry({
+      requestBody: null,
+      requestBodyContentTypeCategory: 'multipart',
+      requestBodyExceededSizeCap: true,
+    })
+    const db = openCrawlDb(dbPath)
+    db.recordPageState(makePageWithNetworkLog('https://example.com/upload', [entry]))
+    const pages = db.getAllPages()
+    db.close()
+    const stored = pages[0].networkLog[0]
+    expect(stored.requestBody).toBeNull()
+    expect(stored.requestBodyContentTypeCategory).toBe('multipart')
+    expect(stored.requestBodyExceededSizeCap).toBe(true)
   })
 
   it('round-trips the redacted default case: requestBody null and requestHeaderNames still present as names only, never values', () => {

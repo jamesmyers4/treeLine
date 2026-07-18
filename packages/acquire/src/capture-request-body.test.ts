@@ -18,6 +18,8 @@ fetch('/api/json-post', { method: 'POST', headers: { 'Content-Type': 'applicatio
 fetch('/api/form-post', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'patientDOB=1990-01-01&ssn=123-45-6789' }).catch(() => {})
 fetch('/api/query?token=abc123&page=2').catch(() => {})
 fetch('/api/big-json-post', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notes: 'x'.repeat(200000) }) }).catch(() => {})
+fetch('/api/multipart-post', { method: 'POST', body: (() => { const fd = new FormData(); fd.append('file', new Blob(['hello'], { type: 'text/plain' }), 'note.txt'); return fd })() }).catch(() => {})
+fetch('/api/other-post', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: 'raw text body' }).catch(() => {})
 </script>
 </body></html>`)
         return
@@ -30,7 +32,14 @@ fetch('/api/big-json-post', { method: 'POST', headers: { 'Content-Type': 'applic
 </body></html>`)
         return
       }
-      if (req.url === '/api/json-post' || req.url === '/api/form-post' || req.url === '/api/dedup-post' || req.url === '/api/big-json-post') {
+      if (
+        req.url === '/api/json-post' ||
+        req.url === '/api/form-post' ||
+        req.url === '/api/dedup-post' ||
+        req.url === '/api/big-json-post' ||
+        req.url === '/api/multipart-post' ||
+        req.url === '/api/other-post'
+      ) {
         let body = ''
         req.on('data', (chunk) => { body += chunk })
         req.on('end', () => {
@@ -120,14 +129,58 @@ fetch('/api/big-json-post', { method: 'POST', headers: { 'Content-Type': 'applic
     }
   }, 30000)
 
-  it('leaves requestBody null when the body exceeds maxRequestBodyBytes', async () => {
+  it('leaves requestBody null when the body exceeds maxRequestBodyBytes, but still categorizes the content type and flags the size cap', async () => {
     const result = await capturePage(`${baseUrl}/page`, { captureRequestBodies: true, maxRequestBodyBytes: 1000 })
     const bigEntry = result.networkLog.find((e) => e.url === `${baseUrl}/api/big-json-post`)
     expect(bigEntry).toBeDefined()
     expect(bigEntry!.requestBody).toBeNull()
+    expect(bigEntry!.requestBodyContentTypeCategory).toBe('json')
+    expect(bigEntry!.requestBodyExceededSizeCap).toBe(true)
   }, 30000)
 
-  it('does not sample the same endpoint request body twice when the same sampledEndpoints Set is reused', async () => {
+  it('categorizes a JSON POST under the size cap as json with requestBodyExceededSizeCap false', async () => {
+    const result = await capturePage(`${baseUrl}/page`, { captureRequestBodies: true })
+    const jsonEntry = result.networkLog.find((e) => e.url === `${baseUrl}/api/json-post`)
+    expect(jsonEntry).toBeDefined()
+    expect(jsonEntry!.requestBodyContentTypeCategory).toBe('json')
+    expect(jsonEntry!.requestBodyExceededSizeCap).toBe(false)
+  }, 30000)
+
+  it('categorizes a form-urlencoded POST as form-urlencoded', async () => {
+    const result = await capturePage(`${baseUrl}/page`, { captureRequestBodies: true })
+    const formEntry = result.networkLog.find((e) => e.url === `${baseUrl}/api/form-post`)
+    expect(formEntry).toBeDefined()
+    expect(formEntry!.requestBodyContentTypeCategory).toBe('form-urlencoded')
+    expect(formEntry!.requestBodyExceededSizeCap).toBe(false)
+  }, 30000)
+
+  it('categorizes a real multipart/form-data POST as multipart, with requestBody still null (out of scope for field extraction)', async () => {
+    const result = await capturePage(`${baseUrl}/page`, { captureRequestBodies: true })
+    const multipartEntry = result.networkLog.find((e) => e.url === `${baseUrl}/api/multipart-post`)
+    expect(multipartEntry).toBeDefined()
+    expect(multipartEntry!.requestBody).toBeNull()
+    expect(multipartEntry!.requestBodyContentTypeCategory).toBe('multipart')
+    expect(multipartEntry!.requestBodyExceededSizeCap).toBe(false)
+  }, 30000)
+
+  it('categorizes an unrecognized content type as other, with requestBody still null', async () => {
+    const result = await capturePage(`${baseUrl}/page`, { captureRequestBodies: true })
+    const otherEntry = result.networkLog.find((e) => e.url === `${baseUrl}/api/other-post`)
+    expect(otherEntry).toBeDefined()
+    expect(otherEntry!.requestBody).toBeNull()
+    expect(otherEntry!.requestBodyContentTypeCategory).toBe('other')
+    expect(otherEntry!.requestBodyExceededSizeCap).toBe(false)
+  }, 30000)
+
+  it('leaves requestBodyContentTypeCategory null and requestBodyExceededSizeCap false when captureRequestBodies is unset', async () => {
+    const result = await capturePage(`${baseUrl}/page`)
+    const jsonEntry = result.networkLog.find((e) => e.url === `${baseUrl}/api/json-post`)
+    expect(jsonEntry).toBeDefined()
+    expect(jsonEntry!.requestBodyContentTypeCategory).toBeNull()
+    expect(jsonEntry!.requestBodyExceededSizeCap).toBe(false)
+  }, 30000)
+
+  it('does not sample the same endpoint request body twice when the same sampledEndpoints Set is reused, but still categorizes the deduped occurrence', async () => {
     const sampledEndpoints = new Set<string>()
     const first = await capturePage(`${baseUrl}/dedup-page`, { captureRequestBodies: true, sampledEndpoints })
     const second = await capturePage(`${baseUrl}/dedup-page`, { captureRequestBodies: true, sampledEndpoints })
@@ -135,6 +188,8 @@ fetch('/api/big-json-post', { method: 'POST', headers: { 'Content-Type': 'applic
     const secondEntry = second.networkLog.find((e) => e.url === `${baseUrl}/api/dedup-post`)
     expect(firstEntry!.requestBody).toEqual(['field'])
     expect(secondEntry!.requestBody).toBeNull()
+    expect(secondEntry!.requestBodyContentTypeCategory).toBe('json')
+    expect(secondEntry!.requestBodyExceededSizeCap).toBe(false)
   }, 30000)
 
   it('reports requiresAuth false when no authSession is configured', async () => {

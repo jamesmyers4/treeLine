@@ -1,3 +1,4 @@
+import type { RequestBodyContentTypeCategory } from '@treeline/acquire'
 import type { CrawledPage } from './input.js'
 import type { ApiTestScaffoldEntry, ApiTestScaffoldReport, ApiTestScaffoldRequestFields, ApiTestScaffoldResponseSchema } from './types.js'
 import { isApiSurfaceCandidate } from './flow-map.js'
@@ -9,15 +10,39 @@ export interface ApiTestScaffoldConfig {
 }
 
 const NOT_CAPTURED_REQUEST_NOTE = 'not captured (`--capture-request-bodies` was off for this crawl)'
-const NOT_APPLICABLE_REQUEST_NOTE =
-  'not applicable — no eligible request body was captured for this endpoint (e.g. multipart/form-data, or a content type outside JSON/form-urlencoded)'
+const NOT_APPLICABLE_REQUEST_MULTIPART_NOTE = 'not applicable (multipart/form-data — request body field names are not extracted for this content type)'
+const NOT_APPLICABLE_REQUEST_SIZE_CAP_NOTE = 'not applicable (the request body exceeds `--max-request-body-bytes` for this crawl)'
+const NOT_APPLICABLE_REQUEST_UNSUPPORTED_NOTE = 'not applicable (a content type outside JSON/form-urlencoded)'
+const NOT_APPLICABLE_REQUEST_NO_BODY_NOTE = 'not applicable (no request body was sent for this request)'
+const NOT_APPLICABLE_REQUEST_UNPARSEABLE_NOTE =
+  'not applicable (the content type was recognized, but the body could not be parsed as expected — e.g. malformed JSON, or a non-object top-level JSON value)'
 const NOT_CAPTURED_RESPONSE_NOTE = 'not captured (`--capture-response-bodies` was off for this crawl)'
 const NOT_APPLICABLE_RESPONSE_NOTE =
   'not applicable — no schema could be inferred for this endpoint (e.g. a non-JSON response, an oversized body, or a non-object top-level JSON value)'
 
-function buildRequestFields(requestBody: string[] | null, captureRequestBodies: boolean): ApiTestScaffoldRequestFields {
+// Precedence for a flag-on-but-null request body, per API-CONTENT-TYPE-BUILDOUT.md decision #5:
+// the two signals are orthogonal (a json/form-urlencoded body can be null purely from the size
+// cap), so multipart is checked first, then the size cap, then the remaining unsupported/
+// unparseable cases — never inferred from either signal alone.
+function notApplicableRequestNote(
+  category: RequestBodyContentTypeCategory | null,
+  exceededSizeCap: boolean,
+): string {
+  if (category === 'multipart') return NOT_APPLICABLE_REQUEST_MULTIPART_NOTE
+  if (exceededSizeCap) return NOT_APPLICABLE_REQUEST_SIZE_CAP_NOTE
+  if (category === 'other') return NOT_APPLICABLE_REQUEST_UNSUPPORTED_NOTE
+  if (category === null) return NOT_APPLICABLE_REQUEST_NO_BODY_NOTE
+  return NOT_APPLICABLE_REQUEST_UNPARSEABLE_NOTE
+}
+
+function buildRequestFields(
+  requestBody: string[] | null,
+  captureRequestBodies: boolean,
+  contentTypeCategory: RequestBodyContentTypeCategory | null,
+  exceededSizeCap: boolean,
+): ApiTestScaffoldRequestFields {
   if (!captureRequestBodies) return { status: 'not-captured', fields: [], note: NOT_CAPTURED_REQUEST_NOTE }
-  if (requestBody === null) return { status: 'not-applicable', fields: [], note: NOT_APPLICABLE_REQUEST_NOTE }
+  if (requestBody === null) return { status: 'not-applicable', fields: [], note: notApplicableRequestNote(contentTypeCategory, exceededSizeCap) }
   return { status: 'captured', fields: requestBody, note: null }
 }
 
@@ -45,6 +70,8 @@ interface AggregatedEntry {
   queryParams: Record<string, string>
   requiresAuth: boolean
   requestBody: string[] | null
+  requestBodyContentTypeCategory: RequestBodyContentTypeCategory | null
+  requestBodyExceededSizeCap: boolean
   responseBodySchema: Record<string, string> | null
 }
 
@@ -57,6 +84,12 @@ export function buildApiTestScaffoldEntries(pages: CrawledPage[], config: ApiTes
       const existing = byKey.get(key)
       if (existing) {
         if (existing.requestBody === null && entry.requestBody !== null) existing.requestBody = entry.requestBody
+        if (existing.requestBodyContentTypeCategory === null && entry.requestBodyContentTypeCategory !== null) {
+          existing.requestBodyContentTypeCategory = entry.requestBodyContentTypeCategory
+        }
+        if (!existing.requestBodyExceededSizeCap && entry.requestBodyExceededSizeCap) {
+          existing.requestBodyExceededSizeCap = true
+        }
         if (existing.responseBodySchema === null && entry.responseBodySchema !== null) {
           existing.responseBodySchema = entry.responseBodySchema
         }
@@ -67,13 +100,20 @@ export function buildApiTestScaffoldEntries(pages: CrawledPage[], config: ApiTes
           queryParams: entry.queryParams,
           requiresAuth: entry.requiresAuth,
           requestBody: entry.requestBody,
+          requestBodyContentTypeCategory: entry.requestBodyContentTypeCategory,
+          requestBodyExceededSizeCap: entry.requestBodyExceededSizeCap,
           responseBodySchema: entry.responseBodySchema,
         })
       }
     }
   }
   return Array.from(byKey.values()).map((entry) => {
-    const requestFields = buildRequestFields(entry.requestBody, config.captureRequestBodies)
+    const requestFields = buildRequestFields(
+      entry.requestBody,
+      config.captureRequestBodies,
+      entry.requestBodyContentTypeCategory,
+      entry.requestBodyExceededSizeCap,
+    )
     const responseSchema = buildResponseSchema(entry.responseBodySchema, config.captureResponseBodies)
     const hints = new Set<string>()
     if (requestFields.status === 'captured') {

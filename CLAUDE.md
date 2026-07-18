@@ -1,6 +1,6 @@
 # CLAUDE.md — treeline
 
-_Last updated after session 54._
+_Last updated after session 56._
 
 Full design rationale lives in `CONTEXT.md` — read that first for the "why."
 This file is the operational guide: conventions, commands, and hard-won
@@ -590,23 +590,54 @@ charset=UTF-8`), and `startsWith` already handles this correctly** —
   `packages/acquire/src/capture-request-body.test.ts`. Don't switch this
   match to an exact string comparison — a real target sending a charset
   parameter is normal, not malformed.
-- **`NetworkEntry` has no content-type field, so a `null` `requestBody`/
-  `responseBodySchema` on a flag-on entry can't be attributed to a specific
-  cause (multipart, non-JSON, oversized, non-object top-level JSON) — only
-  to the general category "not eligible."** Found building
-  `api-test-scaffold.md` (session 55), which needed to render "not
-  applicable" (flag on, structurally ineligible) distinctly from "not
-  captured" (flag off) per `API-REPORT-BUILDOUT.md`'s decision #7. The
-  flag-off case is unambiguous (known from `CrawlConfig`, not inferred per
-  entry). The flag-on-but-null case is not — `packages/output/src/
-api-test-scaffold.ts` deliberately words its "not applicable" note as a
-  category ("e.g. multipart/form-data, or a content type outside JSON/
-  form-urlencoded") rather than asserting a specific cause it can't actually
-  confirm from the persisted data. Don't "fix" this by having the report
-  layer guess more specifically — if per-entry cause attribution is ever
-  wanted, that's a new capture-layer field (a content-type or
-  ineligibility-reason column on `NetworkEntry`), a deliberate scope
-  decision for a future session, not something to infer at render time.
+- **Closed (session 56, `API-CONTENT-TYPE-BUILDOUT.md`) — request-body
+  attribution only; the response-body half of this gap is still open, see
+  below.** Session 55 left `NetworkEntry` with no content-type field, so a
+  `null` `requestBody` on a flag-on entry couldn't be attributed to a
+  specific cause. Session 56 closed the request-body half by adding two
+  fields, populated only when `--capture-request-bodies` is on:
+  `requestBodyContentTypeCategory: 'json' | 'form-urlencoded' | 'multipart'
+| 'other' | null` and `requestBodyExceededSizeCap: boolean`, computed in
+  `capture.ts`'s `extractRequestBodyFieldNames` (category derivation
+  factored into its own pure, unit-tested function,
+  `categorizeRequestBodyContentType`). `packages/output/src/
+api-test-scaffold.ts`'s "not applicable" note is now specific: multipart,
+  exceeds-size-cap, unsupported-content-type, no-request-body-sent (a GET
+  with nothing to categorize), or recognized-but-unparseable (malformed
+  JSON/non-object top-level — a real fifth case found during
+  implementation, beyond the brief's three named categories, handled with
+  the same honest-attribution discipline rather than folded into "other").
+  **Precedence, since the two new fields are orthogonal (confirmed for
+  real, not assumed) — multipart wins over the size cap:** a real
+  multipart body can also be oversized, and `categorizeRequestBodyContentType`
+  is deliberately derived from the `Content-Type` header directly, not
+  gated on `req.postData()` returning non-null — Playwright's `postData()`
+  returns `null` for a genuine multipart/form-data request (the body is a
+  stream/Blob, not exposable as text), so a category derived only when
+  `postData()` succeeds would never actually see `'multipart'`; caught by
+  a real end-to-end test with a real `FormData`/`Blob` POST, not assumed
+  from reading Playwright's docs. Verified against real, freshly-captured
+  data on the same OpenEMR instance sessions 53-55 used: a real
+  `dated_reminders.php` form-urlencoded POST, hit from multiple pages in
+  one crawl, correctly shows `requestBodyContentTypeCategory:
+'form-urlencoded'` on **every** occurrence (including the ones deduped to
+  `requestBody: null` by the existing `sampledEndpoints` mechanism) —
+  confirming the category is a real per-occurrence factual observation,
+  independent of the crawl-level dedup optimization. A real multipart
+  endpoint was not reachable as a crawl seed on this target (same
+  `SeedAuthenticationError` on the AJAX-only fragment endpoint
+  `dated_reminders_counter.php` that session 55 already found, not chased
+  further per this repo's "know when to stop" discipline) — the multipart
+  label itself is proven correct via the real end-to-end fixture test
+  instead. **Still open, deliberately out of scope for session 56:** the
+  response-body side of this same gap — `responseBodySchema` null on a
+  flag-on entry still can't be attributed to a specific cause (non-JSON,
+  oversized, non-object top-level JSON); `api-test-scaffold.ts`'s response
+  section still uses the older, general "not applicable" category wording.
+  If a future session wants that half closed too, it needs its own new
+  `NetworkEntry` fields (e.g. a response content-type category), following
+  the same pattern as this session, not an assumption that the request-body
+  fix already covers it.
 - **`pageExists` is status-blind — `markFailed` permanently poisons
   resumability for that URL, not just a same-run retry guard.**
   `packages/core/src/persistence.ts`'s `pageExists(url)` is `SELECT 1 FROM

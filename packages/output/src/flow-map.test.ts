@@ -34,6 +34,8 @@ function makeNetworkEntry(overrides: Partial<NetworkEntry>): NetworkEntry {
     responseBodySample: null,
     responseBodySchema: null,
     requestBody: null,
+    requestBodyContentTypeCategory: null,
+    requestBodyExceededSizeCap: false,
     requestHeaderNames: [],
     queryParams: {},
     requiresAuth: false,

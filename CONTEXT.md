@@ -1,6 +1,6 @@
 # treeline — CONTEXT.md
 
-_Last updated after session 54. This file reflects what's actually built and
+_Last updated after session 56. This file reflects what's actually built and
 verified, not just the original plan — see the "Status" section for what's
 done vs. remaining._
 
@@ -1001,6 +1001,103 @@ orchestrate.ts` only calls `generateApiTestScaffold`/writes the file when
     since it predates this session and may still be in use for other work.
     Worth remembering for a future session: don't assume disposal is
     automatically correct for a shared resource you didn't create.
+- **Content-type attribution for the flag-on-but-null request body,
+  closing session 55's own documented gap** (session 56,
+  `API-CONTENT-TYPE-BUILDOUT.md`) — a small, targeted follow-on, scoped
+  deliberately to the request-body half of the gap only (the response-body
+  half — `responseBodySchema` null attribution — is explicitly not touched
+  this session; see CLAUDE.md's gotchas for what's still open there).
+  - **Two new orthogonal `NetworkEntry` fields**, populated only when
+    `--capture-request-bodies` is on (no new CLI flag):
+    `requestBodyContentTypeCategory: 'json' | 'form-urlencoded' |
+'multipart' | 'other' | null` and `requestBodyExceededSizeCap: boolean`.
+    `NetworkEntry` stays limited to a small closed-set category, not the
+    real `Content-Type` header value — same non-sensitive-category
+    reasoning the brief itself gave, not an exception to decision #2's
+    "header values are never persisted" lock from the capture brief.
+  - **Category derivation reuses the existing content-type matching logic**
+    (the same `startsWith` checks `extractRequestBodyFieldNames` already
+    used to decide whether to attempt a JSON/form-urlencoded parse),
+    factored into a small, exported pure function,
+    `categorizeRequestBodyContentType` (`packages/acquire/src/capture.ts`),
+    unit-tested in isolation
+    (`packages/acquire/src/content-type-category.test.ts`) against a bare
+    and charset-suffixed `application/json`, a bare and charset-suffixed
+    `application/x-www-form-urlencoded`, a real `multipart/form-data;
+boundary=...`, an empty content type, and a genuinely unrecognized one.
+  - **A real Playwright quirk found and fixed during implementation, not
+    assumed:** the first version derived the category only when
+    `req.postData()` returned non-null text, gated on the same early
+    `!postData` check the field-extraction logic already used. A real
+    end-to-end test posting a genuine `FormData`/`Blob` multipart body
+    (`packages/acquire/src/capture-request-body.test.ts`) failed —
+    `requestBodyContentTypeCategory` came back `null`, not `'multipart'`.
+    Root cause: Playwright's `request.postData()` returns `null` for a real
+    multipart request (the body is a stream/Blob, not exposable as text),
+    so gating category derivation on `postData()` succeeding meant
+    `'multipart'` could structurally never be produced — the one category
+    the whole session exists to distinguish. Fixed by deriving the category
+    from `req.headers()['content-type']` directly, independent of whether
+    `postData()` returns anything, matching decision #4's "orthogonal,
+    both required" framing more literally than the brief's own wording
+    anticipated.
+  - **Size-cap flag is a byproduct of the existing size check**, moved
+    earlier in `extractRequestBodyFieldNames` so it's computed alongside
+    category derivation rather than short-circuiting before it — no new
+    detection logic, only new recording, per the brief's mechanics section.
+  - **Mutual exclusivity checked for real, per the brief's Step 0, and
+    found not exclusive** — a multipart body can also be oversized, and a
+    json/form-urlencoded body can be null purely from the size cap,
+    independent of category. Locked precedence in
+    `packages/output/src/api-test-scaffold.ts`'s `notApplicableRequestNote`:
+    multipart first, then the size cap, then the remaining unsupported/
+    unparseable cases — verified with a dedicated test asserting multipart
+    wins even when `requestBodyExceededSizeCap` is also `true` on the same
+    entry.
+  - **Two more not-applicable reasons found during implementation, beyond
+    the brief's three named categories, handled with the same honest-
+    attribution discipline rather than silently folded into "other":** a
+    request with no body at all (a GET with nothing to categorize —
+    `requestBodyContentTypeCategory: null` while the flag is on) gets its
+    own "no request body was sent" wording; a body whose content type was
+    recognized as `json`/`form-urlencoded` but that still failed to parse
+    (malformed JSON, or a non-object top-level JSON value) and was *not*
+    from the size cap gets its own "could not be parsed as expected"
+    wording — neither collapsed into the generic unsupported-content-type
+    message, since both have a genuinely different, knowable cause.
+  - **Aggregation across pages** (`buildApiTestScaffoldEntries`) carries the
+    two new fields the same way `requestBody`/`responseBodySchema` already
+    aggregate: first non-null category wins, `requestBodyExceededSizeCap`
+    is sticky true once any occurrence sets it.
+  - **Verified against real, freshly-captured data on the same disposable
+    OpenEMR instance sessions 53-55 used** (confirmed still running,
+    healthy, ~4 hours up at session start via `docker ps`, per the brief's
+    own "don't assume, confirm" instruction) — not just fixtures: a real
+    authenticated crawl (`--login-url`/`--username admin`/the session-53
+    OR-selector `--success-indicator`/`--insecure-certs`/
+    `--capture-request-bodies --capture-response-bodies`) against
+    `dated_reminders.php`, hit from 5 different pages in one crawl,
+    produced a real `requestBodyContentTypeCategory: 'form-urlencoded'` on
+    every one of the 5 captured occurrences — including the 4 that were
+    deduped to `requestBody: null` by the pre-existing `sampledEndpoints`
+    mechanism — confirmed by reading the raw `networkLog` JSON directly out
+    of `crawl.sqlite`, not just asserting a report line. This is exactly
+    the orthogonality the brief's decision #4 called for: the category is a
+    real per-occurrence factual observation, independent of the crawl-level
+    dedup optimization that governs `requestBody` itself. A real multipart
+    endpoint was not reachable as a crawl seed on this target — the same
+    `SeedAuthenticationError` on the AJAX-only fragment endpoint
+    `dated_reminders_counter.php` that session 55's verification already
+    hit, not chased further per this repo's own "know when to stop"
+    discipline (see session 53's documented precedent). The multipart label
+    itself is instead proven correct end-to-end via the real
+    `FormData`/`Blob` fixture test above, and the oversized-body label via
+    a synthetic fixture (a real 200KB JSON body against a 1000-byte cap),
+    per the brief's own explicit allowance that a fixture is fine for that
+    case.
+  - **Docker cleanup skipped again, same reasoning as session 55**: the
+    instance predates this session and wasn't spun up by it; left running
+    rather than recycled.
 
 ## Authenticated crawling (sessions 49-52, built and verified)
 

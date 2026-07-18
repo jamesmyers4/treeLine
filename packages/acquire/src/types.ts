@@ -1,5 +1,7 @@
 import type { StorageState } from './auth.js'
 
+export type RequestBodyContentTypeCategory = 'json' | 'form-urlencoded' | 'multipart' | 'other'
+
 export interface NetworkEntry {
   url: string
   method: string
@@ -9,6 +11,8 @@ export interface NetworkEntry {
   responseBodySample: string | null
   responseBodySchema: Record<string, string> | null
   requestBody: string[] | null
+  requestBodyContentTypeCategory: RequestBodyContentTypeCategory | null
+  requestBodyExceededSizeCap: boolean
   requestHeaderNames: string[]
   queryParams: Record<string, string>
   requiresAuth: boolean

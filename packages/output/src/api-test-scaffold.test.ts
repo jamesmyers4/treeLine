@@ -13,6 +13,8 @@ function makeNetworkEntry(overrides: Partial<NetworkEntry>): NetworkEntry {
     responseBodySample: null,
     responseBodySchema: null,
     requestBody: null,
+    requestBodyContentTypeCategory: null,
+    requestBodyExceededSizeCap: false,
     requestHeaderNames: [],
     queryParams: {},
     requiresAuth: false,
@@ -94,6 +96,95 @@ describe('buildApiTestScaffoldEntries', () => {
       const entries = buildApiTestScaffoldEntries([page], { captureRequestBodies: true, captureResponseBodies: false })
       expect(entries[0]!.requestFields.status).toBe('not-applicable')
       expect(entries[0]!.requestFields.note).not.toMatch(/--capture-request-bodies/)
+    })
+  })
+
+  describe('request fields — specific not-applicable attribution (multipart / size cap / unsupported content type)', () => {
+    it('labels multipart specifically, distinct from the generic unsupported-content-type wording', () => {
+      const page = makePage({
+        networkLog: [makeNetworkEntry({ method: 'POST', requestBody: null, requestBodyContentTypeCategory: 'multipart' })],
+      })
+      const entries = buildApiTestScaffoldEntries([page], { captureRequestBodies: true, captureResponseBodies: false })
+      expect(entries[0]!.requestFields.note).toMatch(/multipart\/form-data/)
+    })
+
+    it('labels the size cap specifically for a json body that was null purely from exceeding the cap', () => {
+      const page = makePage({
+        networkLog: [
+          makeNetworkEntry({
+            method: 'POST',
+            requestBody: null,
+            requestBodyContentTypeCategory: 'json',
+            requestBodyExceededSizeCap: true,
+          }),
+        ],
+      })
+      const entries = buildApiTestScaffoldEntries([page], { captureRequestBodies: true, captureResponseBodies: false })
+      expect(entries[0]!.requestFields.note).toMatch(/max-request-body-bytes/)
+    })
+
+    it('labels the size cap specifically for a form-urlencoded body that was null purely from exceeding the cap', () => {
+      const page = makePage({
+        networkLog: [
+          makeNetworkEntry({
+            method: 'POST',
+            requestBody: null,
+            requestBodyContentTypeCategory: 'form-urlencoded',
+            requestBodyExceededSizeCap: true,
+          }),
+        ],
+      })
+      const entries = buildApiTestScaffoldEntries([page], { captureRequestBodies: true, captureResponseBodies: false })
+      expect(entries[0]!.requestFields.note).toMatch(/max-request-body-bytes/)
+    })
+
+    it('precedence: multipart wins over the size cap when a multipart body is also oversized', () => {
+      const page = makePage({
+        networkLog: [
+          makeNetworkEntry({
+            method: 'POST',
+            requestBody: null,
+            requestBodyContentTypeCategory: 'multipart',
+            requestBodyExceededSizeCap: true,
+          }),
+        ],
+      })
+      const entries = buildApiTestScaffoldEntries([page], { captureRequestBodies: true, captureResponseBodies: false })
+      expect(entries[0]!.requestFields.note).toMatch(/multipart\/form-data/)
+      expect(entries[0]!.requestFields.note).not.toMatch(/max-request-body-bytes/)
+    })
+
+    it('labels an unrecognized content type distinctly from both multipart and the size cap', () => {
+      const page = makePage({
+        networkLog: [makeNetworkEntry({ method: 'POST', requestBody: null, requestBodyContentTypeCategory: 'other' })],
+      })
+      const entries = buildApiTestScaffoldEntries([page], { captureRequestBodies: true, captureResponseBodies: false })
+      expect(entries[0]!.requestFields.note).not.toMatch(/multipart\/form-data/)
+      expect(entries[0]!.requestFields.note).not.toMatch(/max-request-body-bytes/)
+      expect(entries[0]!.requestFields.note).toMatch(/unsupported|outside JSON/)
+    })
+
+    it('labels a request with no body at all (e.g. a GET) distinctly from an unsupported content type', () => {
+      const page = makePage({
+        networkLog: [makeNetworkEntry({ method: 'GET', resourceType: 'xhr', requestBody: null, requestBodyContentTypeCategory: null })],
+      })
+      const entries = buildApiTestScaffoldEntries([page], { captureRequestBodies: true, captureResponseBodies: false })
+      expect(entries[0]!.requestFields.note).toMatch(/no request body was sent/)
+    })
+
+    it('labels a recognized-but-unparseable json body (e.g. malformed) distinctly, when not from the size cap', () => {
+      const page = makePage({
+        networkLog: [
+          makeNetworkEntry({
+            method: 'POST',
+            requestBody: null,
+            requestBodyContentTypeCategory: 'json',
+            requestBodyExceededSizeCap: false,
+          }),
+        ],
+      })
+      const entries = buildApiTestScaffoldEntries([page], { captureRequestBodies: true, captureResponseBodies: false })
+      expect(entries[0]!.requestFields.note).toMatch(/could not be parsed/)
     })
   })
 

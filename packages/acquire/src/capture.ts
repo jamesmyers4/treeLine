@@ -1,6 +1,6 @@
 import { AxeBuilder } from '@axe-core/playwright'
 import type { Browser, BrowserContext, Page, Request } from 'playwright'
-import type { AcquireOptions, AxeIncompleteResult, AxeViolation, CapturedForm, CaptureHandler, ColorSwatch, DomInteractiveElement, NetworkEntry, PageState } from './types.js'
+import type { AcquireOptions, AxeIncompleteResult, AxeViolation, CapturedForm, CaptureHandler, ColorSwatch, DomInteractiveElement, NetworkEntry, PageState, RequestBodyContentTypeCategory } from './types.js'
 import { launchHardened } from './launch.js'
 import { AuthExpiredError, AuthWallError, SeedAuthenticationError, checkAuthStillValid } from './auth.js'
 
@@ -39,30 +39,55 @@ function safeJsonParse(text: string): unknown {
   }
 }
 
-function extractRequestBodyFieldNames(req: Request, maxBytes: number, sampledEndpoints: Set<string>): string[] | null {
-  const key = `REQ ${req.method()} ${req.url()}`
+export function categorizeRequestBodyContentType(contentType: string): RequestBodyContentTypeCategory {
+  const normalized = contentType.toLowerCase()
+  if (normalized.startsWith('application/json')) return 'json'
+  if (normalized.startsWith('application/x-www-form-urlencoded')) return 'form-urlencoded'
+  if (normalized.startsWith('multipart/form-data')) return 'multipart'
+  return 'other'
+}
+
+interface RequestBodyExtractionResult {
+  requestBody: string[] | null
+  requestBodyContentTypeCategory: RequestBodyContentTypeCategory | null
+  requestBodyExceededSizeCap: boolean
+}
+
+const NO_BODY_RESULT: RequestBodyExtractionResult = { requestBody: null, requestBodyContentTypeCategory: null, requestBodyExceededSizeCap: false }
+
+function extractRequestBodyFieldNames(req: Request, maxBytes: number, sampledEndpoints: Set<string>): RequestBodyExtractionResult {
+  // Derived from the Content-Type header directly, not gated on req.postData() —
+  // Playwright's postData() returns null for a real multipart/form-data request (the
+  // body is a stream/Blob, not exposable as text), so a category derived only when
+  // postData() is non-null would never see 'multipart' at all.
+  const contentTypeHeader = req.headers()['content-type']
+  const category = contentTypeHeader ? categorizeRequestBodyContentType(contentTypeHeader) : null
+  const postData = req.postData()
+  if (!postData) return { requestBody: null, requestBodyContentTypeCategory: category, requestBodyExceededSizeCap: false }
   // 'REQ ' keeps this in its own namespace within the shared sampledEndpoints Set
   // so it can never collide with the unprefixed response-body dedup key below.
-  if (sampledEndpoints.has(key)) return null
-  const postData = req.postData()
-  if (!postData) return null
-  if (Buffer.byteLength(postData, 'utf-8') > maxBytes) return null
-  const contentType = (req.headers()['content-type'] ?? '').toLowerCase()
+  const key = `REQ ${req.method()} ${req.url()}`
+  const exceededSizeCap = Buffer.byteLength(postData, 'utf-8') > maxBytes
+  if (exceededSizeCap || sampledEndpoints.has(key)) {
+    return { requestBody: null, requestBodyContentTypeCategory: category, requestBodyExceededSizeCap: exceededSizeCap }
+  }
   try {
-    if (contentType.startsWith('application/json')) {
+    if (category === 'json') {
       const parsed = JSON.parse(postData)
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return { requestBody: null, requestBodyContentTypeCategory: category, requestBodyExceededSizeCap: false }
+      }
       sampledEndpoints.add(key)
-      return Object.keys(parsed)
+      return { requestBody: Object.keys(parsed), requestBodyContentTypeCategory: category, requestBodyExceededSizeCap: false }
     }
-    if (contentType.startsWith('application/x-www-form-urlencoded')) {
+    if (category === 'form-urlencoded') {
       const fields = Array.from(new Set(new URLSearchParams(postData).keys()))
       sampledEndpoints.add(key)
-      return fields
+      return { requestBody: fields, requestBodyContentTypeCategory: category, requestBodyExceededSizeCap: false }
     }
-    return null
+    return { requestBody: null, requestBodyContentTypeCategory: category, requestBodyExceededSizeCap: false }
   } catch {
-    return null
+    return { requestBody: null, requestBodyContentTypeCategory: category, requestBodyExceededSizeCap: false }
   }
 }
 
@@ -282,7 +307,16 @@ async function captureWithContext(url: string, context: BrowserContext, options?
   const networkLog: NetworkEntry[] = []
   const pending = new Map<
     string,
-    { method: string; resourceType: string; startedAt: number; requestHeaderNames: string[]; queryParams: Record<string, string>; requestBody: string[] | null }
+    {
+      method: string
+      resourceType: string
+      startedAt: number
+      requestHeaderNames: string[]
+      queryParams: Record<string, string>
+      requestBody: string[] | null
+      requestBodyContentTypeCategory: RequestBodyContentTypeCategory | null
+      requestBodyExceededSizeCap: boolean
+    }
   >()
   const bodyReads: Promise<void>[] = []
   const sampledEndpoints = options?.sampledEndpoints ?? new Set<string>()
@@ -290,13 +324,18 @@ async function captureWithContext(url: string, context: BrowserContext, options?
   const maxRequestBodyBytes = options?.maxRequestBodyBytes ?? DEFAULT_MAX_REQUEST_BODY_BYTES
   const requiresAuth = Boolean(options?.authSession)
   page.on('request', (req) => {
+    const bodyExtraction = options?.captureRequestBodies
+      ? extractRequestBodyFieldNames(req, maxRequestBodyBytes, sampledEndpoints)
+      : NO_BODY_RESULT
     pending.set(req.url(), {
       method: req.method(),
       resourceType: req.resourceType(),
       startedAt: Date.now(),
       requestHeaderNames: Object.keys(req.headers()),
       queryParams: parseQueryParams(req.url()),
-      requestBody: options?.captureRequestBodies ? extractRequestBodyFieldNames(req, maxRequestBodyBytes, sampledEndpoints) : null,
+      requestBody: bodyExtraction.requestBody,
+      requestBodyContentTypeCategory: bodyExtraction.requestBodyContentTypeCategory,
+      requestBodyExceededSizeCap: bodyExtraction.requestBodyExceededSizeCap,
     })
   })
   page.on('response', (res) => {
@@ -311,6 +350,8 @@ async function captureWithContext(url: string, context: BrowserContext, options?
       responseBodySample: null,
       responseBodySchema: null,
       requestBody: req.requestBody,
+      requestBodyContentTypeCategory: req.requestBodyContentTypeCategory,
+      requestBodyExceededSizeCap: req.requestBodyExceededSizeCap,
       requestHeaderNames: req.requestHeaderNames,
       queryParams: req.queryParams,
       requiresAuth,
