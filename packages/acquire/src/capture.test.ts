@@ -334,6 +334,48 @@ describe('extractColorPalette (color scheme capture)', () => {
   }, 30000)
 })
 
+describe('extractColorPalette (table-layout bgcolor, ZBUGS.md HN orange)', () => {
+  let server: Server
+  let baseUrl: string
+
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.end(`<!doctype html>
+<html><body>
+<table>
+<tr bgcolor="#ff6600">
+<td><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" width="1" height="1"></td>
+<td>Hacker News</td>
+</tr>
+</table>
+</body></html>`)
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const addr = server.address() as { port: number }
+    baseUrl = `http://127.0.0.1:${addr.port}`
+  })
+
+  afterAll(() => {
+    server.close()
+  })
+
+  it('captures a bgcolor attribute set on a table row, not just author-stylesheet colors', async () => {
+    const browser = await launchHardened()
+    try {
+      const context = await browser.newContext()
+      const page = await context.newPage()
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
+      const palette = await extractColorPalette(page)
+      const orange = palette.find((s) => s.property === 'background-color' && s.hex === '#ff6600')
+      expect(orange).toBeDefined()
+      expect(orange!.exampleSelector.length).toBeGreaterThan(0)
+    } finally {
+      await browser.close()
+    }
+  }, 30000)
+})
+
 describe('appearedAtMs (per-element appearance latency)', () => {
   let server: Server
   let baseUrl: string

@@ -162,7 +162,7 @@ now return the same 7 entity types `/newest` always did ("story title",
 never fired. Goldens unchanged (they skip interpretation); interpret 43
 tests + cli 29 tests green.
 
-## Session 6 — `[ ]` ZBUGS.md: HN's orange not captured by color report
+## Session 6 — `[x]` ZBUGS.md: HN's orange not captured by color report
 
 `ZBUGS.md`: "hacker news website has some orange — treeLine is not
 capturing that correctly."
@@ -182,6 +182,19 @@ capturing that correctly."
 - Goldens: `color-report.md` is deliberately excluded from golden
   comparison, so no golden churn expected — still run the cli suite.
 - Close `ZBUGS.md` entry (delete or annotate) when done.
+
+**Completed this session (2026-07-23).** Reproduced first with a local
+fixture server mimicking HN's table layout (`bgcolor="#ff6600"` on a `<tr>`,
+a 1px spacer `<img>` inside a `<td>`) — confirmed the fixture test failed
+against the unmodified selector before changing anything, matching the
+predicted root cause exactly (no table elements in `COLOR_SELECTOR`, so
+`bgcolor`-derived computed backgrounds were never sampled). Fix: extended
+`COLOR_SELECTOR` in `packages/acquire/src/capture.ts` to add
+`table, tr, td, th`. New regression test in `capture.test.ts` ("table-layout
+bgcolor, ZBUGS.md HN orange") passes; full `@treeline/acquire` suite (71
+tests) and `@treeline/cli` suite (29 tests, golden-master included) both
+green with goldens unchanged, as expected since `color-report.md` is
+excluded from golden comparison. `ZBUGS.md` entry annotated resolved.
 
 ## Sessions 7-9 — `[ ]` Repeating regions → row component + deduped selector report (feedback #3 + #7)
 

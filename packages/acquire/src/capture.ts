@@ -9,7 +9,7 @@ const APPEARED_ATTR = 'data-treeline-appeared-at'
 const DEFAULT_MAX_RESPONSE_BODY_BYTES = 512000
 const DEFAULT_MAX_REQUEST_BODY_BYTES = 65536
 const CAPTURABLE_RESOURCE_TYPES = new Set(['xhr', 'fetch'])
-const COLOR_SELECTOR = 'body, header, nav, main, footer, h1, h2, h3, h4, h5, h6, p, a, button, input, [class*="btn" i]'
+const COLOR_SELECTOR = 'body, header, nav, main, footer, h1, h2, h3, h4, h5, h6, p, a, button, input, [class*="btn" i], table, tr, td, th'
 const MAX_COLOR_SWATCHES = 20
 
 function parseQueryParams(url: string): Record<string, string> {
