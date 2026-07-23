@@ -72,7 +72,7 @@ promoted from devDependency to real dependency of `@treeline/output`.
 Golden scenarios all pass with the gate active in the generation path;
 goldens unchanged.
 
-## Session 3 — `[ ]` Stability ranking trusts entity-id selectors (feedback #2)
+## Session 3 — `[x]` Stability ranking trusts entity-id selectors (feedback #2)
 
 The 30 CSS selectors rated "stable" on /newest are all `#up_<storyid>` vote
 anchors — unique and stable across a re-crawl of the same snapshot, but the
@@ -92,6 +92,16 @@ entity id).
   may change — regenerate deliberately and review.
 - Test: `#up_45201358`-style path → unstable; a semantic id (`#main-nav`) →
   still stable; boundary cases at the chosen digit-run threshold.
+
+**Completed this session (2026-07-22).** Threshold chosen: a run of **4+
+consecutive digits** in an id or class token (`up_45201358` → unstable;
+`col2`, `h1`, `error404` → stable; boundary tested at `error404` vs.
+`item-1000`). Checks `elementId` and every `#id`/`.class` token in
+`cssPath` (covers entity tokens in ancestor segments). Role candidates
+unaffected, so POMs fall back to role for these elements. New
+`selector-candidates.test.ts` (the file previously had no dedicated
+tests). Goldens confirmed unchanged — no fixture carries a 4+-digit
+token.
 
 ## Session 4 — `[ ]` Proposed specs must verify actions against captured DOM (feedback #4)
 

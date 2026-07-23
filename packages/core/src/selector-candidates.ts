@@ -18,9 +18,22 @@ function isHashLikeClass(className: string): boolean {
   return !allLettersOnly
 }
 
+const ENTITY_DIGIT_RUN = /\d{4,}/
+
+function hasEntityDigitRun(token: string): boolean {
+  return ENTITY_DIGIT_RUN.test(token)
+}
+
+function cssPathIdAndClassTokens(cssPath: string): string[] {
+  const matches = cssPath.match(/[#.][^#.\s>:]+/g) ?? []
+  return matches.map((token) => token.slice(1))
+}
+
 function isCssStable(el: DomInteractiveElement): boolean {
   if (el.cssPath.includes(':nth-of-type')) return false
   if (el.classList.some(isHashLikeClass)) return false
+  if (el.elementId !== null && hasEntityDigitRun(el.elementId)) return false
+  if (cssPathIdAndClassTokens(el.cssPath).some(hasEntityDigitRun)) return false
   return true
 }
 
