@@ -40,12 +40,25 @@ function buildFieldAction(field: CapturedFormField | undefined, locator: string,
   return `  await ${locator}.fill(${JSON.stringify(value)})`
 }
 
-function buildSubmitLine(form: CapturedForm | undefined): string {
+const SUBMIT_NAME_PATTERN = /submit|create|save|continue|send/i
+
+function findSubmitShapedElement(interactiveElements: DomInteractiveElement[]): DomInteractiveElement | undefined {
+  return interactiveElements.find((el) => el.role === 'button' && SUBMIT_NAME_PATTERN.test(el.accessibleName))
+}
+
+function buildSubmitLine(form: CapturedForm | undefined, interactiveElements: DomInteractiveElement[], lastFilledLocator: string | null): string {
   const submitField = findSubmitField(form)
   if (submitField) {
     return `  await ${buildFieldLocator(submitField, submitField.accessibleName)}.click()`
   }
-  return `  await page.getByRole(${JSON.stringify('button')}, { name: /submit|create|save|continue|send/i }).click()`
+  const submitShaped = findSubmitShapedElement(interactiveElements)
+  if (submitShaped) {
+    return `  await ${buildContentElementLocator(submitShaped)}.click()`
+  }
+  if (lastFilledLocator) {
+    return `  // ${toSafeComment('No submit button exists anywhere in the captured form or page snapshot — this form likely submits on Enter.')}\n  await ${lastFilledLocator}.press('Enter')`
+  }
+  return `  // ${toSafeComment('No submit action generated: the captured form has no submit button and no fillable field to press Enter on.')}`
 }
 
 function buildContentElementLocator(element: DomInteractiveElement): string {
@@ -58,13 +71,15 @@ function buildContentElementLocator(element: DomInteractiveElement): string {
 
 function renderFormFillSpec(page: CrawledPage, assertion: FormFillAssertion): string {
   const form = page.forms[assertion.formIndex]
-  const fieldLines = assertion.fieldValues
+  const filledFields = assertion.fieldValues
     .map((fieldValue) => ({ fieldValue, field: form?.fields[fieldValue.fieldIndex] }))
     .filter(({ field }) => field?.role !== 'button')
-    .map(({ fieldValue, field }) => {
-      const locator = buildFieldLocator(field, fieldValue.accessibleName)
-      return buildFieldAction(field, locator, fieldValue.value)
-    })
+  const fieldLines = filledFields.map(({ fieldValue, field }) => {
+    const locator = buildFieldLocator(field, fieldValue.accessibleName)
+    return buildFieldAction(field, locator, fieldValue.value)
+  })
+  const lastFilled = filledFields[filledFields.length - 1]
+  const lastFilledLocator = lastFilled ? buildFieldLocator(lastFilled.field, lastFilled.fieldValue.accessibleName) : null
   return `${FORM_FILL_FILE_HEADER}
 
 import { test, expect } from '@playwright/test'
@@ -72,7 +87,7 @@ import { test, expect } from '@playwright/test'
 test.skip(${JSON.stringify(assertion.scenario)}, async ({ page }) => {
   await page.goto(${JSON.stringify(page.url)})
 ${fieldLines.join('\n')}
-${buildSubmitLine(form)}
+${buildSubmitLine(form, page.interactiveElements, lastFilledLocator)}
 
   // Unverified guess — treeline has not observed this page's real post-submission behavior:
   // ${toSafeComment(assertion.successAssertion)}

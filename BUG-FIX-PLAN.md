@@ -103,7 +103,7 @@ unaffected, so POMs fall back to role for these elements. New
 tests). Goldens confirmed unchanged — no fixture carries a 4+-digit
 token.
 
-## Session 4 — `[ ]` Proposed specs must verify actions against captured DOM (feedback #4)
+## Session 4 — `[x]` Proposed specs must verify actions against captured DOM (feedback #4)
 
 The proposed /newest spec clicks `getByRole("button", { name:
 /submit|create|save|continue|send/i })`, but HN's search form has no submit
@@ -122,6 +122,16 @@ snapshot, so the generator could have known.
 - Test: form with a real submit button → click (unchanged); form with no
   button anywhere in the capture → `press('Enter')` on the last filled
   field, no `/submit|create|save/i` regex anywhere in output.
+
+**Completed this session (2026-07-22).** `buildSubmitLine` now falls back
+form button → submit-shaped button (`role === 'button'` + name matching
+the old pattern) among *captured* `interactiveElements` (locator built
+from the real element via `buildContentElementLocator`) →
+`press('Enter')` on the last filled field with an honest `toSafeComment`
+note → comment-only line when there's also no fillable field (still
+passes the session-2 syntax gate, tested). The guessed-regex locator is
+gone from generated output entirely. Goldens unaffected (they skip
+interpretation); cli suite green.
 
 ## Session 5 — `[ ]` Entity extraction inconsistent across pages (feedback #6)
 

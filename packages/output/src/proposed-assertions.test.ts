@@ -3,6 +3,7 @@ import type { CapturedForm, DomInteractiveElement } from '@treeline/acquire'
 import type { ContentPresenceAssertion, FormFillAssertion, ProposedAssertion, StoredInterpretation } from '@treeline/core'
 import type { CrawledPage } from './input.js'
 import { generateProposedAssertionSpecs, renderProposedAssertionSpec } from './proposed-assertions.js'
+import { assertGeneratedArtifactParses } from './syntax-gate.js'
 
 function makeForm(overrides: Partial<CapturedForm> = {}): CapturedForm {
   return {
@@ -159,6 +160,52 @@ describe('renderProposedAssertionSpec', () => {
     const clickLines = code.split('\n').filter((line) => line.includes("name: \"Sign Up\""))
     expect(clickLines).toHaveLength(1)
     expect(clickLines[0]).toContain('.click()')
+  })
+
+  it('clicks a submit-shaped button found in the captured interactiveElements when the form itself has no button field', () => {
+    const buttonlessForm = makeForm({ fields: makeForm().fields.filter((f) => f.role !== 'button') })
+    const page = makePage({
+      forms: [buttonlessForm],
+      interactiveElements: [makeElement({ role: 'button', tagName: 'button', accessibleName: 'Send Message', cssPath: 'body > button' })],
+    })
+    const code = renderProposedAssertionSpec(page, makeAssertion())
+    expect(code).toContain(`page.getByRole("button", { name: "Send Message" }).click()`)
+    expect(code).not.toContain('submit|create|save')
+  })
+
+  it('presses Enter on the last filled field, with an honest comment, when no submit button exists anywhere in the capture', () => {
+    const buttonlessForm = makeForm({ fields: makeForm().fields.filter((f) => f.role !== 'button') })
+    const page = makePage({ forms: [buttonlessForm], interactiveElements: [] })
+    const code = renderProposedAssertionSpec(page, makeAssertion({
+      fieldValues: [{ fieldIndex: 0, accessibleName: 'Email', value: 'test@example.com' }],
+    }))
+    expect(code).toContain(`await page.getByRole("textbox", { name: "Email" }).press('Enter')`)
+    expect(code).toContain('// No submit button exists anywhere in the captured form or page snapshot')
+    expect(code).not.toContain('submit|create|save')
+    expect(code).not.toContain('.click()')
+  })
+
+  it('does not treat a non-submit-shaped captured button as the submit action', () => {
+    const buttonlessForm = makeForm({ fields: makeForm().fields.filter((f) => f.role !== 'button') })
+    const page = makePage({
+      forms: [buttonlessForm],
+      interactiveElements: [makeElement({ role: 'button', tagName: 'button', accessibleName: 'Open Menu', cssPath: 'body > nav > button' })],
+    })
+    const code = renderProposedAssertionSpec(page, makeAssertion({
+      fieldValues: [{ fieldIndex: 0, accessibleName: 'Email', value: 'test@example.com' }],
+    }))
+    expect(code).not.toContain('Open Menu')
+    expect(code).toContain(`.press('Enter')`)
+  })
+
+  it('emits a comment-only submit line that still parses when the form has no button and no fillable field', () => {
+    const buttonlessForm = makeForm({ fields: makeForm().fields.filter((f) => f.role !== 'button') })
+    const page = makePage({ forms: [buttonlessForm], interactiveElements: [] })
+    const code = renderProposedAssertionSpec(page, makeAssertion({ fieldValues: [] }))
+    expect(code).toContain('// No submit action generated')
+    expect(code).not.toContain('.press(')
+    expect(code).not.toContain('.click()')
+    expect(() => assertGeneratedArtifactParses('edge.proposed.spec.ts', code)).not.toThrow()
   })
 
   it('includes the success assertion and its unverified-guess caveat as comments', () => {
