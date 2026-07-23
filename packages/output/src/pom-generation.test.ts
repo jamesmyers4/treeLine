@@ -95,6 +95,16 @@ describe('generatePOM', () => {
     const assignmentLines = pom.code.split('\n').filter((line) => line.trim().startsWith('this.') && line.includes(' = page.'))
     expect(assignmentLines).toHaveLength(1)
   })
+
+  it('emits a legal identifier for a digit-leading accessibleName', () => {
+    const first = makeElement({ role: 'link', accessibleName: '3 minutes ago', cssPath: 'td > span.age > a', xpath: '/html/body/table/tbody/tr[1]/td[2]/span/a' })
+    const second = makeElement({ role: 'link', accessibleName: '3 minutes ago', cssPath: 'td > span.age2 > a', xpath: '/html/body/table/tbody/tr[2]/td[2]/span/a' })
+    const page = makePage({ interactiveElements: [first, second] })
+    const { pom } = generatePOM(page)
+    expect(pom.code).toContain('readonly _3MinutesAgoLink1: Locator')
+    expect(pom.code).toContain('readonly _3MinutesAgoLink2: Locator')
+    expect(pom.code).not.toMatch(/readonly \d/)
+  })
 })
 
 describe('generateSpec', () => {

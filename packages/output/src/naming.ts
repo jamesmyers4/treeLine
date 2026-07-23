@@ -12,6 +12,10 @@ function lowerFirst(word: string): string {
   return word[0]!.toLowerCase() + word.slice(1)
 }
 
+function sanitizeIdentifier(name: string): string {
+  return /^[0-9]/.test(name) ? `_${name}` : name
+}
+
 function getPathname(url: string): string {
   try {
     return new URL(url).pathname
@@ -30,7 +34,7 @@ export function urlToClassName(url: string): string {
   const pathname = getPathname(url)
   if (pathname === '/' || pathname === '') return 'HomePage'
   const words = pathSegments(url).map(capitalize)
-  return `${words.join('')}Page`
+  return sanitizeIdentifier(`${words.join('')}Page`)
 }
 
 export function urlToFileBaseName(url: string): string {
@@ -46,7 +50,7 @@ export function elementToPropertyName(element: DomInteractiveElement): string {
     const cleaned = name.replace(/[^a-zA-Z0-9]+/g, ' ').trim()
     const words = cleaned.split(/\s+/).filter((word) => word.length > 0)
     const camelName = words.map((word, i) => (i === 0 ? lowerFirst(word) : capitalize(word))).join('')
-    return `${camelName}${capitalize(element.role)}`
+    return sanitizeIdentifier(`${camelName}${capitalize(element.role)}`)
   }
   return `${lowerFirst(element.role)}${capitalize(element.tagName)}`
 }

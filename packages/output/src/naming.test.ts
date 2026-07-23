@@ -29,6 +29,10 @@ describe('urlToClassName', () => {
   it('derives a PascalCase name from a hyphenated path and strips .html', () => {
     expect(urlToClassName('https://example.com/our-brands.html')).toBe('OurBrandsPage')
   })
+
+  it('prefixes an underscore when the path starts with a digit', () => {
+    expect(urlToClassName('https://example.com/3d-printers')).toBe('_3dPrintersPage')
+  })
 })
 
 describe('urlToFileBaseName', () => {
@@ -59,6 +63,16 @@ describe('elementToPropertyName', () => {
   it('falls back to tagName + role when accessibleName is empty', () => {
     const el = makeElement({ role: 'nav', accessibleName: '', tagName: 'input' })
     expect(elementToPropertyName(el)).toBe('navInput')
+  })
+
+  it('prefixes an underscore when the accessibleName starts with a digit', () => {
+    const el = makeElement({ role: 'link', accessibleName: '3 minutes ago' })
+    expect(elementToPropertyName(el)).toBe('_3MinutesAgoLink')
+  })
+
+  it('does not prefix names that already start with a letter', () => {
+    const el = makeElement({ role: 'link', accessibleName: 'About 3 things' })
+    expect(elementToPropertyName(el)).toBe('about3ThingsLink')
   })
 })
 
