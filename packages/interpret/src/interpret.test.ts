@@ -238,6 +238,91 @@ describe('interpretPage', () => {
     expect(keyDataEntitiesSchema.description.length).toBeGreaterThan(0)
   })
 
+  it('instructs the model that keyDataEntities are entity types, never instances, in both the tool and schema descriptions', async () => {
+    const mockClient = makeMockClient(mockToolUseResponse)
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    await interpretPage(mockPageState)
+    const createCall = mockClient.messages.create.mock.calls[0][0]
+    const tool = createCall.tools[0]
+    expect(tool.description).toMatch(/entity type/i)
+    expect(tool.description).toMatch(/never an individual instance/i)
+    const keyDataEntitiesSchema = tool.input_schema.properties.keyDataEntities
+    expect(keyDataEntitiesSchema.description).toMatch(/entity type/i)
+    expect(keyDataEntitiesSchema.description).toMatch(/never an individual instance/i)
+    expect(keyDataEntitiesSchema.description).toMatch(/repeating list/i)
+  })
+
+  it('caps keyDataEntities at 15 and warns when the model enumerates a long list of instances', async () => {
+    const thirtyTitles = Array.from({ length: 30 }, (_, i) => `Story title number ${i}`)
+    const longListResponse = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_long_list',
+        name: 'interpret_page',
+        input: {
+          pageType: 'listing',
+          purpose: 'Show recent stories',
+          keyDataEntities: thirtyTitles,
+          confidence: 0.9
+        }
+      }]
+    }
+    const notApplicableContentResponse = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_content_na_cap',
+        name: 'propose_content_assertion',
+        input: { applicable: false, scenario: '', elementIndices: [], assertion: '' }
+      }]
+    }
+    const create = vi.fn()
+      .mockResolvedValueOnce(longListResponse)
+      .mockResolvedValueOnce(notApplicableContentResponse)
+    const mockClient = { messages: { create } }
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const result = await interpretPage(mockPageState)
+    expect(result.keyDataEntities).toEqual(thirtyTitles.slice(0, 15))
+    expect(warnSpy.mock.calls.some((call) => String(call[0]).includes('30 keyDataEntities'))).toBe(true)
+    warnSpy.mockRestore()
+  })
+
+  it('leaves keyDataEntities at or below the cap untouched, with no cap warning and no retry', async () => {
+    const fifteenTypes = Array.from({ length: 15 }, (_, i) => `entity type ${i}`)
+    const atCapResponse = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_at_cap',
+        name: 'interpret_page',
+        input: {
+          pageType: 'listing',
+          purpose: 'Show recent stories',
+          keyDataEntities: fifteenTypes,
+          confidence: 0.9
+        }
+      }]
+    }
+    const notApplicableContentResponse = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_content_na_atcap',
+        name: 'propose_content_assertion',
+        input: { applicable: false, scenario: '', elementIndices: [], assertion: '' }
+      }]
+    }
+    const create = vi.fn()
+      .mockResolvedValueOnce(atCapResponse)
+      .mockResolvedValueOnce(notApplicableContentResponse)
+    const mockClient = { messages: { create } }
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const result = await interpretPage(mockPageState)
+    expect(result.keyDataEntities).toEqual(fifteenTypes)
+    expect(warnSpy.mock.calls.some((call) => String(call[0]).includes('keyDataEntities'))).toBe(false)
+    expect(create).toHaveBeenCalledTimes(2)
+    warnSpy.mockRestore()
+  })
+
   it('makes a second (content-proposal) API call when the page has no forms, since content-presence proposal is now attempted instead', async () => {
     const notApplicableContentResponse = {
       content: [{

@@ -133,7 +133,7 @@ passes the session-2 syntax gate, tested). The guessed-regex locator is
 gone from generated output entirely. Goldens unaffected (they skip
 interpretation); cli suite green.
 
-## Session 5 — `[ ]` Entity extraction inconsistent across pages (feedback #6)
+## Session 5 — `[x]` Entity extraction inconsistent across pages (feedback #6)
 
 Atlas abstracts /newest's entities cleanly ("Story title", "Points",
 "Submission time") but lists thirty individual story titles as
@@ -150,6 +150,17 @@ abstraction level.
 - Verify against a real crawl of a list-heavy page (the golden-master
   fixtures skip interpretation, so this needs a real API-key run — HN
   /newest vs / is the exact reported case).
+
+**Completed this session (2026-07-23).** Entity-type guidance added to
+`interpret_page`'s tool description and `keyDataEntities` schema
+description (types never instances; repeating list → name the type once
+plus fields). Defensive cap: >15 entries triggers a `console.warn` naming
+the URL and truncates to 15 — flag/cap only, no rewriting of model text.
+Verified with a real 5-page HN crawl (interpretation on): `/` and `/front`
+now return the same 7 entity types `/newest` always did ("story title",
+"points", "submitter username", ...), no page enumerated instances, cap
+never fired. Goldens unchanged (they skip interpretation); interpret 43
+tests + cli 29 tests green.
 
 ## Session 6 — `[ ]` ZBUGS.md: HN's orange not captured by color report
 

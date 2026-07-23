@@ -7,6 +7,7 @@ import { HAIKU_MODEL, SONNET_MODEL } from "./models.js";
 
 const MAX_INTERPRETATION_ATTEMPTS = 2;
 const MAX_PROPOSAL_ATTEMPTS = 2;
+const MAX_KEY_DATA_ENTITIES = 15;
 
 const UNVERIFIED_GUESS_CAVEAT =
   "This success assertion is an unverified guess: treeline never fills or submits real forms, so it has not observed this page's actual post-submission behavior.";
@@ -56,7 +57,7 @@ async function runBaseInterpretation(
         {
           name: "interpret_page",
           description:
-            "Interpret a web page from its aria snapshot. keyDataEntities must be an array of distinct entity name strings, never a single comma-separated string.",
+            "Interpret a web page from its aria snapshot. keyDataEntities must be an array of distinct entity name strings, never a single comma-separated string. Each entry names an entity type the page displays, never an individual instance of one.",
           input_schema: {
             type: "object",
             properties: {
@@ -66,7 +67,7 @@ async function runBaseInterpretation(
                 type: "array",
                 items: { type: "string" },
                 description:
-                  "An array of distinct entity name strings, never a single comma-separated string.",
+                  "An array of distinct entity name strings, never a single comma-separated string. Each entry is an entity type, never an individual instance: if the page shows a repeating list of similar items, name the entity type once plus its fields (for a story list: 'story title', 'points', 'submission time'), never one entry per item — never enumerate the items themselves.",
               },
               confidence: { type: "number" },
             },
@@ -129,10 +130,17 @@ async function runBaseInterpretation(
         `interpret_page tool_use input has unexpected shape for URL: ${pageState.url}`,
       );
     }
+    let keyDataEntities = input.keyDataEntities as string[];
+    if (keyDataEntities.length > MAX_KEY_DATA_ENTITIES) {
+      console.warn(
+        `interpret_page returned ${keyDataEntities.length} keyDataEntities for URL: ${pageState.url} — likely enumerating instances instead of entity types; capping to ${MAX_KEY_DATA_ENTITIES}`,
+      );
+      keyDataEntities = keyDataEntities.slice(0, MAX_KEY_DATA_ENTITIES);
+    }
     return {
       pageType: input.pageType as string,
       purpose: input.purpose as string,
-      keyDataEntities: input.keyDataEntities as string[],
+      keyDataEntities,
       confidence: input.confidence as number,
     };
   }
