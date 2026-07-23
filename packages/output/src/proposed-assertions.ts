@@ -2,6 +2,7 @@ import type { CapturedForm, CapturedFormField, DomInteractiveElement } from '@tr
 import type { ContentPresenceAssertion, FormFillAssertion, ProposedAssertion, StoredInterpretation } from '@treeline/core'
 import type { CrawledPage } from './input.js'
 import { assignUniqueNames } from './naming.js'
+import { assertGeneratedArtifactParses } from './syntax-gate.js'
 import type { GeneratedSpec } from './types.js'
 
 const FORM_FILL_FILE_HEADER = `// AI-PROPOSED TEST — UNVERIFIED, NOT RUN AGAINST THE REAL PAGE.
@@ -116,10 +117,10 @@ export function generateProposedAssertionSpecs(pages: CrawledPage[], interpretat
     const proposedAssertion = interpretationsByUrl.get(page.url)?.proposedAssertion
     if (!proposedAssertion) continue
     const assigned = assignments.get(page.url)!
-    specs.push({
-      fileName: `${assigned.fileBaseName}.proposed.spec.ts`,
-      code: renderProposedAssertionSpec(page, proposedAssertion),
-    })
+    const fileName = `${assigned.fileBaseName}.proposed.spec.ts`
+    const code = renderProposedAssertionSpec(page, proposedAssertion)
+    assertGeneratedArtifactParses(fileName, code)
+    specs.push({ fileName, code })
   }
   return specs
 }

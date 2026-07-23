@@ -36,7 +36,7 @@ produces `class 3dPrintersPage`.
 
 **Completed this session (2026-07-22).** Goldens confirmed unchanged.
 
-## Session 2 — `[ ]` Syntax gate on generated artifacts (feedback #1b)
+## Session 2 — `[x]` Syntax gate on generated artifacts (feedback #1b)
 
 "A proposal that doesn't parse wastes the reviewer's time budget."
 
@@ -61,6 +61,16 @@ produces `class 3dPrintersPage`.
 - Test: feed a known-bad render (e.g. force an unsanitized identifier
   through) and assert the gate rejects it; assert all current golden
   scenario artifacts pass it.
+
+**Completed this session (2026-07-22).** `syntax-gate.ts` in
+`packages/output` (parse check via `ts.transpileModule` +
+`reportDiagnostics` — public API, same syntactic diagnostics as
+`createSourceFile`'s internal `parseDiagnostics`), wired inside
+`generatePOMsAndSpecs` (POMs + specs) and `generateProposedAssertionSpecs`
+(proposed specs) so no `packages/cli` change was needed; `typescript`
+promoted from devDependency to real dependency of `@treeline/output`.
+Golden scenarios all pass with the gate active in the generation path;
+goldens unchanged.
 
 ## Session 3 — `[ ]` Stability ranking trusts entity-id selectors (feedback #2)
 

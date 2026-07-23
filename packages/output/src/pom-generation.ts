@@ -2,6 +2,7 @@ import type { DomInteractiveElement } from '@treeline/acquire'
 import { computeSelectorCandidates } from '@treeline/core'
 import type { CrawledPage } from './input.js'
 import { urlToClassName, urlToFileBaseName, elementToPropertyName, deduplicatePropertyNames, assignUniqueNames } from './naming.js'
+import { assertGeneratedArtifactParses } from './syntax-gate.js'
 import type { GeneratedPOM, GeneratedSpec, LocatorStrategy, POMGenerationResult, SelectorCandidate, SkippedElement } from './types.js'
 
 const STRATEGY_PRIORITY: LocatorStrategy[] = ['role', 'testid', 'css', 'xpath']
@@ -107,8 +108,11 @@ export function generatePOMsAndSpecs(pages: CrawledPage[]): POMGenerationResult 
   for (const page of capturedPages) {
     const assigned = assignments.get(page.url)!
     const result = buildPOM(page, assigned.className, `${assigned.fileBaseName}.page.ts`)
+    assertGeneratedArtifactParses(result.pom.fileName, result.pom.code)
+    const spec = generateSpec(result.pom, page.url)
+    assertGeneratedArtifactParses(spec.fileName, spec.code)
     poms.push(result.pom)
-    specs.push(generateSpec(result.pom, page.url))
+    specs.push(spec)
     skipped.push(...result.skipped)
   }
   for (const collision of collisions) {
