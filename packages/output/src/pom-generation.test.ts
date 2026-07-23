@@ -107,6 +107,103 @@ describe('generatePOM', () => {
   })
 })
 
+function makeHnFixture(rowCount: number): DomInteractiveElement[] {
+  const elements: DomInteractiveElement[] = []
+  for (let i = 1; i <= rowCount; i++) {
+    const storyId = 45201358 + i
+    elements.push(
+      makeElement({
+        role: 'link',
+        accessibleName: 'upvote',
+        elementId: `up_${storyId}`,
+        cssPath: `#up_${storyId}`,
+        xpath: `/html/body/table/tbody/tr[${i}]/td[1]/a`,
+      }),
+    )
+    elements.push(
+      makeElement({
+        role: 'link',
+        accessibleName: `Story number ${i}`,
+        cssPath: `table > tbody > tr.athing:nth-of-type(${i}) > td.title > span.titleline > a`,
+        xpath: `/html/body/table/tbody/tr[${i}]/td[2]/span/a`,
+      }),
+    )
+    elements.push(
+      makeElement({
+        role: 'text',
+        accessibleName: `${i} points`,
+        tagName: 'span',
+        cssPath: `table > tbody > tr.athing:nth-of-type(${i}) > td.subtext > span.score`,
+        xpath: `/html/body/table/tbody/tr[${i}]/td[3]/span`,
+      }),
+    )
+  }
+  return elements
+}
+
+describe('generatePOM — repeating rows (feedback #3)', () => {
+  it('emits one row component class + indexed accessor for a 30-row repeating region instead of per-instance fields', () => {
+    const page = makePage({ interactiveElements: makeHnFixture(30) })
+    const { pom } = generatePOM(page)
+    expect(pom.code).toContain('export class AthingRow {')
+    expect(pom.code).toContain('readonly root: Locator')
+    expect(pom.code).toContain('readonly titleLink: Locator')
+    expect(pom.code).toContain('readonly subtextText: Locator')
+    expect(pom.code).toContain('this.titleLink = root.locator("td.title > span.titleline > a")')
+    expect(pom.code).toContain('this.subtextText = root.locator("td.subtext > span.score")')
+    expect(pom.code).toContain('athingRow(index: number): AthingRow {')
+    expect(pom.code).toContain('return new AthingRow(this.page.locator("table > tbody > tr.athing").nth(index))')
+  })
+
+  it('does not emit 30 separate per-story fields on the page class for the row-covered elements', () => {
+    const page = makePage({ interactiveElements: makeHnFixture(30) })
+    const { pom } = generatePOM(page)
+    expect(pom.code).not.toContain('titleLink1')
+    expect(pom.code).not.toContain('storyNumber1Link')
+    const pageClassStart = pom.code.indexOf('export class AboutPage')
+    const pageClassBody = pom.code.slice(pageClassStart)
+    expect(pageClassBody).not.toContain('td.title > span.titleline > a')
+  })
+
+  it('also row-ifies an entity-id-keyed repeating group (no ancestor nth-of-type, e.g. HN vote links) via a shared role+name row root', () => {
+    const page = makePage({ interactiveElements: makeHnFixture(30) })
+    const { pom } = generatePOM(page)
+    expect(pom.code).toContain('export class UpvoteLinkRow {')
+    expect(pom.code).toContain('readonly upvoteLink: Locator')
+    expect(pom.code).toContain('this.upvoteLink = root')
+    expect(pom.code).toContain('upvoteLinkRow(index: number): UpvoteLinkRow {')
+    expect(pom.code).toContain('return new UpvoteLinkRow(this.page.getByRole("link", { name: "upvote" }).nth(index))')
+    expect(pom.code).not.toContain('readonly upvoteLink1: Locator')
+  })
+
+  it('leaves a flat entity-id repeating group un-row-ified when its members do not share one accessibleName', () => {
+    const elements: DomInteractiveElement[] = []
+    for (let i = 1; i <= 5; i++) {
+      elements.push(makeElement({ role: 'link', accessibleName: `reply to comment ${i}`, elementId: `reply_${1000000 + i}`, cssPath: `#reply_${1000000 + i}`, xpath: `/x${i}` }))
+    }
+    const page = makePage({ interactiveElements: elements })
+    const { pom } = generatePOM(page)
+    expect(pom.code).not.toContain('Row {')
+    expect(pom.code).toContain('readonly replyToComment1Link: Locator')
+    expect(pom.code).toContain('readonly replyToComment5Link: Locator')
+  })
+
+  it('does not row-ify a duplicate-destinations-shaped page with only two same-text links (below MIN_REPEATING_INSTANCE_COUNT)', () => {
+    const first = makeElement({ role: 'link', accessibleName: 'Read more', cssPath: 'main > article:nth-of-type(1) > a.cta', xpath: '/html/body/main/article[1]/a' })
+    const second = makeElement({ role: 'link', accessibleName: 'Read more', cssPath: 'main > article:nth-of-type(2) > a.cta', xpath: '/html/body/main/article[2]/a' })
+    const page = makePage({ interactiveElements: [first, second] })
+    const { pom } = generatePOM(page)
+    expect(pom.code).not.toContain('Row {')
+    expect(pom.code).toContain('readonly readMoreLink1: Locator')
+    expect(pom.code).toContain('readonly readMoreLink2: Locator')
+  })
+
+  it('generated row component code passes the syntax gate (parses as valid TypeScript)', () => {
+    const page = makePage({ interactiveElements: makeHnFixture(30) })
+    expect(() => generatePOM(page)).not.toThrow()
+  })
+})
+
 describe('generateSpec', () => {
   it('imports the POM file and asserts the page URL', () => {
     const el = makeElement({ role: 'link', accessibleName: 'About' })

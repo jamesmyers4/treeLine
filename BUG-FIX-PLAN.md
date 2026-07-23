@@ -196,14 +196,14 @@ tests) and `@treeline/cli` suite (29 tests, golden-master included) both
 green with goldens unchanged, as expected since `color-report.md` is
 excluded from golden comparison. `ZBUGS.md` entry annotated resolved.
 
-## Sessions 7-9 — `[ ]` Repeating regions → row component + deduped selector report (feedback #3 + #7)
+## Sessions 7-9 — `[x]` Repeating regions → row component + deduped selector report (feedback #3 + #7)
 
 These two share one underlying capability — detecting that thirty sibling
 `tr.athing` rows have identical internal structure — so they're sequenced
 as one arc, detection first. Highest-leverage change for the consuming QA
 engineer; also the largest, hence scheduled after the small fixes.
 
-- **Session 7 — detection utility** (`packages/output`, new
+- **Session 7 — `[x]` detection utility** (`packages/output`, new
   `repeating-regions.ts`): group a page's `interactiveElements` into
   repeating patterns — same (role, tagName) sequence under sibling parent
   paths (cssPaths differing only in an index/entity segment; Session 3's
@@ -212,7 +212,24 @@ engineer; also the largest, hence scheduled after the small fixes.
   function + unit tests against an HN-shaped fixture (30 identical rows)
   and a negative case (heterogeneous page → no groups). No consumer changes
   yet, so no golden churn.
-- **Session 8 — POM row component** (`packages/output`,
+  **Completed this session (2026-07-23).** `detectRepeatingRegions` groups
+  elements by `${role} ${tagName} ${normalizedCssPath}`, where
+  normalization replaces `:nth-of-type(N)` indices with a placeholder and
+  any 4+-digit entity token with a placeholder (same threshold as Session
+  3's `isCssStable`, reimplemented locally rather than importing core's
+  unexported helpers — kept the session single-package as planned).
+  `MIN_REPEATING_INSTANCE_COUNT = 3`, exported so Session 8 doesn't
+  re-decide it. Verified against an HN-shaped fixture (30 rows × 3
+  within-row element kinds: entity-id vote link, nth-of-type-scoped title
+  link, nth-of-type-scoped points span) — correctly produces exactly 3
+  pattern groups of 30 instances each. Negative cases covered: a
+  heterogeneous page (no groups), and — the specific risk this plan
+  flagged — two same-text `duplicate-destinations`-shaped links across
+  unrelated containers (count 2, below threshold, correctly not grouped).
+  No consumer changes; `@treeline/output` (211 tests) and `@treeline/cli`
+  (29 tests, golden-master included) both green, goldens unchanged as
+  expected.
+- **Session 8 — `[x]` POM row component** (`packages/output`,
   `pom-generation.ts`): for a detected repeating region, emit one
   `StoryRow`-style class (one Locator per within-row element, scoped to a
   row root locator) plus an indexed accessor on the page class
@@ -223,11 +240,113 @@ engineer; also the largest, hence scheduled after the small fixes.
   same-text links must not be misclassified as a repeating region — only
   structural repetition of sibling containers qualifies, minimum instance
   count to be decided in-session, e.g. ≥3).
-- **Session 9 — selector report dedup** (`packages/output`,
+  **Completed this session (2026-07-23).** Two row-building strategies in
+  `pom-generation.ts`, both consuming Session 7's `detectRepeatingRegions`:
+  (1) **structural rows** — pattern groups whose signature contains an
+  `:nth-of-type(N)` ancestor segment get clustered by that shared ancestor
+  (the "anchor"); groups sharing an anchor become one row class with one
+  field per group, each field a CSS locator relative to a shared row-root
+  Locator (`page.locator(rowRootCss).nth(index)`), verified safe by
+  requiring every member's *raw* (unnormalized) suffix path to be
+  textually identical before trusting it as a generic relative selector —
+  skips row-ification rather than emit a wrong selector if that check
+  fails. (2) **flat entity-id rows** — groups with no `nth-of-type` anchor
+  at all (HN's `#up_<storyid>` vote links: the entity id sits directly on
+  the leaf element, so there's no ancestor segment to cluster on) instead
+  row-ify via a shared `getByRole(role, {name})` root, reusing exactly the
+  selector `selectStableCandidate` already picks for these elements today
+  (role is always `stable:true` when available and wins
+  `STRATEGY_PRIORITY` regardless of uniqueness) — gated on every member
+  sharing one `accessibleName`, since a generic per-index root locator
+  only works if the role+name pair is instance-invariant; falls back to
+  today's flat per-element fields, unchanged, when names differ. Verified
+  against an HN-shaped fixture (30 rows): title-link + points-span
+  collapse into one `AthingRow` class (2 fields) + `athingRow(index)`;
+  vote links collapse into a second `UpvoteLinkRow` class (1 field) +
+  `upvoteLinkRow(index)` — combined, this is the full ~230-field page
+  reduced to 2 row classes and 2 accessors, not a partial fix limited to
+  the nth-of-type case. `duplicate-destinations`' two same-text links
+  correctly stay flat (count 2, below `MIN_REPEATING_INSTANCE_COUNT`) —
+  confirmed both via a dedicated unit test and via the real golden-master
+  suite. New `sanitizeIdentifier`/`capitalize` exports added to
+  `naming.ts` (one-line each) so row/field names get the same Session-1
+  digit-leading-identifier guarantee as page-level names; still a single
+  logical session, no second package touched. **Goldens unchanged** — none
+  of the three fixture scenarios (`static-site`, `form-and-api`,
+  `duplicate-destinations`) contain a page with a genuine ≥3-instance
+  repeating region, so nothing exercises the new code path at the
+  golden-master level; confirmed via `git status` on
+  `packages/cli/test/golden/` showing no diff, not assumed. The feature
+  itself is verified via `@treeline/output`'s new unit tests (6 new tests,
+  217 total) plus a manual generated-code sanity check (real fixture
+  input → inspected the emitted `.page.ts` text directly). `@treeline/cli`
+  (29 tests, golden-master included) green. **Addendum from Session 9:**
+  the "goldens unchanged" conclusion above was correct for POM/spec output
+  specifically, but only because `buildStructuralRows`'s own empty-suffix
+  safety check happened to decline the one case in these fixtures that
+  should never have been grouped in the first place (`static-site`'s
+  3-item nav) — see Session 9's writeup below for the real bug this
+  masked in `detectRepeatingRegions` itself, fixed retroactively in
+  Session 7's detector rather than patched around here.
+- **Session 9 — `[x]` selector report dedup** (`packages/output`,
   `selector-report.ts`): report each repeating pattern once with an
   instance count and one representative entry (410 KB → order of magnitude
   smaller). Non-pattern elements render as today. Goldens change —
   regenerate deliberately.
+  **Completed this session (2026-07-23), including a retroactive Session 7
+  fix.** `generateSelectorReport` now runs `detectRepeatingRegions` per
+  page and, for each returned pattern group, emits only ONE
+  `SelectorReportEntry` (the first member, in document order) carrying a
+  new `instanceCount` field; every other member of that group is dropped
+  from the report entirely. Non-grouped elements are unaffected —
+  `instanceCount: 1`. `renderSelectorReportMarkdown` gained an `Instances`
+  column (`"30 (1 shown)"` for a deduped entry, `"1"` otherwise) rather
+  than silently shrinking the table with no explanation. **Running this
+  against the real golden-master suite (not just unit tests) surfaced a
+  real, consequential bug in Session 7's `detectRepeatingRegions` that
+  unit tests had missed**: `static-site`'s ordinary 3-item nav
+  (`nav > a:nth-of-type(1/2/3)`, i.e. Home/About/Contact) was being
+  grouped as one fake "repeating pattern" of 3, collapsing three
+  *genuinely different* links into a single reported entry — because
+  normalization-by-cssPath alone doesn't distinguish "an ancestor
+  container repeats, with real internal structure" (HN's `tr.athing`,
+  the intended case) from "N unrelated siblings happen to share a tag
+  under one parent" (any ordinary nav/footer with 3+ links, an extremely
+  common real-world shape). The fix, per this repo's "fix the root cause,
+  backtrack if needed" practice: `detectRepeatingRegions` now rejects a
+  group outright when the varying `:nth-of-type` sits on the *leaf*
+  segment of its own structural signature (`leafSegmentVariesByPosition`)
+  — i.e. only ancestor-level position variation (real "row" containers)
+  qualifies, never variation on the target element's own sibling index.
+  Two new regression tests in `repeating-regions.test.ts` lock this in:
+  the 3-item-nav false positive (now correctly returns no groups), and a
+  same-shape-but-legitimate case (`ul > li:nth-of-type(N) > a`, variation
+  on the ancestor `li`, not the leaf `a`) confirming the fix doesn't
+  overcorrect. This also retroactively explains why Session 8 saw zero
+  golden churn on `static-site`'s POMs — `buildStructuralRows`'s own
+  empty-suffix safety check happened to decline that exact case for an
+  unrelated reason (no content past the nav's own leaf segment), so the
+  POM path was accidentally safe while the newly-written selector-report
+  path was not; both are now correct for the same, single reason instead
+  of one being correct by coincidence. Verified: `@treeline/output` (10
+  new tests across `repeating-regions.test.ts` and `selector-report.test.ts`,
+  224 total) green after the fix, with no regressions to the Session
+  7/8 HN-fixture tests (title-link/points-span/vote-link groups are
+  unaffected — none of their leaf segments carry their own `nth-of-type`).
+  **Goldens changed exactly as predicted, and only where predicted**: all
+  three fixtures' `selector-report.md` gained the `Instances` column
+  (every value `1`, since none of the three fixtures contain a genuine
+  ≥3-instance repeating region — confirmed, not assumed, same as Session
+  8). `UPDATE_GOLDEN=1` was run once across the whole suite to review the
+  diff; it also rewrote unrelated POM/spec/`atlas.md`/`coverage-report.md`/
+  `testid-audit.md`/`flow-map.md` golden files with nothing but a new
+  ephemeral fixture-server port and timestamp baked in (an artifact of
+  `compareOrUpdateGoldenFile` storing raw, not normalized, content — the
+  comparison step normalizes both sides at compare-time regardless) — those
+  were reverted via `git checkout` before committing, since they carry zero
+  real content change and would just be noise in the diff; only the three
+  `selector-report.md` files were kept. `@treeline/cli` (29 tests,
+  golden-master included) green on the reduced, reviewed diff.
 
 ## Sessions 10-12 — `[ ]` Assertable data sources report (feedback #5)
 

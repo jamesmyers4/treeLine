@@ -6,6 +6,7 @@ export interface SelectorReportEntry {
   url: string
   elementDescription: string
   candidates: SelectorCandidate[]
+  instanceCount: number
 }
 
 export interface PageSelectorReport {

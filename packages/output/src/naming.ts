@@ -2,7 +2,7 @@ import type { DomInteractiveElement } from '@treeline/acquire'
 import { normalizeUrl } from '@treeline/core'
 import type { PomFileNameCollision } from './types.js'
 
-function capitalize(word: string): string {
+export function capitalize(word: string): string {
   if (word.length === 0) return word
   return word[0]!.toUpperCase() + word.slice(1)
 }
@@ -12,7 +12,7 @@ function lowerFirst(word: string): string {
   return word[0]!.toLowerCase() + word.slice(1)
 }
 
-function sanitizeIdentifier(name: string): string {
+export function sanitizeIdentifier(name: string): string {
   return /^[0-9]/.test(name) ? `_${name}` : name
 }
 
