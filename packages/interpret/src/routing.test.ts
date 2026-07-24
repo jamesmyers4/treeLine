@@ -16,7 +16,8 @@ function makePageState(ariaSnapshot: string): PageState {
     axeViolations: [],
     axeIncomplete: [],
     forms: [],
-    colorPalette: []
+    colorPalette: [],
+    assertableAttributes: []
   }
 }
 

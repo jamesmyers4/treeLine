@@ -27,7 +27,8 @@ function makePageState(url: string): PageState {
     axeViolations: [],
     axeIncomplete: [],
     forms: [],
-    colorPalette: []
+    colorPalette: [],
+    assertableAttributes: []
   }
 }
 

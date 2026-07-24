@@ -348,7 +348,7 @@ engineer; also the largest, hence scheduled after the small fixes.
   `selector-report.md` files were kept. `@treeline/cli` (29 tests,
   golden-master included) green on the reduced, reviewed diff.
 
-## Sessions 10-12 — `[ ]` Assertable data sources report (feedback #5)
+## Sessions 10-12 — `[x]` Assertable data sources report (feedback #5)
 
 The `.age` span's `title` attribute carries the exact timestamp a test
 wants to assert on, and no report mentions it. New capability: surface
@@ -376,6 +376,79 @@ Follows the proven capture → persist → render+wire session split
   automatic report (always-on, same posture as color-report: attributes
   are visible to any human viewing source). Update CLAUDE.md's report
   count/list.
+
+**Completed this session (2026-07-23).** Field-by-field shape settled
+before coding: `AssertableAttribute { attributeName, value, role,
+accessibleName, tagName, testId, cssPath }` (`packages/acquire/src/types.ts`),
+new `PageState.assertableAttributes` field.
+- **Session 10.** `extractAssertableAttributes` in `capture.ts`, shaped
+  like `extractColorPalette`: fixed selector `body, header, nav, main,
+footer, h1-h6, p, a, button, input, select, textarea, span, li, td, th,
+time, [title], [datetime], [role]` (broader than the color/interactive
+  selectors — `span`/`li`/`td`/`th` are exactly where a real assertable
+  value like HN's `.age` span or an e-commerce price tag lives). Since
+  `[data-*]` isn't valid CSS, `data-*` attributes are enumerated per
+  matched element in the `$$eval` callback rather than selected directly.
+  Two deliberate exclusions caught before writing any test: `data-testid`
+  (already surfaced by every other report — including it here would just
+  be noise) and this file's own `data-treeline-appeared-at` instrumentation
+  attribute (session 40's appearance tracker) — a dedicated regression test
+  proves the exclusion is load-bearing, not just that it happens not to
+  fire, by tagging a real dynamically-inserted element with both a `title`
+  and the instrumentation attribute and asserting the latter never
+  surfaces. Capped at `MAX_ASSERTABLE_ATTRIBUTES = 50` per page. Verified
+  with 5 new real-browser tests against a local fixture server (title,
+  datetime, data-* + testId, the instrumentation-attribute exclusion, and
+  the field's presence on the real `PageState`). Shared-type fallout: one
+  fixture in `server.test.ts` fixed. `@treeline/acquire`: 76 tests green.
+- **Session 11.** New `assertableAttributes` JSON TEXT column on `pages`
+  (`packages/core/src/persistence.ts`), identical `JSON.stringify`/`parse`
+  pattern to `colorPalette`. Three round-trip tests (non-empty, empty-as-
+  `[]`, isolation across rows), mirroring the existing `colorPalette
+persistence` block. Shared-type fallout: three fixtures (`diff.test.ts`,
+  `screenshot-diff.test.ts`, `timing-diff.test.ts`) fixed. `@treeline/core`:
+  96 tests green.
+- **Session 12.** `packages/output/src/assertable-data-report.ts` —
+  per-page tables (`## <url>` heading, `| Element | Attribute | Value |
+Suggested Locator |`), every dynamic value through
+  `sanitizeMarkdownTableCell`. Suggested-locator fallback chain mirrors
+  `proposed-assertions.ts`'s existing `buildContentElementLocator`
+  precedent exactly: `getByRole(role, {name})` when both role and
+  accessibleName are present → `getByTestId` → plain `locator(cssPath)`.
+  Wired into `treeline crawl` as an automatic (always-on, no new flag)
+  report, one call in `orchestrate.ts` alongside `color-report.md`.
+  CLAUDE.md's report list/count updated. Shared-type fallout: 16
+  `CrawledPage`/`PageState` test fixtures across `packages/output`,
+  `packages/cli`, `packages/interpret`, and `packages/pages` needed the new
+  required field — full six-package build sweep run per the standing
+  gotcha, not just `output`+`cli`. 11 new unit tests in
+  `assertable-data-report.test.ts`.
+- **Bonus fix, found during the mandated full build sweep, unrelated to
+  feedback #5:** `packages/pages/src/injection-safety.test.ts`'s cell-count
+  assertion (`expect(cellCount).toBe(5)`) was already failing on a clean
+  `main` checkout before this session touched anything — confirmed via
+  `git stash` — because Session 9's `Instances` column addition to
+  `selector-report.md` made the row 6 cells wide, not 5, and nothing in
+  the standard per-session verify loop runs `@treeline/pages`'s test suite
+  (only `@treeline/cli`'s). Fixed (`5` → `6`) as part of this session
+  rather than left failing on `main`.
+- **Verified against real data, not just fixtures:** a real local fixture
+  server (`<span class="age" title="2014-08-05T20:05:57">1994 days
+ago</span>`, a real `<time datetime="2024-01-15">`, and a `<span
+data-price="19.99" data-testid="price-tag">`) crawled end-to-end via the
+  real `treeline crawl` CLI produced a real `assertable-data-report.md`
+  with the exact captured ISO timestamp, datetime, and price value, and
+  correctly-differentiated suggested locators (`page.locator("span.age:
+nth-of-type(1)")`, `page.locator("time")`,
+  `page.getByTestId("price-tag")`) — this is the literal HN `.age`-span
+  scenario the feedback named, confirmed working end-to-end rather than
+  only unit-tested.
+- **Goldens confirmed unchanged** — none of the three golden-master
+  fixture scenarios (`static-site`, `form-and-api`, `duplicate-destinations`)
+  carry a `title`/`datetime`/`data-*` attribute, so `assertable-data-report.md`
+  renders its "no captured assertable attributes" fallback content for all
+  three; `@treeline/cli` (29 tests, golden-master included) green with no
+  `UPDATE_GOLDEN` run needed.
 
 ---
 

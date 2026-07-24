@@ -78,6 +78,7 @@ async function buildAdversarialReportsDir(): Promise<string> {
     axeIncomplete: [],
     forms: [],
     colorPalette: [],
+    assertableAttributes: [],
   })
   const pages = db.getAllPages()
   db.close()
@@ -126,7 +127,7 @@ describe('adversarial crawled content through the real report + rendering pipeli
     const rowMatch = html.match(/<tr>\s*<td>.*?<\/tr>/s)
     expect(rowMatch).not.toBeNull()
     const cellCount = (rowMatch![0].match(/<td>/g) ?? []).length
-    expect(cellCount).toBe(5)
+    expect(cellCount).toBe(6)
     expect(html).toContain('Evil | Injected | Column')
   })
 

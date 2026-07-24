@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import Database from 'better-sqlite3'
-import type { AxeIncompleteResult, AxeViolation, CapturedForm, ColorSwatch, DomInteractiveElement, NetworkEntry, PageState } from '@treeline/acquire'
+import type { AssertableAttribute, AxeIncompleteResult, AxeViolation, CapturedForm, ColorSwatch, DomInteractiveElement, NetworkEntry, PageState } from '@treeline/acquire'
 import type { CrawlConfig, HardPageReasonCode, ProposedAssertion, StoredInterpretation } from './types.js'
 import { urlHash } from './url-utils.js'
 
@@ -32,7 +32,8 @@ export function openCrawlDb(dbPath: string) {
       axeViolations TEXT,
       axeIncomplete TEXT,
       forms TEXT,
-      colorPalette TEXT
+      colorPalette TEXT,
+      assertableAttributes TEXT
     );
     CREATE TABLE IF NOT EXISTS interpretations (
       url TEXT PRIMARY KEY,
@@ -63,8 +64,8 @@ export function openCrawlDb(dbPath: string) {
         screenshotPath = join('screenshots', fileName)
       }
       db.prepare(`
-        INSERT OR REPLACE INTO pages (url, title, ariaSnapshot, links, networkLog, screenshotPath, capturedAt, pageLoadMs, status, interactiveElements, axeViolations, axeIncomplete, forms, colorPalette)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO pages (url, title, ariaSnapshot, links, networkLog, screenshotPath, capturedAt, pageLoadMs, status, interactiveElements, axeViolations, axeIncomplete, forms, colorPalette, assertableAttributes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         pageState.url,
         pageState.title,
@@ -80,6 +81,7 @@ export function openCrawlDb(dbPath: string) {
         JSON.stringify(pageState.axeIncomplete),
         JSON.stringify(pageState.forms),
         JSON.stringify(pageState.colorPalette),
+        JSON.stringify(pageState.assertableAttributes),
       )
     },
     pageExists(url: string): boolean {
@@ -115,6 +117,7 @@ export function openCrawlDb(dbPath: string) {
       axeIncomplete: AxeIncompleteResult[]
       forms: CapturedForm[]
       colorPalette: ColorSwatch[]
+      assertableAttributes: AssertableAttribute[]
       status: string
     }> {
       const rows = db.prepare('SELECT * FROM pages').all() as Array<Record<string, string | number | Buffer | null>>
@@ -134,6 +137,9 @@ export function openCrawlDb(dbPath: string) {
         axeIncomplete: row.axeIncomplete ? (JSON.parse(row.axeIncomplete as string) as AxeIncompleteResult[]) : [],
         forms: row.forms ? (JSON.parse(row.forms as string) as CapturedForm[]) : [],
         colorPalette: row.colorPalette ? (JSON.parse(row.colorPalette as string) as ColorSwatch[]) : [],
+        assertableAttributes: row.assertableAttributes
+          ? (JSON.parse(row.assertableAttributes as string) as AssertableAttribute[])
+          : [],
         status: (row.status as string) ?? '',
       }))
     },

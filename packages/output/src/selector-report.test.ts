@@ -33,6 +33,7 @@ function makePage(url: string, interactiveElements: DomInteractiveElement[]): Cr
     axeIncomplete: [],
     forms: [],
     colorPalette: [],
+    assertableAttributes: [],
     status: 'ok',
   }
 }

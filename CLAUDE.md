@@ -114,19 +114,38 @@ Real example, from `packages/cli`:
 pnpm exec tsx src/index.ts crawl https://example.com --max-pages 5
 ```
 
-`crawl` generates nine reports per run, under `<output>/reports/`:
+`crawl` generates ten reports per run, under `<output>/reports/`:
 `selector-report.md`, `testid-audit.md`, `atlas.md`, `axe-report.md`,
 `flow-map.md`, `coverage-report.md` (session 38), `timing-report.md`
 (session 41), `proposal-coverage-report.md` (session 46), `color-report.md`
-(session 48) — plus, for any page with a captured form and a meaningful
+(session 48), `assertable-data-report.md` (BUG-FIX-PLAN.md sessions 10-12,
+feedback #5) — plus, for any page with a captured form and a meaningful
 proposed scenario, a `<page>.proposed.spec.ts` alongside the trusted
 generated specs (session 42, always `test.skip`-wrapped, never merged into
-the trusted spec). A tenth report, `reports/api-test-scaffold.md` (session
-55), is **conditional, not automatic** — it's only written when the crawl
-had `--capture-request-bodies` and/or `--capture-response-bodies` set; with
-neither flag, it isn't written at all (no new CLI flag of its own — see
-`TreelineCrawlSummary.apiTestScaffoldGenerated`). Don't be surprised by its
-absence on an ordinary crawl; that's correct, not a regression.
+the trusted spec). An eleventh report, `reports/api-test-scaffold.md`
+(session 55), is **conditional, not automatic** — it's only written when
+the crawl had `--capture-request-bodies` and/or `--capture-response-bodies`
+set; with neither flag, it isn't written at all (no new CLI flag of its
+own — see `TreelineCrawlSummary.apiTestScaffoldGenerated`). Don't be
+surprised by its absence on an ordinary crawl; that's correct, not a
+regression.
+
+`assertable-data-report.md` surfaces elements carrying machine-readable
+values (`title`, `datetime`, `data-*` attributes) that a test can assert on
+directly instead of a relative/human string — e.g. HN's `.age` span's
+`title` attribute carries the exact ISO timestamp behind "3 minutes ago".
+New `PageState.assertableAttributes` field
+(`packages/acquire/src/capture.ts`'s `extractAssertableAttributes`, fixed
+selector `body, header, nav, main, footer, h1-h6, p, a, button, input,
+select, textarea, span, li, td, th, time, [title], [datetime], [role]` —
+`[data-*]` isn't valid CSS, so `data-*` attributes are enumerated per
+matched element instead, deliberately excluding `data-testid` (already
+covered by every other report) and this file's own `data-treeline-appeared-at`
+instrumentation attribute from session 40's appearance tracker), capped at
+`MAX_ASSERTABLE_ATTRIBUTES = 50` entries per page. Persisted as a JSON TEXT
+column on `pages`, same round-trip pattern as `colorPalette`. Always-on,
+same posture as `color-report.md` — these attributes are already visible
+to any human viewing page source, so no new CLI flag.
 
 `diff` writes `reports/diff-report.md` into the current-run output
 directory, plus `reports/visual-diffs/*.png` — one pixel-diff image per

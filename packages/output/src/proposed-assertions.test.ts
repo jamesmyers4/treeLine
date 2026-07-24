@@ -61,6 +61,7 @@ function makePage(overrides: Partial<CrawledPage> = {}): CrawledPage {
     axeIncomplete: [],
     forms: [makeForm()],
     colorPalette: [],
+    assertableAttributes: [],
     status: 'ok',
     ...overrides,
   }
@@ -249,6 +250,7 @@ describe('renderProposedAssertionSpec — content-presence', () => {
       axeIncomplete: [],
       forms: [],
       colorPalette: [],
+      assertableAttributes: [],
       status: 'ok',
       ...overrides,
     }

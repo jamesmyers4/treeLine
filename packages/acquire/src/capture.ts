@@ -1,6 +1,6 @@
 import { AxeBuilder } from '@axe-core/playwright'
 import type { Browser, BrowserContext, Page, Request } from 'playwright'
-import type { AcquireOptions, AxeIncompleteResult, AxeViolation, CapturedForm, CaptureHandler, ColorSwatch, DomInteractiveElement, NetworkEntry, PageState, RequestBodyContentTypeCategory } from './types.js'
+import type { AcquireOptions, AssertableAttribute, AxeIncompleteResult, AxeViolation, CapturedForm, CaptureHandler, ColorSwatch, DomInteractiveElement, NetworkEntry, PageState, RequestBodyContentTypeCategory } from './types.js'
 import { launchHardened } from './launch.js'
 import { AuthExpiredError, AuthWallError, SeedAuthenticationError, checkAuthStillValid } from './auth.js'
 
@@ -11,6 +11,8 @@ const DEFAULT_MAX_REQUEST_BODY_BYTES = 65536
 const CAPTURABLE_RESOURCE_TYPES = new Set(['xhr', 'fetch'])
 const COLOR_SELECTOR = 'body, header, nav, main, footer, h1, h2, h3, h4, h5, h6, p, a, button, input, [class*="btn" i], table, tr, td, th'
 const MAX_COLOR_SWATCHES = 20
+const ASSERTABLE_SELECTOR = 'body, header, nav, main, footer, h1, h2, h3, h4, h5, h6, p, a, button, input, select, textarea, span, li, td, th, time, [title], [datetime], [role]'
+const MAX_ASSERTABLE_ATTRIBUTES = 50
 
 function parseQueryParams(url: string): Record<string, string> {
   try {
@@ -250,6 +252,87 @@ export async function extractColorPalette(page: Page): Promise<ColorSwatch[]> {
     return Array.from(counts.values()).sort((a, b) => b.usageCount - a.usageCount)
   })
   return swatches.slice(0, MAX_COLOR_SWATCHES)
+}
+
+export async function extractAssertableAttributes(page: Page): Promise<AssertableAttribute[]> {
+  const attributes = await page.$$eval(
+    ASSERTABLE_SELECTOR,
+    (els, excludedAttr) => {
+      const computeCssPath = (target: Element): string => {
+        if (target === document.body) return 'body'
+        if (target.id && document.querySelectorAll(`#${CSS.escape(target.id)}`).length === 1) {
+          return `#${CSS.escape(target.id)}`
+        }
+        const parts: string[] = []
+        let current: Element | null = target
+        while (current && current !== document.body && current.parentElement) {
+          const currentTag = current.tagName.toLowerCase()
+          let selector = currentTag
+          const classes = Array.from(current.classList)
+          if (classes.length > 0) selector += '.' + classes.map((c) => CSS.escape(c)).join('.')
+          const parent: Element = current.parentElement
+          const siblings = Array.from(parent.children).filter((c) => c.tagName === current!.tagName)
+          if (siblings.length > 1) {
+            const index = siblings.indexOf(current) + 1
+            selector += `:nth-of-type(${index})`
+          }
+          parts.unshift(selector)
+          current = parent
+        }
+        return parts.join(' > ')
+      }
+      const computeAccessibleName = (el: Element): string => {
+        const ariaLabel = el.getAttribute('aria-label')
+        if (ariaLabel) return ariaLabel.trim()
+        const labelledBy = el.getAttribute('aria-labelledby')
+        if (labelledBy) {
+          const labelEl = document.getElementById(labelledBy)
+          if (labelEl) return labelEl.textContent?.trim() ?? ''
+        }
+        return el.textContent?.trim() ?? ''
+      }
+      const results: Array<{
+        attributeName: string
+        value: string
+        role: string
+        accessibleName: string
+        tagName: string
+        testId: string | null
+        cssPath: string
+      }> = []
+      for (const el of els) {
+        const title = el.getAttribute('title')
+        const datetime = el.getAttribute('datetime')
+        const dataAttrs = Array.from(el.attributes).filter(
+          (attr) =>
+            attr.name.startsWith('data-') &&
+            attr.name !== 'data-testid' &&
+            attr.name !== excludedAttr &&
+            attr.value.trim() !== '',
+        )
+        const hasTitle = title !== null && title.trim() !== ''
+        const hasDatetime = datetime !== null && datetime.trim() !== ''
+        if (!hasTitle && !hasDatetime && dataAttrs.length === 0) continue
+        const tagName = el.tagName.toLowerCase()
+        const role = el.getAttribute('role') ?? ''
+        const accessibleName = computeAccessibleName(el)
+        const testId = el.getAttribute('data-testid')
+        const cssPath = computeCssPath(el)
+        if (hasTitle) {
+          results.push({ attributeName: 'title', value: title!.trim(), role, accessibleName, tagName, testId, cssPath })
+        }
+        if (hasDatetime) {
+          results.push({ attributeName: 'datetime', value: datetime!.trim(), role, accessibleName, tagName, testId, cssPath })
+        }
+        for (const attr of dataAttrs) {
+          results.push({ attributeName: attr.name, value: attr.value.trim(), role, accessibleName, tagName, testId, cssPath })
+        }
+      }
+      return results
+    },
+    APPEARED_ATTR,
+  )
+  return attributes.slice(0, MAX_ASSERTABLE_ATTRIBUTES)
 }
 
 export async function capturePage(url: string, options?: AcquireOptions): Promise<PageState> {
@@ -522,6 +605,7 @@ async function captureWithContext(url: string, context: BrowserContext, options?
   )
   const forms = await extractForms(page)
   const colorPalette = await extractColorPalette(page)
+  const assertableAttributes = await extractAssertableAttributes(page)
   let screenshot: Buffer | null = null
   try {
     screenshot = await page.screenshot({ type: 'png', fullPage: true })
@@ -543,6 +627,7 @@ async function captureWithContext(url: string, context: BrowserContext, options?
     axeIncomplete,
     forms,
     colorPalette,
+    assertableAttributes,
   }
   if (options?.detectAuthWall && !options?.authSession) {
     const hasPasswordField = forms.some((form) => form.fields.some((field) => field.inputType === 'password'))

@@ -37,6 +37,16 @@ export interface ColorSwatch {
   exampleSelector: string
 }
 
+export interface AssertableAttribute {
+  attributeName: string
+  value: string
+  role: string
+  accessibleName: string
+  tagName: string
+  testId: string | null
+  cssPath: string
+}
+
 export interface AxeViolationNode {
   target: string[]
   html: string
@@ -99,6 +109,7 @@ export interface PageState {
   axeIncomplete: AxeIncompleteResult[]
   forms: CapturedForm[]
   colorPalette: ColorSwatch[]
+  assertableAttributes: AssertableAttribute[]
 }
 
 export interface AcquireOptions {

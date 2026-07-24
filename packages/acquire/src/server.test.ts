@@ -22,6 +22,7 @@ const mockPageState: PageState = {
   axeIncomplete: [],
   forms: [],
   colorPalette: [],
+  assertableAttributes: [],
 }
 
 describe('server', () => {

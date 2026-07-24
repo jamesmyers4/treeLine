@@ -118,6 +118,7 @@ describe('renderOutputToHtml', () => {
       axeIncomplete: [],
       forms: [],
       colorPalette: [],
+      assertableAttributes: [],
     })
     db.close()
 

@@ -50,6 +50,7 @@ function makePage(url: string, screenshot: Buffer | null): PageState {
     axeIncomplete: [],
     forms: [],
     colorPalette: [],
+    assertableAttributes: [],
   }
 }
 

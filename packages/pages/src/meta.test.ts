@@ -58,6 +58,7 @@ describe('buildRunMeta', () => {
       axeIncomplete: [],
       forms: [],
       colorPalette: [],
+      assertableAttributes: [],
     })
     db.close()
 

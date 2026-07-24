@@ -1,7 +1,7 @@
 import { createServer } from 'node:http'
 import type { Server } from 'node:http'
 import { describe, expect, it, beforeAll, afterAll } from 'vitest'
-import { capturePage, extractColorPalette } from './capture.js'
+import { capturePage, extractAssertableAttributes, extractColorPalette } from './capture.js'
 import { launchHardened } from './launch.js'
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
@@ -423,5 +423,109 @@ fetch('/data').then(() => {
     expect(typeof delayed!.appearedAtMs).toBe('number')
     expect(delayed!.appearedAtMs).toBeGreaterThan(400)
     expect(delayed!.appearedAtMs).toBeLessThan(10000)
+  }, 30000)
+})
+
+describe('extractAssertableAttributes (feedback #5 — assertable data sources)', () => {
+  let server: Server
+  let baseUrl: string
+
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.end(`<!doctype html>
+<html><body>
+<span class="age" title="2014-08-05T20:05:57">1994 days ago</span>
+<time datetime="2024-01-15">January 15, 2024</time>
+<span data-price="19.99" data-testid="price-tag">$19.99</span>
+<button title="hint text" data-treeline-appeared-at="123">Ignored instrumentation attr</button>
+<p>No assertable attributes here</p>
+</body></html>`)
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const addr = server.address() as { port: number }
+    baseUrl = `http://127.0.0.1:${addr.port}`
+  })
+
+  afterAll(() => {
+    server.close()
+  })
+
+  it('captures a title attribute (HN .age-span shape) with real cssPath and accessibleName', async () => {
+    const browser = await launchHardened()
+    try {
+      const context = await browser.newContext()
+      const page = await context.newPage()
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
+      const attributes = await extractAssertableAttributes(page)
+      const titleEntry = attributes.find((a) => a.attributeName === 'title' && a.value === '2014-08-05T20:05:57')
+      expect(titleEntry).toBeDefined()
+      expect(titleEntry!.accessibleName).toBe('1994 days ago')
+      expect(titleEntry!.cssPath.length).toBeGreaterThan(0)
+    } finally {
+      await browser.close()
+    }
+  }, 30000)
+
+  it('captures a datetime attribute on a <time> element', async () => {
+    const browser = await launchHardened()
+    try {
+      const context = await browser.newContext()
+      const page = await context.newPage()
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
+      const attributes = await extractAssertableAttributes(page)
+      const datetimeEntry = attributes.find((a) => a.attributeName === 'datetime')
+      expect(datetimeEntry).toBeDefined()
+      expect(datetimeEntry!.value).toBe('2024-01-15')
+    } finally {
+      await browser.close()
+    }
+  }, 30000)
+
+  it('captures a real data-* attribute, carries the real testId, and excludes data-testid itself', async () => {
+    const browser = await launchHardened()
+    try {
+      const context = await browser.newContext()
+      const page = await context.newPage()
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
+      const attributes = await extractAssertableAttributes(page)
+      const priceEntry = attributes.find((a) => a.attributeName === 'data-price')
+      expect(priceEntry).toBeDefined()
+      expect(priceEntry!.value).toBe('19.99')
+      expect(priceEntry!.testId).toBe('price-tag')
+      expect(attributes.find((a) => a.attributeName === 'data-testid')).toBeUndefined()
+    } finally {
+      await browser.close()
+    }
+  }, 30000)
+
+  it('never surfaces the internal data-treeline-appeared-at instrumentation attribute', async () => {
+    const browser = await launchHardened()
+    try {
+      const context = await browser.newContext()
+      const page = await context.newPage()
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
+      const attributes = await extractAssertableAttributes(page)
+      expect(attributes.find((a) => a.attributeName === 'data-treeline-appeared-at')).toBeUndefined()
+      const hintTitle = attributes.find((a) => a.attributeName === 'title' && a.value === 'hint text')
+      expect(hintTitle).toBeDefined()
+    } finally {
+      await browser.close()
+    }
+  }, 30000)
+
+  it('includes assertableAttributes on the real PageState returned by capturePage', async () => {
+    const result = await capturePage(baseUrl)
+    expect(Array.isArray(result.assertableAttributes)).toBe(true)
+    expect(result.assertableAttributes.length).toBeGreaterThan(0)
+    for (const attr of result.assertableAttributes) {
+      expect(typeof attr.attributeName).toBe('string')
+      expect(typeof attr.value).toBe('string')
+      expect(typeof attr.role).toBe('string')
+      expect(typeof attr.accessibleName).toBe('string')
+      expect(typeof attr.tagName).toBe('string')
+      expect(attr.testId === null || typeof attr.testId === 'string').toBe(true)
+      expect(typeof attr.cssPath).toBe('string')
+    }
   }, 30000)
 })

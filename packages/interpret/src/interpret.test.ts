@@ -21,7 +21,8 @@ const mockPageState: PageState = {
   axeViolations: [],
   axeIncomplete: [],
   forms: [],
-  colorPalette: []
+  colorPalette: [],
+  assertableAttributes: []
 }
 
 const mockToolUseResponse = {

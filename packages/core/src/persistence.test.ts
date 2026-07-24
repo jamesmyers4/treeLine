@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import type { CapturedForm, ColorSwatch, DomInteractiveElement, NetworkEntry, PageState } from '@treeline/acquire'
+import type { AssertableAttribute, CapturedForm, ColorSwatch, DomInteractiveElement, NetworkEntry, PageState } from '@treeline/acquire'
 import type { CrawlConfig, StoredInterpretation } from './types.js'
 import { openCrawlDb } from './persistence.js'
 
@@ -13,6 +13,7 @@ function makePage(
   forms: CapturedForm[] = [],
   screenshot: Buffer | null = null,
   colorPalette: ColorSwatch[] = [],
+  assertableAttributes: AssertableAttribute[] = [],
 ): PageState {
   return {
     url,
@@ -28,6 +29,7 @@ function makePage(
     axeIncomplete: [],
     forms,
     colorPalette,
+    assertableAttributes,
   }
 }
 
@@ -37,6 +39,19 @@ function makeColorSwatch(overrides: Partial<ColorSwatch> = {}): ColorSwatch {
     property: 'background-color',
     usageCount: 3,
     exampleSelector: 'body',
+    ...overrides,
+  }
+}
+
+function makeAssertableAttribute(overrides: Partial<AssertableAttribute> = {}): AssertableAttribute {
+  return {
+    attributeName: 'title',
+    value: '2014-08-05T20:05:57',
+    role: '',
+    accessibleName: '1994 days ago',
+    tagName: 'span',
+    testId: null,
+    cssPath: '.age',
     ...overrides,
   }
 }
@@ -75,6 +90,7 @@ function makePageWithNetworkLog(url: string, networkLog: NetworkEntry[]): PageSt
     axeIncomplete: [],
     forms: [],
     colorPalette: [],
+    assertableAttributes: [],
   }
 }
 
@@ -195,6 +211,48 @@ describe('colorPalette persistence', () => {
     expect(pageA.colorPalette).toEqual(paletteA)
     expect(pageB.colorPalette).toEqual(paletteB)
     expect(pageC.colorPalette).toEqual([])
+  })
+})
+
+describe('assertableAttributes persistence (feedback #5 — assertable data sources)', () => {
+  it('round-trips a non-empty assertableAttributes array field', () => {
+    const assertableAttributes = [
+      makeAssertableAttribute(),
+      makeAssertableAttribute({ attributeName: 'data-price', value: '19.99', tagName: 'span', accessibleName: '$19.99', testId: 'price-tag', cssPath: '.price' }),
+    ]
+    const db = openCrawlDb(dbPath)
+    db.recordPageState(makePage('https://example.com/', [], null, [], assertableAttributes))
+    const pages = db.getAllPages()
+    db.close()
+    expect(pages).toHaveLength(1)
+    expect(pages[0].assertableAttributes).toEqual(assertableAttributes)
+  })
+
+  it('round-trips an empty assertableAttributes array as [] not undefined/null', () => {
+    const db = openCrawlDb(dbPath)
+    db.recordPageState(makePage('https://example.com/no-attrs', [], null, [], []))
+    const pages = db.getAllPages()
+    db.close()
+    expect(pages[0].assertableAttributes).toEqual([])
+    expect(pages[0].assertableAttributes).not.toBeUndefined()
+    expect(pages[0].assertableAttributes).not.toBeNull()
+  })
+
+  it('keeps assertableAttributes isolated per page across multiple rows', () => {
+    const attrsA = [makeAssertableAttribute({ value: 'a' })]
+    const attrsB = [makeAssertableAttribute({ value: 'b' }), makeAssertableAttribute({ attributeName: 'datetime', value: '2024-01-15' })]
+    const db = openCrawlDb(dbPath)
+    db.recordPageState(makePage('https://example.com/a', [], null, [], attrsA))
+    db.recordPageState(makePage('https://example.com/b', [], null, [], attrsB))
+    db.recordPageState(makePage('https://example.com/c', [], null, [], []))
+    const pages = db.getAllPages()
+    db.close()
+    const pageA = pages.find((p) => p.url === 'https://example.com/a')!
+    const pageB = pages.find((p) => p.url === 'https://example.com/b')!
+    const pageC = pages.find((p) => p.url === 'https://example.com/c')!
+    expect(pageA.assertableAttributes).toEqual(attrsA)
+    expect(pageB.assertableAttributes).toEqual(attrsB)
+    expect(pageC.assertableAttributes).toEqual([])
   })
 })
 

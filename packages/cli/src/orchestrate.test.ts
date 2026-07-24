@@ -150,6 +150,9 @@ describe('runTreelineCrawl', () => {
     const colorReport = readFileSync(join(outputDir, 'reports', 'color-report.md'), 'utf-8')
     expect(colorReport.length).toBeGreaterThan(0)
     expect(colorReport).toContain('# Color Report')
+    const assertableDataReport = readFileSync(join(outputDir, 'reports', 'assertable-data-report.md'), 'utf-8')
+    expect(assertableDataReport.length).toBeGreaterThan(0)
+    expect(assertableDataReport).toContain('# Assertable Data Report')
     const pomFiles = readdirSync(join(outputDir, 'poms'))
     const specFiles = readdirSync(join(outputDir, 'specs'))
     expect(pomFiles).toHaveLength(Object.keys(pages).length)
@@ -307,6 +310,7 @@ function makePage(
     axeIncomplete: [],
     forms: [],
     colorPalette: [],
+    assertableAttributes: [],
   }
 }
 

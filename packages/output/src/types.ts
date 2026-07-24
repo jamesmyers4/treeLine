@@ -1,6 +1,6 @@
 export type { LocatorStrategy, SelectorCandidate } from '@treeline/core'
 import type { HardPageEntry, SelectorCandidate } from '@treeline/core'
-import type { CapturedForm, ColorSwatch } from '@treeline/acquire'
+import type { AssertableAttribute, CapturedForm, ColorSwatch } from '@treeline/acquire'
 
 export interface SelectorReportEntry {
   url: string
@@ -232,6 +232,23 @@ export interface ColorReport {
   generatedAt: string
   pages: PageColorEntry[]
   siteWideScheme: AggregatedColorEntry[]
+}
+
+export interface AssertableDataRow {
+  attributeName: string
+  value: string
+  elementDescription: string
+  suggestedLocator: string
+}
+
+export interface PageAssertableDataEntry {
+  url: string
+  rows: AssertableDataRow[]
+}
+
+export interface AssertableDataReport {
+  generatedAt: string
+  pages: PageAssertableDataEntry[]
 }
 
 export type CaptureFieldStatus = 'captured' | 'not-applicable' | 'not-captured'

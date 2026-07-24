@@ -21,6 +21,7 @@ function makePage(url: string, pageLoadMs: number): PageState {
     axeIncomplete: [],
     forms: [],
     colorPalette: [],
+    assertableAttributes: [],
   }
 }
 

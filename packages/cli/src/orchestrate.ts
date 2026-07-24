@@ -27,6 +27,8 @@ import {
   renderProposalCoverageReportMarkdown,
   generateColorReport,
   renderColorReportMarkdown,
+  generateAssertableDataReport,
+  renderAssertableDataReportMarkdown,
   generateApiTestScaffold,
   renderApiTestScaffoldMarkdown,
   classifyChange,
@@ -208,6 +210,8 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
     await writeFile(join(reportsDir, 'proposal-coverage-report.md'), renderProposalCoverageReportMarkdown(proposalCoverageReport))
     const colorReport = generateColorReport(pages)
     await writeFile(join(reportsDir, 'color-report.md'), renderColorReportMarkdown(colorReport))
+    const assertableDataReport = generateAssertableDataReport(pages)
+    await writeFile(join(reportsDir, 'assertable-data-report.md'), renderAssertableDataReportMarkdown(assertableDataReport))
     const apiTestScaffoldGenerated = crawlConfig.captureRequestBodies === true || crawlConfig.captureResponseBodies === true
     if (apiTestScaffoldGenerated) {
       const apiTestScaffold = generateApiTestScaffold(pages, {
