@@ -1,8 +1,8 @@
 # treeline — CONTEXT.md
 
-_Last updated after session 56. This file reflects what's actually built and
-verified, not just the original plan — see the "Status" section for what's
-done vs. remaining._
+_Last updated after the BUG-FIX-PLAN.md QA-feedback fixes (2026-07-23). This
+file reflects what's actually built and verified, not just the original
+plan — see the "Status" section for what's done vs. remaining._
 
 ## What it is
 
@@ -1098,6 +1098,96 @@ boundary=...`, an empty content type, and a genuinely unrecognized one.
   - **Docker cleanup skipped again, same reasoning as session 55**: the
     instance predates this session and wasn't spun up by it; left running
     rather than recycled.
+- **QA feedback fixes** (`BUG-FIX-PLAN.md`, 8 items from a real Claude Code
+  agent's consumption of a real HN crawl, plus one `ZBUGS.md` entry;
+  sessions dated 2026-07-22/23, all complete) — the first time this repo's
+  own generated output was stress-tested by an actual downstream consumer
+  writing test automation against it, rather than by treeline's own authors.
+  Full operational detail (exact thresholds, exact fallback chains, exact
+  test counts) lives in CLAUDE.md's session notes inline in the file
+  itself; this is the "why" summary:
+  - **Generated code could fail to compile** — an accessibleName or URL
+    segment starting with a digit (`"3 minutes ago"`, `/3d-printers`)
+    produced an illegal TS identifier. Fixed with a `sanitizeIdentifier`
+    helper in `naming.ts` (prefix `_`), applied once at the end of name
+    generation so later steps (dedup, collision suffixes) can't reintroduce
+    it. This is the same class of bug the syntax gate below exists to catch
+    generally, not just for this one case.
+  - **Nothing verified generated artifacts actually parse before shipping
+    them** — a `syntax-gate.ts` in `packages/output` (TypeScript compiler
+    API, parse-diagnostics only — a full `tsc` type-check isn't possible
+    here since generated code imports `@playwright/test`, not a dependency
+    of this repo's own test setup) now gates every generated POM/spec/
+    proposed-spec, failing loudly with the file name and diagnostic rather
+    than silently shipping broken output.
+  - **Selector stability trusted entity-id selectors** — HN's `#up_<storyid>`
+    vote-anchor CSS selectors were rated `stable` because they're unique and
+    survive a same-snapshot re-crawl, but a per-item entity id is exactly
+    the *least* stable thing across real time. Fixed in
+    `packages/core/selector-candidates.ts`'s `isCssStable`: a 4+-consecutive-
+    digit run in an id/class token (checked against `elementId` and every
+    `cssPath` segment) now marks the CSS candidate unstable — same
+    normalization instinct as the pre-existing `isHashLikeClass` check,
+    applied to digit runs instead of hash-shaped classes. Role candidates
+    are unaffected, so POM generation falls back to role for these elements
+    rather than losing coverage.
+  - **A proposed spec clicked a button that was never actually captured** —
+    `buildSubmitLine`'s old fallback matched a submit-shaped button by
+    guessed regex (`/submit|create|save|continue|send/i`) even when no such
+    element existed in the real DOM capture (HN's search form submits on
+    Enter, no button at all). This is the same "never treat a model's
+    freeform text as a lookup key against structured data" principle the
+    session-42 gotcha already established, applied one layer further:
+    now the fallback chain is captured form button → captured submit-shaped
+    button (checked against real `interactiveElements`, not guessed) →
+    `press('Enter')` on the last filled field with an honest comment. Never
+    emits a locator for anything treeline didn't actually capture.
+  - **`keyDataEntities` conflated entity types with entity instances** — the
+    same crawl abstracted `/newest` cleanly ("story title", "points") but
+    listed 30 individual story titles as entities on `/` and `/front`, same
+    site, same schema, wildly different abstraction level. Fixed with
+    tightened prompt/schema guidance in `packages/interpret` (types, never
+    instances; name a repeating list's type once) plus a defensive
+    `console.warn` + truncate at 15 entries — a cap/flag only, deliberately
+    not a rewrite of model output, per this repo's standing rule against
+    treating model text as ground truth.
+  - **HN's site-defining orange wasn't in the color report** (`ZBUGS.md`) —
+    root-caused to a `bgcolor` table attribute (`#ff6600` on a `<tr>`/`<td>`,
+    HN being a table-layout site) that `extractColorPalette`'s structural
+    selector never sampled because it had no table elements in it at all.
+    Fixed by adding `table, tr, td, th` to `COLOR_SELECTOR`, reproduced
+    first against a local fixture mimicking the exact table-bgcolor shape
+    per this repo's real-fixture-not-live-site discipline.
+  - **Thirty near-identical HN story rows produced ~230 flat POM fields and
+    a 410 KB selector report** — the single largest-leverage fix in the
+    batch. New `detectRepeatingRegions` (`packages/output`) groups
+    interactive elements into repeating structural patterns (shared
+    (role, tagName) sequence under sibling containers, normalized the same
+    way the entity-id fix above normalizes digit-run tokens). Consumed two
+    ways: POM generation now emits one row class + an indexed accessor
+    (`storyRow(index)`) instead of per-instance fields, and
+    `selector-report.md` reports each pattern once with an `Instances`
+    count instead of enumerating every member. **A real false positive
+    caught only by running the full golden-master suite, not unit tests
+    alone:** an ordinary 3-item nav (Home/About/Contact) was initially
+    misdetected as a "repeating region," collapsing three genuinely
+    different links into one report row. Root cause: normalizing by
+    cssPath alone can't distinguish "a container repeats, with real
+    internal structure" (HN's row, the intended case) from "N unrelated
+    siblings happen to share a tag under one parent" (a completely
+    ordinary nav shape). Fixed by rejecting any group whose position
+    variation sits on the *leaf* segment of its own structural signature —
+    only ancestor-level repetition qualifies. Worth remembering as a
+    general lesson: a structural-similarity heuristic needs a case
+    distinguishing "real repeated substructure" from "coincidentally
+    similar unrelated siblings" before it's safe to act on.
+  - **No report surfaced machine-readable assertion values** — the `.age`
+    span's `title` attribute carries the exact ISO timestamp behind "3
+    minutes ago," useful to a test author, and nothing mentioned it. New
+    capability, not a bug fix: `assertable-data-report.md`, following this
+    repo's proven capture → persist → render+wire session-split pattern.
+    See the `PageState.assertableAttributes` entry above for the capture
+    shape.
 
 ## Authenticated crawling (sessions 49-52, built and verified)
 
@@ -1624,6 +1714,17 @@ Grew significantly beyond the original plan through sessions 1, 4.5, 4.6, 9,
   judgment on flagged elements only; this reports the actual color values
   used across the page regardless of whether axe flagged anything. Feeds
   `color-report.md`'s site-wide scheme and per-page sections.
+- `assertableAttributes: AssertableAttribute[]` (BUG-FIX-PLAN.md sessions
+  10-12) — elements carrying a machine-readable value a test can assert on
+  directly instead of a relative/human string (`title`, `datetime`,
+  `data-*`), sampled over a fixed structural selector deliberately broader
+  than `colorPalette`'s (adds `span, li, td, th, time` — exactly where a
+  real assertable value like HN's `.age` span or a price tag lives),
+  capped at `MAX_ASSERTABLE_ATTRIBUTES = 50` per page. Deliberately
+  excludes `data-testid` (already covered elsewhere) and the session-40
+  appearance-tracker's own `data-treeline-appeared-at` instrumentation
+  attribute. Feeds `assertable-data-report.md`. See "QA feedback fixes"
+  below for the full origin.
 
 ## Crawl scope & boundaries
 
