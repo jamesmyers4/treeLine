@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { CapturedForm, DomInteractiveElement } from '@treeline/acquire'
-import type { ContentPresenceAssertion, FormFillAssertion, ProposedAssertion, StoredInterpretation } from '@treeline/core'
+import type { ContentPresenceAssertion, FormFillAssertion, StoredInterpretation } from '@treeline/core'
 import type { CrawledPage } from './input.js'
 import { generateProposedAssertionSpecs, renderProposedAssertionSpec } from './proposed-assertions.js'
 import { assertGeneratedArtifactParses } from './syntax-gate.js'

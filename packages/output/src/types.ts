@@ -1,6 +1,6 @@
 export type { LocatorStrategy, SelectorCandidate } from '@treeline/core'
 import type { HardPageEntry, SelectorCandidate } from '@treeline/core'
-import type { AssertableAttribute, CapturedForm, ColorSwatch } from '@treeline/acquire'
+import type { CapturedForm, ColorSwatch } from '@treeline/acquire'
 
 export interface SelectorReportEntry {
   url: string

@@ -87,6 +87,7 @@ golden/<scenario>/`, compared via `test/normalize-golden.ts` — separate
 pnpm install
 pnpm --filter @treeline/<package> build
 pnpm --filter @treeline/<package> test
+pnpm --filter @treeline/<package> lint
 pnpm --filter @treeline/cli dev -- crawl <url> [--stealth] [--max-pages n]
   [--max-depth n] [--throttle-ms n] [--output dir] [--skip-interpretation]
   [--insecure-certs] [--capture-response-bodies] [--max-response-body-bytes n]
@@ -154,7 +155,8 @@ page with a genuine visual change — automatically, with no new CLI flag.
 ### CI — running the test suite
 
 `.github/workflows/test.yml` (session 58, `GOLDEN-MASTER-BUILDOUT.md`) runs
-`pnpm -r test` on every push and pull request targeting `main` — separate
+`pnpm -r lint` then `pnpm -r test` on every push and pull request targeting
+`main` — separate
 file from `crawl.yml` below, different trigger model
 (`workflow_dispatch` vs. `push`/`pull_request`). Same browser/display setup
 `crawl.yml` already uses (cached Playwright chromium install, Xvfb via
@@ -259,6 +261,9 @@ All six packages should build and pass cleanly. If `packages/cli`'s test
 run shows a wall of unrelated failures importing `@playwright/test`, check
 that `packages/cli/vitest.config.ts` exists and excludes
 `treeline-output/**` — see "Operational gotchas" below.
+
+`pnpm -r lint` should also pass clean across every package (see
+"Operational gotchas" for what it does and does not check yet).
 
 Then confirm the real end-to-end crawl command still works:
 
@@ -482,6 +487,23 @@ test setup). If you see a wall of unrelated-looking test failures in`packages/cl
   generated Playwright spec code, not vitest tests, and hit the exact same
   `@playwright/test`-import failure if vitest's default glob is allowed to
   collect them. Don't remove this second exclusion entry either.
+- **`pnpm lint` is real, not a stub.** Root `eslint.config.mjs` (flat config,
+  ESLint 9 + typescript-eslint 8) applies repo-wide; each package's own
+  `lint` script (`eslint src`, or `eslint src test` for `cli`, which also has
+  hand-written fixture/test files outside `src`) scopes what gets linted the
+  same way each package's own `test` script already scopes vitest.
+  `treeline-output/**`, `test/golden/**`, `old-docs/**`, and `hard-pages/**`
+  are globally ignored, same reasoning as the vitest exclusions above.
+  **This is `tseslint.configs.recommended`, not `recommendedTypeChecked`** —
+  a deliberate scope cut, not an oversight: type-aware rules (e.g.
+  `no-floating-promises`, genuinely valuable for a codebase this async-heavy)
+  need every linted file to sit inside a tsconfig's `include`, and
+  `packages/cli/test/*.test.ts` currently doesn't sit inside any tsconfig's
+  `include` (only `src` does, per each package's `tsconfig.json`). Turning on
+  type-aware linting without first sorting that out would either silently
+  skip those files or error on every one of them. If a future session wants
+  type-aware rules, sort the tsconfig-inclusion question first, don't just
+  flip the config.
 - **Re-running a crawl against the same `--output` path resumes, it doesn't
   restart.** The crawler skips URLs already in that db's `pages` table.
   Comparing two "identical" runs will show fewer newly-captured pages on
