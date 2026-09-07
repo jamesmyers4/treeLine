@@ -2,14 +2,14 @@
 
 _Last updated after the BUG-FIX-PLAN.md QA-feedback fixes (2026-07-23). This
 file reflects what's actually built and verified, not just the original
-plan — see the "Status" section for what's done vs. remaining._
+plan - see the "Status" section for what's done vs. remaining._
 
 ## What it is
 
 An AI-powered site comprehension engine. Point it at a URL and it crawls the
 site with a hardened Playwright browser, captures the accessibility-tree and
 DOM state of every page, and runs that state through tiered AI interpretation
-to produce test artifacts, documentation, and structured data — with Claude
+to produce test artifacts, documentation, and structured data, with Claude
 Code as a manual escalation path for pages the pipeline can't parse on its
 own.
 
@@ -1844,7 +1844,7 @@ Built as both a library and a network-callable API from day one.
    finding (e.g. 13 elements failing the same `color-contrast` rule), the
    report currently shows only one `exampleSelector`, not the full list —
    fine for a portfolio artifact, not yet sufficient for real remediation
-   triage at scale.
+   triage at the scale a live system would need.
 7. **Diff mode** — ✅ done. Page-level diff (added/removed/title changes)
    plus selector-candidate regression/improvement/other classification
    between two crawl output directories, rendered as a markdown report with

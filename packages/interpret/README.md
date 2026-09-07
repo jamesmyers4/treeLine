@@ -6,7 +6,7 @@ and produces a `PageInterpretation`.
 ## Why `PageInterpretation` has no `interactiveElements`
 
 `PageState` (from `@treeline/acquire`) already carries `interactiveElements`
-sourced directly from DOM/aria-tree capture — exact roles, accessible names,
+sourced directly from DOM/aria-tree capture: exact roles, accessible names,
 and testid presence, with no chance of hallucination. Having the model
 re-derive the same list added tokens and a second, less reliable source of
 truth for data the pipeline already had. `PageInterpretation` now sticks to
