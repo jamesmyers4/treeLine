@@ -9,13 +9,15 @@ findings, and structured data, not just a written summary of the site.
 
 ## What you get
 
-Each crawl produces nine reports plus generated test code, all under
-`<output>/reports/`, plus a tenth, conditional report when request/response
+Each crawl produces ten reports plus generated test code, all under
+`<output>/reports/`, plus an eleventh, conditional report when request/response
 body capture is on (see below):
 
 - Page Object Models + Playwright specs: one class per page, one
   locator per interactive element with a selector safe to bake into
-  generated code
+  generated code. Repeating structural patterns (a feed of near-identical
+  rows) collapse into one row class with an indexed accessor instead of a
+  flat field per instance
 - Selector stability report: every candidate selector ranked (role →
   testid → CSS → XPath), flagged for whether it's stable _and_ unique on
   the page
@@ -48,6 +50,10 @@ body capture is on (see below):
   values), aggregated site-wide and per page
 - Proposal-coverage report: which pages got an AI-proposed test
   assertion and of what kind
+- Assertable data sources report: elements carrying a machine-readable
+  value in a `title`, `datetime`, or `data-*` attribute, so a test can
+  assert on the exact value instead of parsing a relative string like
+  "3 minutes ago"
 - AI-proposed test scenarios: a `*.proposed.spec.ts` alongside the
   trusted generated specs for pages with a meaningful proposed assertion
   (form-fill or content-presence), always `test.skip`-wrapped and never
@@ -69,6 +75,13 @@ as read-only as the target makes it. A real authenticated crawl has
 already triggered a genuine data mutation via an ordinary GET link during
 normal link discovery (no form fill, no JS execution). This codebase does
 not yet have a mitigation for that class of risk.
+
+A separate command, `treeline verify` (`packages/verify`), checks something
+crawling can't: whether a live site's real navigation matches what a human
+expects. It logs into a live target and clicks through a supplied
+`{label, expectedUrl, clickPath}` map, then reports every mismatch to
+`verify-report.md`. Manual and on-demand only, never wired into `crawl`,
+`diff`, or CI, since it needs live credentials.
 
 This isn't just a CI capability in theory: a `workflow_dispatch` GitHub
 Action (`.github/workflows/crawl.yml`) runs `crawl` end-to-end in CI and
@@ -111,11 +124,15 @@ operational guide when working in this repo with Claude Code.
   scanning, Fastify API, login/session handling for authenticated crawls
 - `packages/interpret`: AI interpretation, 2-tier model routing (Claude
   Haiku 4.5 / Sonnet 5), plus the AI-proposed-assertion call
-- `packages/output`: atlas, POM, and all nine report generators (selector,
+- `packages/output`: atlas, POM, and all ten report generators (selector,
   testid, axe, diff, flow-map, coverage-gap, timing, color, proposal-
-  coverage), plus the shared markdown-safety sanitizer
+  coverage, assertable-data), plus the shared markdown-safety sanitizer
+  and a syntax gate that runs every generated POM/spec through the
+  TypeScript compiler's parser before it ships
 - `packages/pages`: static HTML renderer (markdown-it + shiki) that turns
   a crawl/diff output directory into the site published to `gh-pages`
+- `packages/verify`: nav-map auditor, logs into a live authenticated
+  target and clicks through a human-supplied map of expected destinations
 
 ## Stack
 
@@ -159,6 +176,19 @@ when either capture flag was set. Verified against real, freshly-captured
 data on the same OpenEMR target across all three flag combinations
 (both/request-only/response-only), plus a neither-flag run confirming the
 file isn't written at all.
+
+A real downstream session then took the generated output and tried to
+write test automation against it, the first time this project's own
+output had been stress-tested by an actual consumer instead of its
+authors. It found eight real defects: generated identifiers that could
+start with a digit and fail to compile, a per-story CSS id rated stable
+when a per-item id is exactly the least stable thing across real time, a
+proposed spec clicking a button that was never actually captured, and
+thirty near-identical Hacker News story rows producing roughly 230 flat
+POM fields until repeating-region detection collapsed them into one row
+class. All eight are fixed. A syntax gate and a golden-master CI suite
+(three checked-in fixture crawls, diffed exactly against reviewed output
+on every push) exist because of that round, not before it.
 
 See `CONTEXT.md`'s Status and Open Items sections for exact scope, every
 known limitation, and the full authenticated-crawling design writeup.
