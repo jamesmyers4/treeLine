@@ -92,6 +92,7 @@ pnpm --filter @treeline/cli dev -- crawl <url> [--stealth] [--max-pages n]
   [--max-depth n] [--throttle-ms n] [--output dir] [--skip-interpretation]
   [--insecure-certs] [--capture-response-bodies] [--max-response-body-bytes n]
   [--capture-request-bodies] [--max-request-body-bytes n]
+  [--deny-url-pattern pattern] (repeatable)
 pnpm --filter @treeline/cli dev -- diff <baselineDir> <currentDir>
   [--output dir] [--fail-on-regression]
 pnpm --filter @treeline/verify verify -- <navMapFile> --base-url <url>
@@ -334,18 +335,33 @@ stop and figure out why before writing new code — something regressed.
   a materially bigger risk on an *authenticated* crawl than an anonymous
   one — a logged-in session is far more likely to reach a privileged admin
   surface with real destructive actions than a public, unauthenticated
-  crawl would ever encounter. **Not yet mitigated in this codebase**: there
-  is no URL-pattern denylist option, and `--login-url` prints no warning
-  about this risk even though that's exactly the flag that makes reaching a
-  privileged surface likely. Worth building at least one of: a denylist
-  option for URL patterns/query params (e.g. a configurable block on
-  `method=disable`-shaped links) or a loud, unconditional CLI warning
-  whenever `--login-url` is used, reminding the operator that an
-  authenticated crawl is not guaranteed read-only. See CONTEXT.md's
-  "Authenticated crawling" section (session 53 addendum) for the full
-  writeup, including why the earlier per-page POST+CSRF source check for
-  this same real crawl didn't catch it (it only covered the specific pages
-  flagged as write-sounding ahead of time, not `forms_admin.php`).
+  crawl would ever encounter. **Mitigated, not solved — both options this
+  file used to list as unbuilt now exist, but neither is automatic.**
+  `runTreelineCrawl` (`packages/cli/src/orchestrate.ts`) prints a loud,
+  unconditional `console.warn` whenever an `authSession` is established
+  (i.e. whenever `--login-url` was actually used, credentials and all —
+  not just when the flag is present), naming this exact risk and pointing
+  at `--deny-url-pattern`. That flag (repeatable, e.g.
+  `--deny-url-pattern "method=disable"`) is a real opt-in denylist: any
+  discovered or sitemap-sourced URL whose full string (path + query
+  string) contains one of the configured substrings is never queued and
+  never captured — enforced in `packages/core/src/crawler.ts` at both
+  frontier-push time and dequeue time (the same double-check pattern the
+  pre-existing same-origin filter already uses), via
+  `isUrlDenied`/`CrawlConfig.denyUrlPatterns` in
+  `packages/core/src/url-utils.ts`/`types.ts`. `CrawlResult.deniedUrlCount`
+  and the CLI's `URLs skipped by deny pattern: N` summary line make the
+  skip count visible on every run, not just a silent drop. **Still requires
+  the operator to know the risky pattern and pass it explicitly — treeline
+  does not infer or auto-block `method=disable`-shaped links on its own.**
+  The warning is the only unconditional part; the actual protection is
+  opt-in by design, consistent with this repo's "warn-with-a-fix, not
+  auto-widen" posture elsewhere (see the origin-mismatch judgment call
+  below). See CONTEXT.md's "Authenticated crawling" section (session 53
+  addendum) for the full writeup, including why the earlier per-page
+  POST+CSRF source check for this same real crawl didn't catch it (it only
+  covered the specific pages flagged as write-sounding ahead of time, not
+  `forms_admin.php`).
 - **A per-login nonce in the URL can make the "obvious" seed URL
   unreachable even with a perfectly valid session.** OpenEMR gates its
   top-level frame (`interface/main/tabs/main.php`) behind a `token_main`

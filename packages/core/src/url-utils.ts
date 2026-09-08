@@ -23,3 +23,8 @@ export function isSameOrigin(seedUrl: string, candidateUrl: string): boolean {
     return false
   }
 }
+
+export function isUrlDenied(url: string, patterns: string[] | undefined): boolean {
+  if (!patterns || patterns.length === 0) return false
+  return patterns.some((pattern) => url.includes(pattern))
+}

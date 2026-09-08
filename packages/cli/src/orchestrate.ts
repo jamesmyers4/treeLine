@@ -66,6 +66,7 @@ export interface TreelineCrawlOptions {
   successIndicator?: string
   detectAuthWall: boolean
   insecureCerts: boolean
+  denyUrlPatterns: string[]
 }
 
 export interface TreelineCrawlSummary {
@@ -84,6 +85,7 @@ export interface TreelineCrawlSummary {
   flaggedHighLatencyElements: number
   distinctColorsFound: number
   apiTestScaffoldGenerated: boolean
+  deniedUrlCount: number
   abortedAt?: CrawlResult['abortedAt']
 }
 
@@ -138,6 +140,16 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
     throw new Error('ANTHROPIC_API_KEY is not set — export it or pass --skip-interpretation')
   }
   const authSession = await resolveAuthSession(options)
+  if (authSession) {
+    console.warn(
+      '[treeline] Authenticated crawling is not guaranteed read-only. A same-origin, ' +
+        'link-following crawl can trigger a real state-changing action if the target exposes ' +
+        'one via a plain GET link with a valid token already baked into the URL — no form ' +
+        'fill, no JS execution required. Confirmed on a real target, not hypothetical. Use ' +
+        '--deny-url-pattern to block known-risky URL shapes (e.g. --deny-url-pattern ' +
+        '"method=disable"). See CLAUDE.md\'s "Operational gotchas" for the full writeup.',
+    )
+  }
   if (authSession && options.detectAuthWall) {
     console.warn(
       '[treeline] --detect-auth-wall has no effect when --login-url is set — auth-wall detection only applies to crawls with no configured session. Ignoring --detect-auth-wall for this run.',
@@ -170,6 +182,7 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
       maxRequestBodyBytes: options.maxRequestBodyBytes,
       detectAuthWall: effectiveDetectAuthWall,
       insecureCerts: options.insecureCerts,
+      denyUrlPatterns: options.denyUrlPatterns,
     }
     const crawlResult = await crawl(crawlConfig, dbPath, hardPagesDir, authSession)
     if (!options.skipInterpretation) {
@@ -236,6 +249,7 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
       flaggedHighLatencyElements: timingReport.flaggedElementCount,
       distinctColorsFound: colorReport.siteWideScheme.length,
       apiTestScaffoldGenerated,
+      deniedUrlCount: crawlResult.deniedUrlCount,
       abortedAt: crawlResult.abortedAt,
     }
   } finally {

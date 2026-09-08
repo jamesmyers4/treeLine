@@ -117,6 +117,7 @@ describe('runTreelineCrawl', () => {
       maxRequestBodyBytes: 65536,
       detectAuthWall: false,
       insecureCerts: false,
+      denyUrlPatterns: [],
     })
     expect(summary.pagesCaptured).toBe(Object.keys(pages).length)
     expect(summary.pagesInterpreted).toBe(0)
@@ -190,6 +191,7 @@ describe('runTreelineCrawl', () => {
         maxRequestBodyBytes: 65536,
         detectAuthWall: false,
         insecureCerts: false,
+        denyUrlPatterns: [],
       })
       expect(summary.proposedAssertionSpecsGenerated).toBe(2)
       const homeSpec = readFileSync(join(mixedOutputDir, 'specs', 'home.proposed.spec.ts'), 'utf-8')
@@ -220,6 +222,7 @@ describe('runTreelineCrawl', () => {
       maxRequestBodyBytes: 65536,
       detectAuthWall: false,
       insecureCerts: false,
+      denyUrlPatterns: [],
     })
     expect(summary.apiTestScaffoldGenerated).toBe(false)
     expect(existsSync(join(gateOutputDir, 'reports', 'api-test-scaffold.md'))).toBe(false)
@@ -241,6 +244,7 @@ describe('runTreelineCrawl', () => {
       maxRequestBodyBytes: 65536,
       detectAuthWall: false,
       insecureCerts: false,
+      denyUrlPatterns: [],
     })
     expect(summary.apiTestScaffoldGenerated).toBe(true)
     const report = readFileSync(join(gateOutputDir, 'reports', 'api-test-scaffold.md'), 'utf-8')
@@ -266,11 +270,54 @@ describe('runTreelineCrawl', () => {
       maxRequestBodyBytes: 65536,
       detectAuthWall: false,
       insecureCerts: false,
+      denyUrlPatterns: [],
     })
     expect(summary.apiTestScaffoldGenerated).toBe(true)
     const report = readFileSync(join(gateOutputDir, 'reports', 'api-test-scaffold.md'), 'utf-8')
     expect(report).toContain('not captured (`--capture-response-bodies` was off for this crawl)')
     expect(report).not.toContain('not captured (`--capture-request-bodies`')
+  }, 120_000)
+
+  it('never captures a URL matching --deny-url-pattern, and reports how many were skipped', async () => {
+    const denyPages: Record<string, string> = {
+      '/': '<html><body><a href="/safe">safe</a><a href="/forms_admin.php?id=18&method=disable&csrf_token_form=abc">disable</a></body></html>',
+      '/safe': '<html><body>safe page</body></html>',
+    }
+    const denyServer = createServer((req, res) => {
+      const html = denyPages[req.url ?? '/'] ?? '<html><body>not found</body></html>'
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.end(html)
+    })
+    await new Promise<void>((resolve) => denyServer.listen(0, '127.0.0.1', resolve))
+    const addr = denyServer.address() as { port: number }
+    const denyBaseUrl = `http://127.0.0.1:${addr.port}`
+    const denyOutputDir = join(tmpDir, 'output-deny-pattern')
+    try {
+      const summary = await runTreelineCrawl({
+        url: `${denyBaseUrl}/`,
+        stealth: false,
+        maxPages: 10,
+        maxDepth: 5,
+        throttleMs: 0,
+        outputDir: denyOutputDir,
+        skipInterpretation: true,
+        captureResponseBodies: false,
+        maxResponseBodyBytes: 512000,
+        captureRequestBodies: false,
+        maxRequestBodyBytes: 65536,
+        detectAuthWall: false,
+        insecureCerts: false,
+        denyUrlPatterns: ['method=disable'],
+      })
+      expect(summary.deniedUrlCount).toBe(1)
+      expect(summary.pagesCaptured).toBe(2)
+      const db = openCrawlDb(join(denyOutputDir, 'crawl.sqlite'))
+      const urls = db.getAllPages().map((p) => p.url)
+      db.close()
+      expect(urls.some((u) => u.includes('method=disable'))).toBe(false)
+    } finally {
+      denyServer.close()
+    }
   }, 120_000)
 })
 

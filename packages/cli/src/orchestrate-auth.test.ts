@@ -131,6 +131,7 @@ function baseOptions(outputDir: string, url: string): TreelineCrawlOptions {
     maxRequestBodyBytes: 65536,
     detectAuthWall: false,
     insecureCerts: false,
+    denyUrlPatterns: [],
   }
 }
 
@@ -323,6 +324,53 @@ describe('runTreelineCrawl — authenticated crawling', () => {
     expect(warnSpy).toHaveBeenCalled()
     const warned = warnSpy.mock.calls.some((call) => String(call[0]).includes('--detect-auth-wall'))
     expect(warned).toBe(true)
+  }, 30_000)
+
+  it('unconditionally warns that authenticated crawling is not guaranteed read-only, whenever a session is established', async () => {
+    warnSpy.mockClear()
+    const { server, baseUrl } = await startAuthFixture()
+    const previousPassword = process.env.TREELINE_LOGIN_PASSWORD
+    process.env.TREELINE_LOGIN_PASSWORD = FIXTURE_PASSWORD
+    try {
+      await withTmpDir(async (outputDir) => {
+        const options = {
+          ...baseOptions(outputDir, `${baseUrl}/dashboard`),
+          maxDepth: 0,
+          loginUrl: `${baseUrl}/login`,
+          successIndicator: '#logout-link',
+          username: FIXTURE_USERNAME,
+        }
+        await runTreelineCrawl(options)
+      })
+    } finally {
+      if (previousPassword === undefined) delete process.env.TREELINE_LOGIN_PASSWORD
+      else process.env.TREELINE_LOGIN_PASSWORD = previousPassword
+      server.close()
+    }
+    const warned = warnSpy.mock.calls.some((call) => String(call[0]).includes('not guaranteed read-only'))
+    expect(warned).toBe(true)
+  }, 30_000)
+
+  it('does not print the read-only warning when no auth flags are used at all', async () => {
+    warnSpy.mockClear()
+    const pages: Record<string, string> = { '/': '<html><body>hello</body></html>' }
+    const server = createServer((req, res) => {
+      const html = pages[req.url ?? '/'] ?? '<html><body>not found</body></html>'
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.end(html)
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const addr = server.address() as { port: number }
+    const baseUrl = `http://127.0.0.1:${addr.port}`
+    try {
+      await withTmpDir(async (outputDir) => {
+        await runTreelineCrawl(baseOptions(outputDir, `${baseUrl}/`))
+      })
+    } finally {
+      server.close()
+    }
+    const warned = warnSpy.mock.calls.some((call) => String(call[0]).includes('not guaranteed read-only'))
+    expect(warned).toBe(false)
   }, 30_000)
 
   it('reports abortedAt end-to-end when the session expires mid-crawl, with a message naming the URL and page count', async () => {

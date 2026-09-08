@@ -21,6 +21,7 @@ interface RawCrawlOptions {
   successIndicator?: string
   detectAuthWall: boolean
   insecureCerts: boolean
+  denyUrlPattern: string[]
 }
 
 interface RawDiffOptions {
@@ -52,6 +53,12 @@ program
   .option('--success-indicator <selector>', 'CSS selector present only when authenticated (required alongside --login-url)')
   .option('--detect-auth-wall', 'flag pages that appear to require authentication when no credentials are configured', false)
   .option('--insecure-certs', 'ignore TLS certificate errors (self-signed/invalid certs) — for local/internal targets only, never a public site', false)
+  .option(
+    '--deny-url-pattern <pattern>',
+    'never follow or capture a URL containing this substring (repeatable) — see CLAUDE.md\'s "Operational gotchas" for why this matters on authenticated crawls',
+    (value: string, previous: string[]) => [...previous, value],
+    [] as string[],
+  )
   .action(async (url: string, rawOptions: RawCrawlOptions) => {
     const options: TreelineCrawlOptions = {
       url,
@@ -73,6 +80,7 @@ program
       successIndicator: rawOptions.successIndicator,
       detectAuthWall: rawOptions.detectAuthWall,
       insecureCerts: rawOptions.insecureCerts,
+      denyUrlPatterns: rawOptions.denyUrlPattern,
     }
     try {
       const summary = await runTreelineCrawl(options)
@@ -93,6 +101,7 @@ program
       console.log(`Slow network requests: ${summary.flaggedSlowNetworkRequests}`)
       console.log(`High-latency elements: ${summary.flaggedHighLatencyElements}`)
       console.log(`Distinct colors found: ${summary.distinctColorsFound}`)
+      console.log(`URLs skipped by deny pattern: ${summary.deniedUrlCount}`)
       if (summary.apiTestScaffoldGenerated) {
         console.log('API test scaffold: reports/api-test-scaffold.md')
       }

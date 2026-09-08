@@ -1584,11 +1584,15 @@ design status, not how to reproduce the fix.
   write-sounding page checked this session, which correctly gates behind
   `$_POST` + CSRF verified at submit time) — but the *risk class* is
   generalizable to any authenticated crawl of any target, which is why it's
-  the headline entry in CLAUDE.md rather than an OpenEMR-only note. **Not
-  yet mitigated in this codebase** — no URL-pattern denylist option, no CLI
-  warning on `--login-url` — see "Open items" below. Environment was
-  disposable by design for exactly this reason (`docker compose down -v &&
-up -d`, confirmed both containers healthy again afterward).
+  the headline entry in CLAUDE.md rather than an OpenEMR-only note.
+  **Mitigated since, not solved** — `--deny-url-pattern` (repeatable,
+  substring match against the full URL) plus an unconditional
+  `console.warn` whenever an auth session is established, both real and
+  tested against a local fixture, not just designed. See CLAUDE.md's
+  "Operational gotchas" for the exact mechanism and "Open items" below for
+  what's still deliberately manual about it. Environment was disposable by
+  design for exactly this reason (`docker compose down -v && up -d`,
+  confirmed both containers healthy again afterward).
 
 ## GPB judgment call (context, not code — worth knowing regardless)
 
@@ -2193,13 +2197,22 @@ locked-decision brief there; this section is the outcome summary. See
 - Axe report's `exampleSelector` doesn't show all affected elements.
 - Atlas's "not yet interpreted" message doesn't distinguish skipped vs.
   failed interpretation.
-- **No mitigation exists yet for authenticated crawls reaching a
-  state-changing action exposed via a plain GET link (session 53) — no
-  URL-pattern denylist option, no CLI warning on `--login-url`.** Confirmed
-  real, not hypothetical, against a live OpenEMR target; see "Authenticated
-  crawling" above and CLAUDE.md's "Operational gotchas" for the full
-  writeup. Worth prioritizing before the next real authenticated-crawl
-  target where write access matters.
+- **Closed (post-session-58) — the GET-mutation risk from session 53 now
+  has a real mitigation, not just a documented gap.** `--deny-url-pattern`
+  (repeatable substring denylist, enforced in `crawler.ts` at both
+  frontier-push and dequeue time) plus an unconditional `console.warn`
+  whenever `--login-url` produces a real session, both covered by real
+  fixture tests (`packages/core/src/crawler-deny.test.ts`,
+  `packages/cli/src/orchestrate-auth.test.ts`) and a manual local-fixture
+  crawl confirming the denied links never reach `crawl.sqlite`. **Still a
+  real, deliberate limitation, not a full close:** the denylist is opt-in
+  and pattern-based — treeline still does not infer or auto-detect a
+  `method=disable`-shaped link on its own, so an operator who doesn't know
+  to write the pattern gets no protection beyond the warning. A future
+  session could look at heuristic detection (flagging query params that
+  look like verbs — `delete`, `disable`, `remove`, `deactivate` — as a
+  warning, not an automatic block) if this proves insufficient in
+  practice.
 - `--success-indicator` is a single selector reused for both `performLogin`
   and every ongoing `checkAuthStillValid` check; a target whose
   authenticated-chrome template and authenticated-content template diverge

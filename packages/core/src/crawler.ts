@@ -1,7 +1,7 @@
 import { capturePage, AuthExpiredError, AuthWallError } from '@treeline/acquire'
 import type { AuthSession } from '@treeline/acquire'
 import type { CrawlConfig, CrawlResult, HardPageReasonCode } from './types.js'
-import { normalizeUrl, isSameOrigin } from './url-utils.js'
+import { normalizeUrl, isSameOrigin, isUrlDenied } from './url-utils.js'
 import { fetchRobotsRules } from './robots.js'
 import { fetchSitemapUrls } from './sitemap.js'
 import { fetchSeedPage, findCanonicalHref, detectHostnameMismatches } from './origin-scope.js'
@@ -56,10 +56,16 @@ async function runCrawl(
     )
   }
   const frontier: Array<{ url: string; depth: number }> = [{ url: seedNorm, depth: 0 }]
+  const deniedUrls = new Set<string>()
   for (const sUrl of sitemapUrls) {
     try {
       const norm = normalizeUrl(sUrl)
-      if (isSameOrigin(seedNorm, norm)) frontier.push({ url: norm, depth: 0 })
+      if (!isSameOrigin(seedNorm, norm)) continue
+      if (isUrlDenied(norm, config.denyUrlPatterns)) {
+        deniedUrls.add(norm)
+        continue
+      }
+      frontier.push({ url: norm, depth: 0 })
     } catch {
       // skip invalid
     }
@@ -78,6 +84,10 @@ async function runCrawl(
       continue
     }
     if (config.sameOriginOnly && !isSameOrigin(seedNorm, url)) continue
+    if (isUrlDenied(url, config.denyUrlPatterns)) {
+      deniedUrls.add(url)
+      continue
+    }
     if (!isAllowed(new URL(url).pathname)) continue
     visited.add(url)
     if (throttleMs > 0) {
@@ -105,9 +115,12 @@ async function runCrawl(
         for (const link of pageState.links) {
           try {
             const normLink = normalizeUrl(link)
-            if (!visited.has(normLink) && isSameOrigin(seedNorm, normLink)) {
-              frontier.push({ url: normLink, depth: depth + 1 })
+            if (visited.has(normLink) || !isSameOrigin(seedNorm, normLink)) continue
+            if (isUrlDenied(normLink, config.denyUrlPatterns)) {
+              deniedUrls.add(normLink)
+              continue
             }
+            frontier.push({ url: normLink, depth: depth + 1 })
           } catch {
             // skip invalid
           }
@@ -146,5 +159,5 @@ async function runCrawl(
       })
     }
   }
-  return { hostnameMismatches, abortedAt }
+  return { hostnameMismatches, abortedAt, deniedUrlCount: deniedUrls.size }
 }

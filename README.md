@@ -73,8 +73,12 @@ and re-seeded into every page's browser context, never written to disk.
 where write access matters.** A same-origin, link-following crawl is only
 as read-only as the target makes it. A real authenticated crawl has
 already triggered a genuine data mutation via an ordinary GET link during
-normal link discovery (no form fill, no JS execution). This codebase does
-not yet have a mitigation for that class of risk.
+normal link discovery (no form fill, no JS execution). Treeline now warns
+loudly, every time, whenever a login session is established, and
+`--deny-url-pattern` (repeatable) blocks any URL containing a given
+substring from ever being queued or captured. Neither is automatic: the
+warning can't be turned off, but the denylist only protects against a
+pattern you actually pass it.
 
 A separate command, `treeline verify` (`packages/verify`), checks something
 crawling can't: whether a live site's real navigation matches what a human

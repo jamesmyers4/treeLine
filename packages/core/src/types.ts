@@ -12,6 +12,7 @@ export interface CrawlConfig {
   maxRequestBodyBytes?: number
   detectAuthWall?: boolean
   insecureCerts?: boolean
+  denyUrlPatterns?: string[]
 }
 
 export type HardPageReasonCode =
@@ -38,6 +39,7 @@ export interface HostnameMismatch {
 export interface CrawlResult {
   hostnameMismatches: HostnameMismatch[]
   abortedAt?: { url: string; reason: 'auth-expired' }
+  deniedUrlCount: number
 }
 
 export interface ProposedFormFieldValue {
