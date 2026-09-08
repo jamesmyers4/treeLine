@@ -426,6 +426,58 @@ fetch('/data').then(() => {
   }, 30000)
 })
 
+describe('interactiveElements accessibleName heuristic (label/img-alt gap)', () => {
+  let server: Server
+  let baseUrl: string
+
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.end(`<!doctype html>
+<html><body>
+<form>
+  <label>Customer name: <input name="custname" /></label>
+</form>
+<label for="flavor-select">Pizza Flavor</label>
+<select id="flavor-select" name="flavor"><option value="bacon">Bacon</option></select>
+<button id="icon-only"><img src="search.png" alt="Search" /></button>
+<a href="/plain" id="plain-link">Plain text link</a>
+</body></html>`)
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const addr = server.address() as { port: number }
+    baseUrl = `http://127.0.0.1:${addr.port}`
+  })
+
+  afterAll(() => {
+    server.close()
+  })
+
+  it('reads accessibleName from a wrapping <label> for an <input> reached via the interactiveElements path', async () => {
+    const result = await capturePage(baseUrl)
+    const field = result.interactiveElements.find((el) => el.tagName === 'input')
+    expect(field?.accessibleName).toBe('Customer name:')
+  }, 30000)
+
+  it('reads accessibleName from a for/id-associated <label> for a <select>', async () => {
+    const result = await capturePage(baseUrl)
+    const select = result.interactiveElements.find((el) => el.tagName === 'select')
+    expect(select?.accessibleName).toBe('Pizza Flavor')
+  }, 30000)
+
+  it("reads accessibleName from a descendant <img alt> for an icon-only button with no visible text", async () => {
+    const result = await capturePage(baseUrl)
+    const iconButton = result.interactiveElements.find((el) => el.elementId === 'icon-only')
+    expect(iconButton?.accessibleName).toBe('Search')
+  }, 30000)
+
+  it('still uses plain textContent for an ordinary text link, unaffected by the new fallbacks', async () => {
+    const result = await capturePage(baseUrl)
+    const link = result.interactiveElements.find((el) => el.elementId === 'plain-link')
+    expect(link?.accessibleName).toBe('Plain text link')
+  }, 30000)
+})
+
 describe('extractAssertableAttributes (feedback #5 — assertable data sources)', () => {
   let server: Server
   let baseUrl: string
@@ -526,6 +578,43 @@ describe('extractAssertableAttributes (feedback #5 — assertable data sources)'
       expect(typeof attr.tagName).toBe('string')
       expect(attr.testId === null || typeof attr.testId === 'string').toBe(true)
       expect(typeof attr.cssPath).toBe('string')
+    }
+  }, 30000)
+})
+
+describe('extractAssertableAttributes accessibleName (label/img-alt gap)', () => {
+  let server: Server
+  let baseUrl: string
+
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.end(`<!doctype html>
+<html><body>
+<label>Search: <input title="Enter a search term" name="q" /></label>
+</body></html>`)
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const addr = server.address() as { port: number }
+    baseUrl = `http://127.0.0.1:${addr.port}`
+  })
+
+  afterAll(() => {
+    server.close()
+  })
+
+  it('reads accessibleName from a wrapping <label> for a [title]-bearing input, not just blank', async () => {
+    const browser = await launchHardened()
+    try {
+      const context = await browser.newContext()
+      const page = await context.newPage()
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
+      const attributes = await extractAssertableAttributes(page)
+      const titleEntry = attributes.find((a) => a.attributeName === 'title')
+      expect(titleEntry).toBeDefined()
+      expect(titleEntry!.accessibleName).toBe('Search:')
+    } finally {
+      await browser.close()
     }
   }, 30000)
 })

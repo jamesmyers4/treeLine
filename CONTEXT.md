@@ -1690,18 +1690,25 @@ Grew significantly beyond the original plan through sessions 1, 4.5, 4.6, 9,
   section (session 41). This exists specifically because AI guessing at
   `testIdPresent` from the aria snapshot was unreliable (session 4.5) —
   `data-testid` is invisible to the accessibility tree by design.
-  **Known limitation:** `accessibleName` resolution is a simplified
-  heuristic (`aria-label` → `aria-labelledby` → `textContent` →
-  `placeholder`/`value`). It does NOT check for an `<img alt>` descendant or
-  `<label for>` association — both real, common sources of an accessible
-  name that axe-core's independent computation does check. This means some
-  elements this tool reports as "no accessible name" (excluded from role-
-  strategy selector candidates, appearing in testid-audit gaps) may
-  genuinely have one. Confirmed via a real cross-check: axe-core did not
-  flag a logo link or a `<label for="nav-toggle">`-associated checkbox input
-  as unlabeled, even though this heuristic reported them as having no
-  accessible name. Worth fixing if selector-report/testid-audit accuracy
-  becomes a priority — not fixed yet.
+  **Still a simplified heuristic, not a spec-accurate accname computation
+  — but the two named gaps below are closed (post-session-58).** Order is
+  now `aria-label` → `aria-labelledby` → `label[for="<id>"]` → an ancestor
+  `el.closest('label')` (wrapping label, no `id`/`for` required) →
+  `textContent` → `<img alt>` (self, or the first non-empty `alt` among
+  descendant `<img>`s — covers an icon-only button and `input[type=image]`)
+  → `placeholder`/`value`. Both real, common sources this heuristic
+  previously missed — a `<label for="nav-toggle">`-associated checkbox and
+  a logo link's `<img alt>`, both confirmed via a real cross-check against
+  axe-core's independent (correct) computation — now resolve correctly;
+  re-verified against a real crawl of httpbin.org/forms/post, which went
+  from 12/12 blank form-field names to 12/12 populated. Real gaps that
+  remain, deliberately not chased: `aria-labelledby` should technically
+  outrank `aria-label` per spec and doesn't here (noticed, not fixed — see
+  "Open items"); multiple `aria-labelledby` IDs (space-separated, per spec)
+  aren't supported, only the first/only ID is; and this is still nowhere
+  near a full W3C accname algorithm (no CSS `content`/`::before`/`::after`
+  contribution, no `aria-owns`, no recursive subtree name computation with
+  proper text-vs-alt interleaving).
 - `axeViolations: AxeViolation[]` — confirmed accessibility issues from
   axe-core's `violations` bucket.
 - `axeIncomplete: AxeIncompleteResult[]` — axe-core's `incomplete` bucket:
@@ -2170,14 +2177,35 @@ locked-decision brief there; this section is the outcome summary. See
 
 **Known gaps worth fixing eventually, not blocking:**
 
-- `accessibleName` heuristic gap has broader real-world impact than
-  previously documented. A real crawl of httpbin.org/forms/post showed 12
-  out of 12 form fields with a blank accessible name in the rendered
-  `flow-map.md` forms table — not an occasional edge case, a near-total
-  miss on that page. Confirmed to affect `selector-report.md`,
-  `testid-audit.md`, and `flow-map.md`. Promoted to the top of this list
-  given the now-confirmed scope (see PageState shape section above for
-  the underlying heuristic detail: misses `<img alt>` and `<label for>`).
+- **Closed (post-session-58) — the `<label for>` and `<img alt>` misses are
+  fixed, not just documented.** All three duplicated accessible-name
+  computations in `packages/acquire/src/capture.ts` (`extractForms`, the
+  `interactiveElements` block in `captureWithContext`, and
+  `extractAssertableAttributes`'s `computeAccessibleName`) now check, in
+  order after `aria-label`/`aria-labelledby`: a `label[for="<id>"]`
+  association, an ancestor `el.closest('label')` (wrapping label with no
+  `id`/`for` at all — the exact real shape httpbin.org/forms/post uses),
+  plain `textContent`, then an `<img alt>` substitute (the element itself
+  if it's an `<img>` or an `input[type=image]`, else the first non-empty
+  `alt` among descendant `<img>`s) before the pre-existing
+  placeholder/value fallback. Re-running the exact real crawl that
+  originally found this (`httpbin.org/forms/post`) now shows 12/12 fields
+  populated (`Customer name:`, `Telephone:`, `Small`, `Bacon`, etc. in
+  `flow-map.md`) — confirmed against the live target, not just a fixture.
+  Real fixture regression tests cover all three sites independently:
+  `packages/acquire/src/forms.test.ts` (wrapping label, `for`-label,
+  `input[type=image]`, aria-label-still-wins precedence, a still-blank
+  case with no label/alt/placeholder at all) and two new describe blocks
+  in `capture.test.ts` (icon-only-button-via-descendant-alt for
+  `interactiveElements`, wrapping-label for `extractAssertableAttributes`).
+  **Deliberately not touched:** the `aria-label` vs `aria-labelledby`
+  precedence in this heuristic checks `aria-label` first, `aria-labelledby`
+  second — backwards from the real accname spec (which has
+  `aria-labelledby` win) — noticed while fixing this, but left as-is since
+  it wasn't the documented gap and reordering it is a separate, unverified
+  change with its own blast radius. `selector-report.md` and
+  `testid-audit.md` needed no separate fix — both read the same
+  `PageState.interactiveElements`/`forms` this closes at the source.
 - The API surface filter (`isApiSurfaceCandidate` in flow map) is
   technically correct per its resourceType-based rule, but can surface
   third-party resource-loading calls that aren't really part of a site's

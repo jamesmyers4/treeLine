@@ -173,7 +173,24 @@ export async function extractForms(page: Page): Promise<CapturedForm[]> {
             const labelEl = document.getElementById(labelledBy)
             if (labelEl) accessibleName = labelEl.textContent?.trim() ?? ''
           }
+          if (!accessibleName && el.id) {
+            const forLabel = document.querySelector(`label[for="${CSS.escape(el.id)}"]`)
+            accessibleName = forLabel?.textContent?.trim() ?? ''
+          }
+          if (!accessibleName) {
+            const wrappingLabel = el.closest('label')
+            accessibleName = wrappingLabel?.textContent?.trim() ?? ''
+          }
           if (!accessibleName) accessibleName = el.textContent?.trim() ?? ''
+          if (!accessibleName) {
+            const isAltSource = el.tagName === 'IMG' || (el.tagName === 'INPUT' && (el as HTMLInputElement).type === 'image')
+            const selfAlt = isAltSource ? (el.getAttribute('alt')?.trim() ?? '') : ''
+            const descendantAlt = Array.from(el.querySelectorAll('img[alt]'))
+              .map((img) => img.getAttribute('alt')?.trim() ?? '')
+              .filter(Boolean)
+              .join(' ')
+            accessibleName = selfAlt || descendantAlt
+          }
           if (!accessibleName) {
             const inputEl = el as HTMLInputElement
             accessibleName = inputEl.placeholder?.trim() ?? inputEl.value?.trim() ?? ''
@@ -287,9 +304,23 @@ export async function extractAssertableAttributes(page: Page): Promise<Assertabl
         const labelledBy = el.getAttribute('aria-labelledby')
         if (labelledBy) {
           const labelEl = document.getElementById(labelledBy)
-          if (labelEl) return labelEl.textContent?.trim() ?? ''
+          if (labelEl?.textContent?.trim()) return labelEl.textContent.trim()
         }
-        return el.textContent?.trim() ?? ''
+        if (el.id) {
+          const forLabel = document.querySelector(`label[for="${CSS.escape(el.id)}"]`)
+          if (forLabel?.textContent?.trim()) return forLabel.textContent.trim()
+        }
+        const wrappingLabel = el.closest('label')
+        if (wrappingLabel?.textContent?.trim()) return wrappingLabel.textContent.trim()
+        const textContent = el.textContent?.trim()
+        if (textContent) return textContent
+        const isAltSource = el.tagName === 'IMG' || (el.tagName === 'INPUT' && (el as HTMLInputElement).type === 'image')
+        const selfAlt = isAltSource ? el.getAttribute('alt')?.trim() : ''
+        if (selfAlt) return selfAlt
+        return Array.from(el.querySelectorAll('img[alt]'))
+          .map((img) => img.getAttribute('alt')?.trim() ?? '')
+          .filter(Boolean)
+          .join(' ')
       }
       const results: Array<{
         attributeName: string
@@ -540,7 +571,24 @@ async function captureWithContext(url: string, context: BrowserContext, options?
             const labelEl = document.getElementById(labelledBy)
             if (labelEl) accessibleName = labelEl.textContent?.trim() ?? ''
           }
+          if (!accessibleName && el.id) {
+            const forLabel = document.querySelector(`label[for="${CSS.escape(el.id)}"]`)
+            accessibleName = forLabel?.textContent?.trim() ?? ''
+          }
+          if (!accessibleName) {
+            const wrappingLabel = el.closest('label')
+            accessibleName = wrappingLabel?.textContent?.trim() ?? ''
+          }
           if (!accessibleName) accessibleName = el.textContent?.trim() ?? ''
+          if (!accessibleName) {
+            const isAltSource = el.tagName === 'IMG' || (el.tagName === 'INPUT' && (el as HTMLInputElement).type === 'image')
+            const selfAlt = isAltSource ? (el.getAttribute('alt')?.trim() ?? '') : ''
+            const descendantAlt = Array.from(el.querySelectorAll('img[alt]'))
+              .map((img) => img.getAttribute('alt')?.trim() ?? '')
+              .filter(Boolean)
+              .join(' ')
+            accessibleName = selfAlt || descendantAlt
+          }
           if (!accessibleName) {
             const inputEl = el as HTMLInputElement
             accessibleName = inputEl.placeholder?.trim() ?? inputEl.value?.trim() ?? ''

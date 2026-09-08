@@ -163,4 +163,73 @@ describe('extractForms', () => {
     expect(byName('Select')?.role).toBe('combobox')
     expect(byName('Textarea')?.tagName).toBe('textarea')
   })
+
+  it('reads accessibleName from a wrapping <label> with no id/for at all (real httpbin.org/forms/post shape)', async () => {
+    await loadFixture(page, '/wrapping-label', `
+      <html><body>
+        <form method="post" action="/post">
+          <p><label>Customer name: <input name="custname"></label></p>
+          <p><label>Delivery instructions: <textarea name="comments"></textarea></label></p>
+          <p><label> <input type=radio name=size value="small"> Small </label></p>
+        </form>
+      </body></html>
+    `)
+    const forms = await extractForms(page)
+    const byTagAndType = (tagName: string, name: string) =>
+      forms[0].fields.find((f) => f.tagName === tagName && f.accessibleName.includes(name))
+    expect(byTagAndType('input', 'Customer name')?.accessibleName).toBe('Customer name:')
+    expect(byTagAndType('textarea', 'Delivery')?.accessibleName).toBe('Delivery instructions:')
+    expect(byTagAndType('input', 'Small')?.accessibleName).toBe('Small')
+  })
+
+  it('reads accessibleName from a for/id-associated <label>, not just a wrapping one', async () => {
+    await loadFixture(page, '/for-label', `
+      <html><body>
+        <form>
+          <label for="flavor-select">Pizza Flavor</label>
+          <select id="flavor-select" name="flavor">
+            <option value="bacon">Bacon</option>
+          </select>
+        </form>
+      </body></html>
+    `)
+    const forms = await extractForms(page)
+    expect(forms[0].fields[0].accessibleName).toBe('Pizza Flavor')
+  })
+
+  it('prefers aria-label over a wrapping <label>, keeping existing precedence unchanged', async () => {
+    await loadFixture(page, '/aria-precedence', `
+      <html><body>
+        <form>
+          <label>Visible text: <input name="x" aria-label="Explicit label" /></label>
+        </form>
+      </body></html>
+    `)
+    const forms = await extractForms(page)
+    expect(forms[0].fields[0].accessibleName).toBe('Explicit label')
+  })
+
+  it("reads accessibleName from an <input type=image>'s own alt attribute", async () => {
+    await loadFixture(page, '/image-input', `
+      <html><body>
+        <form>
+          <input type="image" name="go" src="submit.png" alt="Submit order" />
+        </form>
+      </body></html>
+    `)
+    const forms = await extractForms(page)
+    expect(forms[0].fields[0].accessibleName).toBe('Submit order')
+  })
+
+  it('leaves accessibleName blank, not throwing, for a genuinely unlabeled field with no label/alt/placeholder at all', async () => {
+    await loadFixture(page, '/truly-unlabeled', `
+      <html><body>
+        <form>
+          <input name="mystery" />
+        </form>
+      </body></html>
+    `)
+    const forms = await extractForms(page)
+    expect(forms[0].fields[0].accessibleName).toBe('')
+  })
 })
