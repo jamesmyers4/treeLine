@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { categorizeRequestBodyContentType } from './capture.js'
+import { categorizeRequestBodyContentType, categorizeResponseBodyContentType } from './capture.js'
 
 describe('categorizeRequestBodyContentType', () => {
   it('categorizes a bare application/json content type as json', () => {
@@ -32,5 +32,27 @@ describe('categorizeRequestBodyContentType', () => {
 
   it('is case-insensitive', () => {
     expect(categorizeRequestBodyContentType('APPLICATION/JSON')).toBe('json')
+  })
+})
+
+describe('categorizeResponseBodyContentType', () => {
+  it('categorizes a bare application/json content type as json', () => {
+    expect(categorizeResponseBodyContentType('application/json')).toBe('json')
+  })
+
+  it('categorizes application/json with a charset parameter as json', () => {
+    expect(categorizeResponseBodyContentType('application/json; charset=UTF-8')).toBe('json')
+  })
+
+  it('categorizes text/html as other', () => {
+    expect(categorizeResponseBodyContentType('text/html')).toBe('other')
+  })
+
+  it('categorizes an empty content type as other', () => {
+    expect(categorizeResponseBodyContentType('')).toBe('other')
+  })
+
+  it('is case-insensitive', () => {
+    expect(categorizeResponseBodyContentType('APPLICATION/JSON')).toBe('json')
   })
 })

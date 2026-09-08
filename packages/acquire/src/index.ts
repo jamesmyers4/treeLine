@@ -1,5 +1,13 @@
 export * from './types.js'
-export { capturePage, capturePageWithBrowser, resolveSeedUrl, resolveSeedUrlWithBrowser, defaultCaptureHandler, categorizeRequestBodyContentType } from './capture.js'
+export {
+  capturePage,
+  capturePageWithBrowser,
+  resolveSeedUrl,
+  resolveSeedUrlWithBrowser,
+  defaultCaptureHandler,
+  categorizeRequestBodyContentType,
+  categorizeResponseBodyContentType,
+} from './capture.js'
 export { launchHardened } from './launch.js'
 export {
   performLogin,

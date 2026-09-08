@@ -12,6 +12,8 @@ function makeNetworkEntry(overrides: Partial<NetworkEntry>): NetworkEntry {
     durationMs: 50,
     responseBodySample: null,
     responseBodySchema: null,
+    responseBodyContentTypeCategory: null,
+    responseBodyExceededSizeCap: false,
     requestBody: null,
     requestBodyContentTypeCategory: null,
     requestBodyExceededSizeCap: false,
@@ -232,6 +234,55 @@ describe('buildApiTestScaffoldEntries', () => {
       const entries = buildApiTestScaffoldEntries([page], { captureRequestBodies: false, captureResponseBodies: true })
       expect(entries[0]!.responseSchema.status).toBe('not-applicable')
       expect(entries[0]!.responseSchema.note).not.toMatch(/--capture-response-bodies/)
+    })
+  })
+
+  describe('response schema — specific not-applicable attribution (non-JSON / size cap / no body / unparseable)', () => {
+    it('labels a non-JSON response content type specifically, distinct from the size cap', () => {
+      const page = makePage({
+        networkLog: [makeNetworkEntry({ responseBodySchema: null, responseBodyContentTypeCategory: 'other' })],
+      })
+      const entries = buildApiTestScaffoldEntries([page], { captureRequestBodies: false, captureResponseBodies: true })
+      expect(entries[0]!.responseSchema.note).toMatch(/non-JSON response content type/)
+    })
+
+    it('labels the size cap specifically for a json response that was null purely from exceeding the cap', () => {
+      const page = makePage({
+        networkLog: [
+          makeNetworkEntry({ responseBodySchema: null, responseBodyContentTypeCategory: 'json', responseBodyExceededSizeCap: true }),
+        ],
+      })
+      const entries = buildApiTestScaffoldEntries([page], { captureRequestBodies: false, captureResponseBodies: true })
+      expect(entries[0]!.responseSchema.note).toMatch(/max-response-body-bytes/)
+    })
+
+    it('precedence: non-JSON wins over the size cap when a non-JSON response is also oversized', () => {
+      const page = makePage({
+        networkLog: [
+          makeNetworkEntry({ responseBodySchema: null, responseBodyContentTypeCategory: 'other', responseBodyExceededSizeCap: true }),
+        ],
+      })
+      const entries = buildApiTestScaffoldEntries([page], { captureRequestBodies: false, captureResponseBodies: true })
+      expect(entries[0]!.responseSchema.note).toMatch(/non-JSON response content type/)
+      expect(entries[0]!.responseSchema.note).not.toMatch(/max-response-body-bytes/)
+    })
+
+    it('labels a response with no observed content type distinctly from a non-JSON content type', () => {
+      const page = makePage({
+        networkLog: [makeNetworkEntry({ responseBodySchema: null, responseBodyContentTypeCategory: null })],
+      })
+      const entries = buildApiTestScaffoldEntries([page], { captureRequestBodies: false, captureResponseBodies: true })
+      expect(entries[0]!.responseSchema.note).toMatch(/no response content type was observed/)
+    })
+
+    it('labels a recognized-but-unparseable json response (e.g. malformed or a top-level array) distinctly, when not from the size cap', () => {
+      const page = makePage({
+        networkLog: [
+          makeNetworkEntry({ responseBodySchema: null, responseBodyContentTypeCategory: 'json', responseBodyExceededSizeCap: false }),
+        ],
+      })
+      const entries = buildApiTestScaffoldEntries([page], { captureRequestBodies: false, captureResponseBodies: true })
+      expect(entries[0]!.responseSchema.note).toMatch(/could not be parsed/)
     })
   })
 

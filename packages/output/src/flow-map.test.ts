@@ -33,6 +33,8 @@ function makeNetworkEntry(overrides: Partial<NetworkEntry>): NetworkEntry {
     durationMs: 50,
     responseBodySample: null,
     responseBodySchema: null,
+    responseBodyContentTypeCategory: null,
+    responseBodyExceededSizeCap: false,
     requestBody: null,
     requestBodyContentTypeCategory: null,
     requestBodyExceededSizeCap: false,

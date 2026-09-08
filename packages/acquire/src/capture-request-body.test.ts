@@ -213,6 +213,8 @@ describe('response body schema summary', () => {
 <script>
 fetch('/api/object-response').catch(() => {})
 fetch('/api/array-response').catch(() => {})
+fetch('/api/html-response').catch(() => {})
+fetch('/api/big-json-response').catch(() => {})
 </script>
 </body></html>`)
         return
@@ -225,6 +227,16 @@ fetch('/api/array-response').catch(() => {})
       if (req.url === '/api/array-response') {
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify([1, 2, 3]))
+        return
+      }
+      if (req.url === '/api/html-response') {
+        res.writeHead(200, { 'Content-Type': 'text/html' })
+        res.end('<p>fragment</p>')
+        return
+      }
+      if (req.url === '/api/big-json-response') {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ notes: 'x'.repeat(200000) }))
         return
       }
       res.writeHead(404)
@@ -260,5 +272,41 @@ fetch('/api/array-response').catch(() => {})
     expect(entry).toBeDefined()
     expect(entry!.responseBodySample).toBeNull()
     expect(entry!.responseBodySchema).toBeNull()
+  }, 30000)
+
+  it('categorizes a JSON object response under the size cap as json with responseBodyExceededSizeCap false', async () => {
+    const result = await capturePage(`${baseUrl}/schema-page`, { captureResponseBodies: true })
+    const entry = result.networkLog.find((e) => e.url === `${baseUrl}/api/object-response`)
+    expect(entry).toBeDefined()
+    expect(entry!.responseBodyContentTypeCategory).toBe('json')
+    expect(entry!.responseBodyExceededSizeCap).toBe(false)
+  }, 30000)
+
+  it('categorizes a non-JSON response as other, with responseBodySchema left null and no body read attempted', async () => {
+    const result = await capturePage(`${baseUrl}/schema-page`, { captureResponseBodies: true })
+    const entry = result.networkLog.find((e) => e.url === `${baseUrl}/api/html-response`)
+    expect(entry).toBeDefined()
+    expect(entry!.responseBodyContentTypeCategory).toBe('other')
+    expect(entry!.responseBodySample).toBeNull()
+    expect(entry!.responseBodySchema).toBeNull()
+    expect(entry!.responseBodyExceededSizeCap).toBe(false)
+  }, 30000)
+
+  it('leaves responseBodySchema null and flags the size cap when a JSON response exceeds maxResponseBodyBytes', async () => {
+    const result = await capturePage(`${baseUrl}/schema-page`, { captureResponseBodies: true, maxResponseBodyBytes: 1000 })
+    const entry = result.networkLog.find((e) => e.url === `${baseUrl}/api/big-json-response`)
+    expect(entry).toBeDefined()
+    expect(entry!.responseBodyContentTypeCategory).toBe('json')
+    expect(entry!.responseBodyExceededSizeCap).toBe(true)
+    expect(entry!.responseBodySample).toBeNull()
+    expect(entry!.responseBodySchema).toBeNull()
+  }, 30000)
+
+  it('leaves responseBodyContentTypeCategory null and responseBodyExceededSizeCap false when captureResponseBodies is unset', async () => {
+    const result = await capturePage(`${baseUrl}/schema-page`)
+    const entry = result.networkLog.find((e) => e.url === `${baseUrl}/api/object-response`)
+    expect(entry).toBeDefined()
+    expect(entry!.responseBodyContentTypeCategory).toBeNull()
+    expect(entry!.responseBodyExceededSizeCap).toBe(false)
   }, 30000)
 })

@@ -1,4 +1,4 @@
-import type { RequestBodyContentTypeCategory } from '@treeline/acquire'
+import type { RequestBodyContentTypeCategory, ResponseBodyContentTypeCategory } from '@treeline/acquire'
 import type { CrawledPage } from './input.js'
 import type { ApiTestScaffoldEntry, ApiTestScaffoldReport, ApiTestScaffoldRequestFields, ApiTestScaffoldResponseSchema } from './types.js'
 import { isApiSurfaceCandidate } from './flow-map.js'
@@ -18,8 +18,22 @@ const NOT_APPLICABLE_REQUEST_NO_BODY_NOTE = 'not applicable (no request body was
 const NOT_APPLICABLE_REQUEST_UNPARSEABLE_NOTE =
   'not applicable (the content type was recognized, but the body could not be parsed as expected — e.g. malformed JSON, or a non-object top-level JSON value)'
 const NOT_CAPTURED_RESPONSE_NOTE = 'not captured (`--capture-response-bodies` was off for this crawl)'
-const NOT_APPLICABLE_RESPONSE_NOTE =
-  'not applicable — no schema could be inferred for this endpoint (e.g. a non-JSON response, an oversized body, or a non-object top-level JSON value)'
+const NOT_APPLICABLE_RESPONSE_NON_JSON_NOTE = 'not applicable (a non-JSON response content type — response schema inference is JSON-only)'
+const NOT_APPLICABLE_RESPONSE_SIZE_CAP_NOTE = 'not applicable (the response body exceeds `--max-response-body-bytes` for this crawl)'
+const NOT_APPLICABLE_RESPONSE_NO_BODY_NOTE = 'not applicable (no response content type was observed for this request)'
+const NOT_APPLICABLE_RESPONSE_UNPARSEABLE_NOTE =
+  'not applicable (the response content type was JSON, but the body could not be parsed as expected — e.g. malformed JSON, or a non-object top-level JSON value)'
+
+// Same orthogonal-signals precedence as notApplicableRequestNote below, applied to the
+// response side of the same gap (API-CONTENT-TYPE-BUILDOUT.md's response-body follow-up):
+// a JSON response can be null purely from the size cap, so the size cap is checked before
+// falling back to "unparseable."
+function notApplicableResponseNote(category: ResponseBodyContentTypeCategory | null, exceededSizeCap: boolean): string {
+  if (category === 'other') return NOT_APPLICABLE_RESPONSE_NON_JSON_NOTE
+  if (exceededSizeCap) return NOT_APPLICABLE_RESPONSE_SIZE_CAP_NOTE
+  if (category === null) return NOT_APPLICABLE_RESPONSE_NO_BODY_NOTE
+  return NOT_APPLICABLE_RESPONSE_UNPARSEABLE_NOTE
+}
 
 // Precedence for a flag-on-but-null request body, per API-CONTENT-TYPE-BUILDOUT.md decision #5:
 // the two signals are orthogonal (a json/form-urlencoded body can be null purely from the size
@@ -50,9 +64,13 @@ function buildRequestFields(
 function buildResponseSchema(
   responseBodySchema: Record<string, string> | null,
   captureResponseBodies: boolean,
+  contentTypeCategory: ResponseBodyContentTypeCategory | null,
+  exceededSizeCap: boolean,
 ): ApiTestScaffoldResponseSchema {
   if (!captureResponseBodies) return { status: 'not-captured', schema: null, note: NOT_CAPTURED_RESPONSE_NOTE }
-  if (responseBodySchema === null) return { status: 'not-applicable', schema: null, note: NOT_APPLICABLE_RESPONSE_NOTE }
+  if (responseBodySchema === null) {
+    return { status: 'not-applicable', schema: null, note: notApplicableResponseNote(contentTypeCategory, exceededSizeCap) }
+  }
   return { status: 'captured', schema: responseBodySchema, note: null }
 }
 
@@ -74,6 +92,8 @@ interface AggregatedEntry {
   requestBodyContentTypeCategory: RequestBodyContentTypeCategory | null
   requestBodyExceededSizeCap: boolean
   responseBodySchema: Record<string, string> | null
+  responseBodyContentTypeCategory: ResponseBodyContentTypeCategory | null
+  responseBodyExceededSizeCap: boolean
 }
 
 export function buildApiTestScaffoldEntries(pages: CrawledPage[], config: ApiTestScaffoldConfig): ApiTestScaffoldEntry[] {
@@ -94,6 +114,12 @@ export function buildApiTestScaffoldEntries(pages: CrawledPage[], config: ApiTes
         if (existing.responseBodySchema === null && entry.responseBodySchema !== null) {
           existing.responseBodySchema = entry.responseBodySchema
         }
+        if (existing.responseBodyContentTypeCategory === null && entry.responseBodyContentTypeCategory !== null) {
+          existing.responseBodyContentTypeCategory = entry.responseBodyContentTypeCategory
+        }
+        if (!existing.responseBodyExceededSizeCap && entry.responseBodyExceededSizeCap) {
+          existing.responseBodyExceededSizeCap = true
+        }
       } else {
         byKey.set(key, {
           method: entry.method,
@@ -104,6 +130,8 @@ export function buildApiTestScaffoldEntries(pages: CrawledPage[], config: ApiTes
           requestBodyContentTypeCategory: entry.requestBodyContentTypeCategory,
           requestBodyExceededSizeCap: entry.requestBodyExceededSizeCap,
           responseBodySchema: entry.responseBodySchema,
+          responseBodyContentTypeCategory: entry.responseBodyContentTypeCategory,
+          responseBodyExceededSizeCap: entry.responseBodyExceededSizeCap,
         })
       }
     }
@@ -115,7 +143,12 @@ export function buildApiTestScaffoldEntries(pages: CrawledPage[], config: ApiTes
       entry.requestBodyContentTypeCategory,
       entry.requestBodyExceededSizeCap,
     )
-    const responseSchema = buildResponseSchema(entry.responseBodySchema, config.captureResponseBodies)
+    const responseSchema = buildResponseSchema(
+      entry.responseBodySchema,
+      config.captureResponseBodies,
+      entry.responseBodyContentTypeCategory,
+      entry.responseBodyExceededSizeCap,
+    )
     const hints = new Set<string>()
     if (requestFields.status === 'captured') {
       for (const field of requestFields.fields) hints.add(field)

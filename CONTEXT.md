@@ -1188,6 +1188,30 @@ boundary=...`, an empty content type, and a genuinely unrecognized one.
     repo's proven capture → persist → render+wire session-split pattern.
     See the `PageState.assertableAttributes` entry above for the capture
     shape.
+- **Response-body content-type attribution, closing session 56's own
+  documented gap** (session 59) — session 56 closed content-type
+  attribution for a flag-on-but-null *request* body only, and explicitly
+  left the response-body half open (see that entry above). This session
+  closes it: two new `NetworkEntry` fields, populated only when
+  `--capture-response-bodies` is on —
+  `responseBodyContentTypeCategory: 'json' | 'other' | null` (via a new
+  exported `categorizeResponseBodyContentType`, mirroring
+  `categorizeRequestBodyContentType`) and `responseBodyExceededSizeCap:
+boolean`. Only two categories exist on the response side (vs. four for
+  requests) since response schema inference is JSON-only by design — no
+  response-side equivalent of `form-urlencoded`/`multipart` needs
+  distinguishing. `api-test-scaffold.ts`'s new `notApplicableResponseNote`
+  mirrors the request side's same orthogonal-signals precedence (non-JSON
+  content type checked before the size cap, since a non-JSON body can also
+  happen to be oversized), producing four distinct notes: non-JSON content
+  type, exceeded `--max-response-body-bytes`, no response content type
+  observed at all, and recognized-JSON-but-unparseable. Category/size-cap
+  are computed for every response when the flag is on, not gated to
+  `xhr`/`fetch` resourceTypes, so a non-GET document navigation (which
+  `isApiSurfaceCandidate` also treats as API-surface) gets honest
+  attribution rather than a silent `null` forever. See CLAUDE.md's
+  "Operational gotchas" for the full field/precedence writeup and test
+  coverage list.
 
 ## Authenticated crawling (sessions 49-52, built and verified)
 

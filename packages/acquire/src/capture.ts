@@ -1,6 +1,6 @@
 import { AxeBuilder } from '@axe-core/playwright'
 import type { Browser, BrowserContext, Page, Request } from 'playwright'
-import type { AcquireOptions, AssertableAttribute, AxeIncompleteResult, AxeViolation, CapturedForm, CaptureHandler, ColorSwatch, DomInteractiveElement, NetworkEntry, PageState, RequestBodyContentTypeCategory } from './types.js'
+import type { AcquireOptions, AssertableAttribute, AxeIncompleteResult, AxeViolation, CapturedForm, CaptureHandler, ColorSwatch, DomInteractiveElement, NetworkEntry, PageState, RequestBodyContentTypeCategory, ResponseBodyContentTypeCategory } from './types.js'
 import { launchHardened } from './launch.js'
 import { AuthExpiredError, AuthWallError, SeedAuthenticationError, checkAuthStillValid } from './auth.js'
 
@@ -47,6 +47,10 @@ export function categorizeRequestBodyContentType(contentType: string): RequestBo
   if (normalized.startsWith('application/x-www-form-urlencoded')) return 'form-urlencoded'
   if (normalized.startsWith('multipart/form-data')) return 'multipart'
   return 'other'
+}
+
+export function categorizeResponseBodyContentType(contentType: string): ResponseBodyContentTypeCategory {
+  return contentType.toLowerCase().startsWith('application/json') ? 'json' : 'other'
 }
 
 interface RequestBodyExtractionResult {
@@ -463,6 +467,8 @@ async function captureWithContext(url: string, context: BrowserContext, options?
       durationMs: Date.now() - req.startedAt,
       responseBodySample: null,
       responseBodySchema: null,
+      responseBodyContentTypeCategory: null,
+      responseBodyExceededSizeCap: false,
       requestBody: req.requestBody,
       requestBodyContentTypeCategory: req.requestBodyContentTypeCategory,
       requestBodyExceededSizeCap: req.requestBodyExceededSizeCap,
@@ -472,9 +478,14 @@ async function captureWithContext(url: string, context: BrowserContext, options?
     }
     networkLog.push(entry)
     if (!options?.captureResponseBodies) return
+    // Derived from the Content-Type header directly, regardless of resourceType, so a
+    // non-xhr/fetch entry that still counts as API-surface (e.g. a non-GET document
+    // navigation, per isApiSurfaceCandidate) still gets an honest category rather than
+    // staying null forever.
+    const contentTypeHeader = res.headers()['content-type']
+    entry.responseBodyContentTypeCategory = contentTypeHeader ? categorizeResponseBodyContentType(contentTypeHeader) : null
     if (!CAPTURABLE_RESOURCE_TYPES.has(req.resourceType)) return
-    const contentType = res.headers()['content-type'] ?? ''
-    if (!contentType.toLowerCase().startsWith('application/json')) return
+    if (entry.responseBodyContentTypeCategory !== 'json') return
     const key = `${req.method} ${res.url()}`
     if (sampledEndpoints.has(key)) return
     bodyReads.push(
@@ -482,7 +493,9 @@ async function captureWithContext(url: string, context: BrowserContext, options?
         try {
           const body = await res.text()
           sampledEndpoints.add(key)
-          if (Buffer.byteLength(body, 'utf-8') <= maxResponseBodyBytes) {
+          const exceededSizeCap = Buffer.byteLength(body, 'utf-8') > maxResponseBodyBytes
+          entry.responseBodyExceededSizeCap = exceededSizeCap
+          if (!exceededSizeCap) {
             entry.responseBodySample = body
             entry.responseBodySchema = inferShallowSchema(safeJsonParse(body))
           }

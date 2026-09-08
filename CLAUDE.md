@@ -1,6 +1,6 @@
 # CLAUDE.md — treeline
 
-_Last updated after session 58._
+_Last updated after session 59._
 
 Full design rationale lives in `CONTEXT.md` - read that first for the "why."
 This file is the operational guide: conventions, commands, and hard-won
@@ -757,15 +757,34 @@ api-test-scaffold.ts`'s "not applicable" note is now specific: multipart,
   `dated_reminders_counter.php` that session 55 already found, not chased
   further per this repo's "know when to stop" discipline) — the multipart
   label itself is proven correct via the real end-to-end fixture test
-  instead. **Still open, deliberately out of scope for session 56:** the
-  response-body side of this same gap — `responseBodySchema` null on a
-  flag-on entry still can't be attributed to a specific cause (non-JSON,
-  oversized, non-object top-level JSON); `api-test-scaffold.ts`'s response
-  section still uses the older, general "not applicable" category wording.
-  If a future session wants that half closed too, it needs its own new
-  `NetworkEntry` fields (e.g. a response content-type category), following
-  the same pattern as this session, not an assumption that the request-body
-  fix already covers it.
+  instead. **Closed (session 59) — the response-body half of this same gap
+  is fixed too, not just documented.** Two new `NetworkEntry` fields,
+  populated only when `--capture-response-bodies` is on:
+  `responseBodyContentTypeCategory: 'json' | 'other' | null` (derived from
+  the response's `Content-Type` header directly, via the new exported
+  `categorizeResponseBodyContentType` in `packages/acquire/src/capture.ts`,
+  mirroring `categorizeRequestBodyContentType`) and
+  `responseBodyExceededSizeCap: boolean`. Unlike the request side, only two
+  categories exist for responses (`'json'` / `'other'`) since response
+  schema inference is JSON-only by design — there's no response-side
+  equivalent of `form-urlencoded`/`multipart` to distinguish.
+  `api-test-scaffold.ts`'s `notApplicableResponseNote` now mirrors
+  `notApplicableRequestNote`'s same orthogonal-signals precedence (non-JSON
+  content type wins over the size cap, since a non-JSON body can also
+  happen to be oversized), giving four distinct response notes: non-JSON
+  content type, exceeded `--max-response-body-bytes`, no response content
+  type observed at all, and recognized-JSON-but-unparseable (malformed
+  JSON, or a non-object/array top-level value — the same shape as a
+  top-level JSON array, which `inferShallowSchema` already treated as
+  `null`). Category/size-cap are computed for every response when the flag
+  is on, not just `xhr`/`fetch` resourceTypes, so a non-GET document
+  navigation (which `isApiSurfaceCandidate` also treats as API-surface)
+  gets honest attribution too, not a silent `null` forever. Covered by real
+  fixture-server tests in `packages/acquire/src/capture-request-body.test.ts`
+  (non-JSON response, oversized JSON response, under-cap JSON response,
+  flag-off) and `packages/acquire/src/content-type-category.test.ts`, plus
+  unit tests for all four note-precedence cases in
+  `packages/output/src/api-test-scaffold.test.ts`.
 - **`pageExists` is status-blind — `markFailed` permanently poisons
   resumability for that URL, not just a same-run retry guard.**
   `packages/core/src/persistence.ts`'s `pageExists(url)` is `SELECT 1 FROM
