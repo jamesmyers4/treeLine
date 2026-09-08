@@ -161,6 +161,41 @@ describe('generateFlowMap', () => {
     expect(surfaceEntry.totalPageCount).toBe(5)
     expect(flowMap.distinctApiEndpoints).toBe(1)
   })
+
+  it('collapses a per-request-token URL hit on 5 pages into 1 endpoint row, not 5 (goldenpetbrands.com Cloudflare-challenge shape)', () => {
+    const hashes = ['8f3a2b1c9d4e5f6a', '1a2b3c4d5e6f7a8b', '9c8d7e6f5a4b3c2d', '2b3c4d5e6f7a8b9c', '7a6b5c4d3e2f1a0b']
+    const pages = hashes.map((hash, i) =>
+      makePage({
+        url: `https://example.com/${i}`,
+        networkLog: [
+          makeNetworkEntry({
+            url: `https://example.com/cdn-cgi/challenge-platform/h/g/orchestrate/jsch/v1/${hash}`,
+            method: 'GET',
+            resourceType: 'xhr',
+          }),
+        ],
+      }),
+    )
+    const flowMap = generateFlowMap(pages)
+    expect(flowMap.apiSurface).toHaveLength(1)
+    const surfaceEntry = flowMap.apiSurface[0]!
+    expect(surfaceEntry.url).toBe('https://example.com/cdn-cgi/challenge-platform/h/g/orchestrate/jsch/v1/{id}')
+    expect(surfaceEntry.occurrenceCount).toBe(5)
+    expect(surfaceEntry.distinctUrlCount).toBe(5)
+    expect(flowMap.distinctApiEndpoints).toBe(1)
+  })
+
+  it('does not collapse two genuinely different endpoints that happen to both have long path segments', () => {
+    const page = makePage({
+      networkLog: [
+        makeNetworkEntry({ url: 'https://example.com/api/user-settings', method: 'GET', resourceType: 'xhr' }),
+        makeNetworkEntry({ url: 'https://example.com/api/order-history', method: 'GET', resourceType: 'xhr' }),
+      ],
+    })
+    const flowMap = generateFlowMap([page])
+    expect(flowMap.apiSurface).toHaveLength(2)
+    expect(flowMap.apiSurface.map((e) => e.distinctUrlCount)).toEqual([1, 1])
+  })
 })
 
 describe('renderFlowMapMarkdown', () => {
@@ -190,6 +225,23 @@ describe('renderFlowMapMarkdown', () => {
     const flowMap = generateFlowMap(pages)
     const markdown = renderFlowMapMarkdown(flowMap)
     expect(markdown).toContain('+2 more')
+  })
+
+  it('notes the distinct-URL count in the table when a row collapsed multiple raw URLs, and omits it otherwise', () => {
+    const collapsedPage = makePage({
+      networkLog: [
+        makeNetworkEntry({ url: 'https://example.com/track/11111', method: 'GET', resourceType: 'xhr' }),
+        makeNetworkEntry({ url: 'https://example.com/track/22222', method: 'GET', resourceType: 'xhr' }),
+      ],
+    })
+    const collapsedMarkdown = renderFlowMapMarkdown(generateFlowMap([collapsedPage]))
+    expect(collapsedMarkdown).toContain('https://example.com/track/{id} (2 distinct URLs)')
+    const plainPage = makePage({
+      networkLog: [makeNetworkEntry({ url: 'https://example.com/api/track', method: 'GET', resourceType: 'xhr' })],
+    })
+    const plainMarkdown = renderFlowMapMarkdown(generateFlowMap([plainPage]))
+    expect(plainMarkdown).toContain('https://example.com/api/track |')
+    expect(plainMarkdown).not.toContain('distinct URLs')
   })
 
   it('renders a fenced, pretty-printed block for an endpoint with a captured response body sample', () => {

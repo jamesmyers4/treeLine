@@ -57,6 +57,30 @@ describe('buildApiTestScaffoldEntries', () => {
     expect(entries).toHaveLength(1)
   })
 
+  it('collapses a per-request-token path into one endpoint, same normalization flow-map.ts uses', () => {
+    const page = makePage({
+      networkLog: [
+        makeNetworkEntry({ url: 'https://example.com/orders/11111/items', method: 'GET' }),
+        makeNetworkEntry({ url: 'https://example.com/orders/22222/items', method: 'GET' }),
+      ],
+    })
+    const entries = buildApiTestScaffoldEntries([page], { captureRequestBodies: true, captureResponseBodies: true })
+    expect(entries).toHaveLength(1)
+    expect(entries[0]!.endpoint).toBe('https://example.com/orders/{id}/items')
+  })
+
+  it('collapses two requests to the same path that only differ by query string into one entry, not two identical-looking sections', () => {
+    const page = makePage({
+      networkLog: [
+        makeNetworkEntry({ url: 'https://example.com/api/search?q=shoes', method: 'GET' }),
+        makeNetworkEntry({ url: 'https://example.com/api/search?q=hats', method: 'GET' }),
+      ],
+    })
+    const entries = buildApiTestScaffoldEntries([page], { captureRequestBodies: true, captureResponseBodies: true })
+    expect(entries).toHaveLength(1)
+    expect(entries[0]!.endpoint).toBe('https://example.com/api/search')
+  })
+
   it('renders the endpoint as method + path, without the query string', () => {
     const page = makePage({
       networkLog: [

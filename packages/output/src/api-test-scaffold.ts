@@ -3,6 +3,7 @@ import type { CrawledPage } from './input.js'
 import type { ApiTestScaffoldEntry, ApiTestScaffoldReport, ApiTestScaffoldRequestFields, ApiTestScaffoldResponseSchema } from './types.js'
 import { isApiSurfaceCandidate } from './flow-map.js'
 import { sanitizeMarkdownText } from './markdown-safety.js'
+import { normalizeApiPath } from './url-normalize.js'
 
 export interface ApiTestScaffoldConfig {
   captureRequestBodies: boolean
@@ -58,7 +59,7 @@ function buildResponseSchema(
 function endpointPath(url: string): string {
   try {
     const parsed = new URL(url)
-    return `${parsed.origin}${parsed.pathname}`
+    return `${parsed.origin}${normalizeApiPath(parsed.pathname)}`
   } catch {
     return url
   }
@@ -80,7 +81,7 @@ export function buildApiTestScaffoldEntries(pages: CrawledPage[], config: ApiTes
   for (const page of pages) {
     for (const entry of page.networkLog) {
       if (!isApiSurfaceCandidate(entry)) continue
-      const key = `${entry.method} ${entry.url}`
+      const key = `${entry.method} ${endpointPath(entry.url)}`
       const existing = byKey.get(key)
       if (existing) {
         if (existing.requestBody === null && entry.requestBody !== null) existing.requestBody = entry.requestBody

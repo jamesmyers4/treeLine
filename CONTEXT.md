@@ -2213,13 +2213,34 @@ locked-decision brief there; this section is the outcome summary. See
   was genuinely tagged `resourceType: 'xhr'` by the capture layer and
   correctly included per the rule, even though it isn't meaningfully an
   "API endpoint" in the spirit of the original pitch.
-- The API surface dedup logic groups by exact `(method, url)` string match,
-  which doesn't collapse URLs carrying per-request tokens — confirmed via a
-  real crawl of goldenpetbrands.com where Cloudflare's bot-challenge
-  mechanism (a single conceptual thing, hit once per page) was reported as
-  5 separate endpoint rows because each request's URL path embeds a unique
-  hash. What's actually 2 distinct mechanisms (Cloudflare's challenge,
-  Google Fonts) was reported as 6 rows.
+- **Closed (post-session-58) — the API surface dedup logic no longer groups
+  by exact `(method, url)` string match.** New shared
+  `packages/output/src/url-normalize.ts` (`normalizeApiPath`,
+  `normalizeApiSurfaceUrl`) collapses a path segment or query-param value to
+  a `{id}` placeholder when it's a UUID, a 4+-consecutive-digit run (same
+  threshold as the entity-id CSS-selector fix, `ENTITY_DIGIT_RUN` in
+  `selector-candidates.ts`), or a mixed alphanumeric string 6+ characters
+  long that isn't all-letters once split on `-`/`_` (same instinct as
+  `isHashLikeClass`, reused rather than reinvented). `flow-map.ts`'s
+  `buildApiSurface` groups and displays by the normalized URL, and a new
+  `ApiSurfaceEntry.distinctUrlCount` field (rendered as `(N distinct URLs)`
+  in the table only when >1) keeps the real fan-in visible instead of
+  hiding it — a grouped row no longer looks like a single arbitrary raw
+  URL. `api-test-scaffold.ts` had the identical bug (`endpointPath`'s
+  display already stripped the query string, but the grouping key didn't,
+  so two requests to the same path with different query strings could
+  silently produce two duplicate-looking `## GET ...` sections) — fixed by
+  making `endpointPath` itself the single source of truth for both
+  grouping and display, normalized pathname included, so the two can never
+  diverge again. **Re-verified against the exact real target that found
+  this bug**, not just fixtures: a fresh `goldenpetbrands.com` crawl now
+  shows Cloudflare's challenge-platform endpoint as **1 row spanning 3
+  distinct URLs** (`.../jsd/oneshot/{id}/{id}/{id} (3 distinct URLs)`),
+  with Google Fonts correctly staying a separate row — 2 rows for 2 real
+  mechanisms, matching the original complaint exactly. A plain business
+  term like `/api/user-settings` is confirmed to survive unnormalized
+  (real regression test) — the fix targets tokens, not ordinary hyphenated
+  path segments.
 - POM property naming doesn't disambiguate same-text/different-destination
   links.
 - Axe report's `exampleSelector` doesn't show all affected elements.

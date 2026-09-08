@@ -2,6 +2,7 @@ import type { CapturedForm, CapturedFormField, NetworkEntry } from '@treeline/ac
 import type { CrawledPage } from './input.js'
 import type { ApiSurfaceEntry, FlowMap, PageFormsEntry } from './types.js'
 import { safeCodeFence, sanitizeMarkdownTableCell, sanitizeMarkdownText } from './markdown-safety.js'
+import { normalizeApiSurfaceUrl } from './url-normalize.js'
 
 const API_SURFACE_RESOURCE_TYPES = new Set(['xhr', 'fetch', 'websocket', 'eventsource'])
 
@@ -16,15 +17,24 @@ function buildFormsEntries(pages: CrawledPage[]): PageFormsEntry[] {
 function buildApiSurface(pages: CrawledPage[]): ApiSurfaceEntry[] {
   const byKey = new Map<
     string,
-    { method: string; url: string; occurrenceCount: number; pages: string[]; responseBodySample: string | null }
+    {
+      method: string
+      url: string
+      occurrenceCount: number
+      pages: string[]
+      responseBodySample: string | null
+      distinctUrls: Set<string>
+    }
   >()
   for (const page of pages) {
     for (const entry of page.networkLog) {
       if (!isApiSurfaceCandidate(entry)) continue
-      const key = `${entry.method} ${entry.url}`
+      const normalizedUrl = normalizeApiSurfaceUrl(entry.url)
+      const key = `${entry.method} ${normalizedUrl}`
       const existing = byKey.get(key)
       if (existing) {
         existing.occurrenceCount += 1
+        existing.distinctUrls.add(entry.url)
         if (!existing.pages.includes(page.url)) existing.pages.push(page.url)
         if (!existing.responseBodySample && entry.responseBodySample) {
           existing.responseBodySample = entry.responseBodySample
@@ -32,10 +42,11 @@ function buildApiSurface(pages: CrawledPage[]): ApiSurfaceEntry[] {
       } else {
         byKey.set(key, {
           method: entry.method,
-          url: entry.url,
+          url: normalizedUrl,
           occurrenceCount: 1,
           pages: [page.url],
           responseBodySample: entry.responseBodySample,
+          distinctUrls: new Set([entry.url]),
         })
       }
     }
@@ -47,6 +58,7 @@ function buildApiSurface(pages: CrawledPage[]): ApiSurfaceEntry[] {
     samplePages: v.pages.slice(0, 3),
     totalPageCount: v.pages.length,
     responseBodySample: v.responseBodySample,
+    distinctUrlCount: v.distinctUrls.size,
   }))
 }
 
@@ -100,7 +112,11 @@ function renderApiSurfaceTable(entries: ApiSurfaceEntry[]): string[] {
     const remaining = entry.totalPageCount - entry.samplePages.length
     const more = remaining > 0 ? ` (+${remaining} more)` : ''
     const samplePages = entry.samplePages.map(sanitizeMarkdownTableCell).join(', ')
-    lines.push(`| ${sanitizeMarkdownTableCell(entry.method)} | ${sanitizeMarkdownTableCell(entry.url)} | ${entry.occurrenceCount} | ${samplePages}${more} |`)
+    const urlCell =
+      entry.distinctUrlCount > 1
+        ? `${sanitizeMarkdownTableCell(entry.url)} (${entry.distinctUrlCount} distinct URLs)`
+        : sanitizeMarkdownTableCell(entry.url)
+    lines.push(`| ${sanitizeMarkdownTableCell(entry.method)} | ${urlCell} | ${entry.occurrenceCount} | ${samplePages}${more} |`)
   }
   lines.push('')
   return lines

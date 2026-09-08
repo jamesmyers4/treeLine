@@ -121,6 +121,7 @@ export interface ApiSurfaceEntry {
   samplePages: string[]
   totalPageCount: number
   responseBodySample: string | null
+  distinctUrlCount: number
 }
 
 export interface FlowMap {
