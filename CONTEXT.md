@@ -2101,6 +2101,96 @@ established, with explicit confirmation before doing so since the container
 had already been running for hours before this session started and could
 plausibly have held another session's in-progress state.
 
+### Session 61 follow-up: both session-57 "undiagnosed" quirks resolved, one real gap fixed, one narrow gap found and left open
+
+Direct continuation of the two items session 57 explicitly left open (see
+above). Root-caused via a throwaway instrumented script (not shipped) that
+called the real `auditNavMapEntry`/`clickSegment` functions directly against
+the live OPENEMR-QA container, rather than guessing from the report alone —
+this mattered: an early hand-rolled reproduction using `page.locator()`
+instead of the real per-frame `getByRole`/`:text-is` logic gave a
+misleadingly clean result and had to be discarded in favor of calling the
+real code path.
+
+- **Root cause of the `Admin > Config` / cascading `Admin > System > *`
+  failures: a real timing race, not a locator-matching bug.** Direct,
+  instrumented reproduction showed the click landing on the exact correct
+  element every time (`<div class="menuLabel px-1" data-bind="...
+click: menuActionClick...">Config</div>`, verified via a role-based-match
+  dump across every frame confirming no decoy element anywhere) — the real
+  navigation itself was simply delayed past when
+  `page.waitForLoadState('networkidle')` already resolved. Confirmed
+  directly: adding a fixed extra wait after the click reliably surfaced the
+  real destination frame (`interface/super/edit_globals.php`) that
+  `networkidle` alone missed. Root cause is plausibly an async permission/
+  session check inside OpenEMR's own knockout.js click handler before the
+  iframe `src` is actually set — consistent with the `restoreSession()`/
+  CSRF-token conventions CLAUDE.md already documents elsewhere for this
+  target.
+- **Fix: `packages/verify/src/nav-audit.ts` gained `waitForFrameSettle`**,
+  called after every clickPath segment (not just the last) alongside the
+  existing `networkidle` wait. Polls the live frame-URL list until it stops
+  changing for `FRAME_SETTLE_QUIET_MS` (1500ms — deliberately 3x the
+  ~500ms real delay observed live, since a quiet-debounce can only ever
+  infer "probably done," never prove nothing more is pending) or
+  `FRAME_SETTLE_MAX_WAIT_MS` (5000ms) elapses. **A real regression test
+  caught an under-tuned first version of this constant** (500ms) exiting
+  early and missing a deliberately-delayed fixture navigation entirely —
+  `verify.test.ts` now has a fixture page whose click handler updates an
+  iframe `src` after an ~800ms delay, proving the wait actually catches a
+  delay `networkidle` alone would race past, not just asserting the live
+  target happened to pass once.
+- **A second, related fix: `clickSegment` itself now retries its element
+  lookup for up to 3 seconds instead of failing on the first miss.** Found
+  during live re-verification: even with `waitForFrameSettle` in place, a
+  nav item occasionally still came back "not found" immediately after a
+  *different* entry's heavy navigation had just completed — plausibly
+  residual dropdown/backdrop DOM state not yet cleared. Zero added cost in
+  the ordinary case (the very first lookup still succeeds instantly when
+  the element is already there); a real fixture test (a link hidden via
+  `display:none` until a ~1s delayed script reveals it) proves the retry
+  path itself, independent of the frame-settle fix above.
+- **`Fees > Posting Payments` confirmed, via direct observation of the real
+  frame sequence, to be genuine OpenEMR app behavior, not a treeLine bug —
+  same category of finding as session 57's `Fees > Payment` mislabeling,
+  now with the actual mechanism observed instead of inferred.** The click
+  genuinely navigates to the *correct* expected destination first
+  (`interface/billing/sl_eob_search.php`, exactly matching
+  `window.menu_objects`) — then that page itself redirects a second time to
+  the contextual help page, all captured as two sequential real frames in
+  order. `packages/verify`'s existing "last new frame wins" logic (session
+  57) is doing the right thing by reporting the final resting state; no
+  code change follows from this half of the finding, matching this repo's
+  own "no treeLine code change" precedent for `Fees > Payment`.
+- **A third, new, real finding surfaced only because the above fix let the
+  comparison logic actually run instead of erroring out first:**
+  `Admin > System > Language` lands on
+  `language.php?m=definition&csrf_token_form=<live-token>` — origin and
+  path exactly correct, only the query string differs, because the real
+  destination legitimately carries a per-session CSRF token a static
+  `expectedUrl` can never pin. `normalizeForComparison`'s exact-query-string
+  match (shared with `checkAuthStillValid`, deliberately left untouched to
+  avoid changing unrelated behavior) still correctly calls this a
+  mismatch — but `nav-audit.ts` now separately computes a local, verify-only
+  `pathOnlyMatches` check and sets a new `queryOnlyDifference` flag on the
+  result when only the query string differs, rendered by `report.ts` as an
+  explanatory note. Purely additive: existing match/mismatch status is
+  unchanged, covered by both a positive test (the new finding's shape) and
+  a negative test (confirming a genuinely wrong destination, like
+  `Fees > Posting Payments`, does *not* get the note).
+- **One narrow, real gap knowingly left open, found during live
+  re-verification of the fixes above:** `Fees > Posting Payments`'s own
+  two-hop redirect can, on some runs but not others, leave the `Fees`
+  dropdown unable to reopen correctly for whichever entry happens to run
+  shortly afterward — even past the 3-second click-target retry above (5
+  live runs post-fix: 3 clean, 2 with exactly one such error, always in the
+  aftermath of this specific entry). Meaningfully narrower than before this
+  session (pre-fix: a deterministic 5-error cascade, every single run) but
+  not fully eliminated. Not chased further — same "know when to stop"
+  discipline CLAUDE.md already applies to this exact target's admin-surface
+  complexity; worth revisiting only if `packages/verify` sees continued
+  real use and this specific gap keeps recurring.
+
 ## Golden-master pipeline tests and CI (session 58, `GOLDEN-MASTER-BUILDOUT.md`)
 
 Not a `V2.md` roadmap item; closes the two gaps `GOLDEN-MASTER-BUILDOUT.md`
@@ -2335,14 +2425,27 @@ locked-decision brief there; this section is the outcome summary. See
   enough (confirmed real on OpenEMR — see "Authenticated crawling" above)
   can require an OR-selector workaround per target rather than one clean
   selector. Not fixed; no redesign attempted yet.
-- **Two real, undiagnosed navigation quirks found by `packages/verify`'s
-  live OpenEMR run (session 57), not root-caused:** `Fees > Posting
-  Payments` lands on a help-documentation page instead of its real
-  `menu_objects` destination; `Admin > Config` and every `Admin > System >
-  *` entry after it in the same run failed, despite each working in
-  isolation, suggesting some form of DOM/session state accumulating across
-  a long sequence of nav-map entries in one shared browser context. See
-  "Nav-map verification" above and `treeline-output/openemr-verify/
-verify-report.md`'s own "Findings" section for full detail.
+- **Closed (session 61) — both quirks from session 57's live OpenEMR run
+  are now root-caused; one has a real, tested code fix, the other is
+  confirmed non-bug app behavior.** `Admin > Config`/cascading
+  `Admin > System > *` was a real timing race (`networkidle` resolving
+  before OpenEMR's own async click-handler navigation actually landed) —
+  fixed with a frame-settle poll plus a click-target retry in
+  `packages/verify/src/nav-audit.ts`, both covered by fixture-based
+  regression tests, not just a live-target sanity check. `Fees > Posting
+  Payments` is confirmed, via direct frame-by-frame observation, to be a
+  genuine two-hop app redirect (correct destination first, then a real
+  self-redirect to contextual help) — no code change follows, same
+  category as session 57's `Fees > Payment` finding. Fixing the timing race
+  also surfaced a real, previously-hidden third finding (a per-session CSRF
+  token in `Admin > System > Language`'s real URL, now annotated distinctly
+  from a wrong-destination mismatch) and left one narrower gap open (the
+  `Fees > Posting Payments` redirect can still occasionally leave the
+  `Fees` dropdown unable to reopen for whatever runs right after it, ~2 of
+  5 live runs post-fix) — not chased further, per this target's established
+  "know when to stop" precedent. See "Nav-map verification" above (session
+  61 follow-up) for the full root-cause writeup and
+  `treeline-output/openemr-verify/verify-report.md` for the current real
+  report.
 
 **Phase 2 backlog (unchanged):** interaction-reachable page discovery.

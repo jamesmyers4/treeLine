@@ -52,6 +52,7 @@ describe('runNavMapAudit', () => {
     expect(report).toContain('match')
     expect(report).toContain('mismatch')
     expect(report).toContain(`http://localhost:${port}/settings-legacy`)
+    expect(report).not.toContain('only the query string differs')
     expect(report).toContain('## Skipped (precondition required)')
     expect(report).toContain('Billing')
     expect(report).toContain('Audit Log')
@@ -77,5 +78,74 @@ describe('runNavMapAudit', () => {
     expect(summary.mismatches).toBe(0)
     expect(summary.matches).toBe(1)
     rmSync(matchOnlyDir, { recursive: true, force: true })
+  }, 60000)
+
+  it('observes a click-triggered iframe navigation that lands well after networkidle already resolved, not just an immediate one (real OpenEMR shape: session 61)', async () => {
+    const delayedDir = mkdtempSync(join(tmpdir(), 'treeline-verify-test-delayed-'))
+    const navMapPath = join(delayedDir, 'nav-map.json')
+    writeFileSync(navMapPath, JSON.stringify([
+      { label: 'Delayed Report', expectedUrl: `http://localhost:${port}/iframe-target`, clickPath: ['Delayed Report'] },
+    ]))
+
+    const summary = await runNavMapAudit({
+      navMapPath,
+      baseUrl: `http://localhost:${port}/iframe-dashboard`,
+      loginUrl: `http://localhost:${port}/login`,
+      username: FIXTURE_USERNAME,
+      password: FIXTURE_PASSWORD,
+      successIndicator: '#logout-link',
+      outputDir: delayedDir,
+    })
+
+    expect(summary.errors).toBe(0)
+    expect(summary.mismatches).toBe(0)
+    expect(summary.matches).toBe(1)
+    rmSync(delayedDir, { recursive: true, force: true })
+  }, 60000)
+
+  it('flags a query-string-only mismatch as a real mismatch, but annotates it distinctly from a genuinely wrong destination (real shape: a per-session CSRF token)', async () => {
+    const tokenDir = mkdtempSync(join(tmpdir(), 'treeline-verify-test-token-'))
+    const navMapPath = join(tokenDir, 'nav-map.json')
+    writeFileSync(navMapPath, JSON.stringify([
+      { label: 'Reports Token', expectedUrl: `http://localhost:${port}/reports`, clickPath: ['Reports Token'] },
+    ]))
+
+    const summary = await runNavMapAudit({
+      navMapPath,
+      baseUrl: `http://localhost:${port}/token-dashboard`,
+      loginUrl: `http://localhost:${port}/login`,
+      username: FIXTURE_USERNAME,
+      password: FIXTURE_PASSWORD,
+      successIndicator: '#logout-link',
+      outputDir: tokenDir,
+    })
+
+    expect(summary.mismatches).toBe(1)
+    const report = readFileSync(summary.reportPath, 'utf-8')
+    expect(report).toContain(`http://localhost:${port}/reports?tok=xyz123`)
+    expect(report).toContain('only the query string differs')
+    rmSync(tokenDir, { recursive: true, force: true })
+  }, 60000)
+
+  it('retries the click target lookup rather than failing immediately when the element is transiently absent (real OpenEMR shape: session 61, a nav item intermittently not found right after a prior heavy navigation)', async () => {
+    const retryDir = mkdtempSync(join(tmpdir(), 'treeline-verify-test-retry-'))
+    const navMapPath = join(retryDir, 'nav-map.json')
+    writeFileSync(navMapPath, JSON.stringify([
+      { label: 'Delayed Link', expectedUrl: `http://localhost:${port}/reports`, clickPath: ['Delayed Link'] },
+    ]))
+
+    const summary = await runNavMapAudit({
+      navMapPath,
+      baseUrl: `http://localhost:${port}/delayed-target-dashboard`,
+      loginUrl: `http://localhost:${port}/login`,
+      username: FIXTURE_USERNAME,
+      password: FIXTURE_PASSWORD,
+      successIndicator: '#logout-link',
+      outputDir: retryDir,
+    })
+
+    expect(summary.errors).toBe(0)
+    expect(summary.matches).toBe(1)
+    rmSync(retryDir, { recursive: true, force: true })
   }, 60000)
 })

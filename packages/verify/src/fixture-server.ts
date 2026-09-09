@@ -68,6 +68,42 @@ export function startFixtureServer(): Promise<{ server: Server; port: number }> 
       res.end(page(`<h1>Audit Log</h1>${nav}`))
       return
     }
+    if (url.pathname === '/iframe-dashboard') {
+      res.setHeader('content-type', 'text/html')
+      res.end(
+        page(
+          '<div onclick="setTimeout(() => { document.getElementById(\'content\').src = \'/iframe-target\' }, 800)">Delayed Report</div>' +
+            '<iframe id="content" name="content" src="about:blank"></iframe>' +
+            '<a id="logout-link" href="/logout">Logout</a>',
+        ),
+      )
+      return
+    }
+    if (url.pathname === '/iframe-target') {
+      res.setHeader('content-type', 'text/html')
+      res.end(page('<h1>Delayed target reached</h1>'))
+      return
+    }
+    if (url.pathname === '/delayed-target-dashboard') {
+      res.setHeader('content-type', 'text/html')
+      res.end(
+        page(
+          '<a id="hidden-link" href="/reports" style="display:none">Delayed Link</a>' +
+            '<script>setTimeout(() => { document.getElementById(\'hidden-link\').style.display = \'inline\' }, 1000)</script>' +
+            '<a id="logout-link" href="/logout">Logout</a>',
+        ),
+      )
+      return
+    }
+    if (url.pathname === '/token-dashboard') {
+      res.setHeader('content-type', 'text/html')
+      res.end(
+        page(
+          '<a href="/reports?tok=xyz123">Reports Token</a><a id="logout-link" href="/logout">Logout</a>',
+        ),
+      )
+      return
+    }
     res.writeHead(404)
     res.end()
   })

@@ -1,6 +1,6 @@
 # CLAUDE.md — treeline
 
-_Last updated after session 60._
+_Last updated after session 61._
 
 Full design rationale lives in `CONTEXT.md` - read that first for the "why."
 This file is the operational guide: conventions, commands, and hard-won

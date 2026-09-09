@@ -30,6 +30,11 @@ export async function writeVerifyReport(outputDir: string, results: NavMapAuditR
   lines.push('| --- | --- | --- | --- |')
   for (const r of sorted.filter(r => r.status !== 'skipped')) {
     lines.push(renderRow(r))
+    if (r.queryOnlyDifference) {
+      lines.push('')
+      lines.push('Note: same origin and path, only the query string differs — often a per-session security token (e.g. a CSRF token), not necessarily a wrong destination. Worth a manual look before treating this as a real navigation regression.')
+      lines.push('')
+    }
     if (r.screenshotPath) {
       lines.push('')
       lines.push(`Screenshot: ${r.screenshotPath}`)

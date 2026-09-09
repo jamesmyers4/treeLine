@@ -13,6 +13,7 @@ export interface NavMapAuditResult {
   precondition?: string
   errorMessage?: string
   screenshotPath?: string
+  queryOnlyDifference?: boolean
 }
 
 export interface VerifyRunOptions {
