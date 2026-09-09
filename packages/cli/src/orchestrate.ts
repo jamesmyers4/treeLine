@@ -86,6 +86,7 @@ export interface TreelineCrawlSummary {
   distinctColorsFound: number
   apiTestScaffoldGenerated: boolean
   deniedUrlCount: number
+  suspiciousActionUrlCount: number
   abortedAt?: CrawlResult['abortedAt']
 }
 
@@ -250,6 +251,7 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
       distinctColorsFound: colorReport.siteWideScheme.length,
       apiTestScaffoldGenerated,
       deniedUrlCount: crawlResult.deniedUrlCount,
+      suspiciousActionUrlCount: crawlResult.suspiciousActionUrls.length,
       abortedAt: crawlResult.abortedAt,
     }
   } finally {

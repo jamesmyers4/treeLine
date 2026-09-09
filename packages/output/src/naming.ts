@@ -24,10 +24,22 @@ function getPathname(url: string): string {
   }
 }
 
+// Strips any trailing file-extension-shaped suffix (.html, .php, .aspx, ...), not just .html —
+// a real crawl target can serve any server-side extension, and leaving one in place either
+// glues onto the next word unreadably or, worse, survives as a literal "." in a generated class
+// name, which is not valid TypeScript identifier syntax (caught by the syntax gate, not by any
+// type check, since generated code isn't type-checked against this repo's own tsconfig).
+function stripTrailingExtension(pathname: string): string {
+  return pathname.replace(/\.[a-zA-Z0-9]+$/, '')
+}
+
 function pathSegments(url: string): string[] {
   const pathname = getPathname(url)
-  const trimmed = pathname.replace(/^\//, '').replace(/\.html$/, '')
-  return trimmed.split(/[/-]/).filter((segment) => segment.length > 0)
+  const trimmed = stripTrailingExtension(pathname.replace(/^\//, ''))
+  return trimmed
+    .split(/[/-]/)
+    .map((segment) => segment.replace(/[^a-zA-Z0-9_]/g, ''))
+    .filter((segment) => segment.length > 0)
 }
 
 export function urlToClassName(url: string): string {
@@ -40,8 +52,13 @@ export function urlToClassName(url: string): string {
 export function urlToFileBaseName(url: string): string {
   const pathname = getPathname(url)
   if (pathname === '/' || pathname === '') return 'home'
-  const trimmed = pathname.replace(/^\//, '').replace(/\.html$/, '')
-  return trimmed.split('/').filter((segment) => segment.length > 0).join('-').toLowerCase()
+  const trimmed = stripTrailingExtension(pathname.replace(/^\//, ''))
+  return trimmed
+    .split('/')
+    .map((segment) => segment.replace(/[^a-zA-Z0-9_-]/g, ''))
+    .filter((segment) => segment.length > 0)
+    .join('-')
+    .toLowerCase()
 }
 
 export function elementToPropertyName(element: DomInteractiveElement): string {

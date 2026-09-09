@@ -1,7 +1,7 @@
 import { capturePage, AuthExpiredError, AuthWallError } from '@treeline/acquire'
 import type { AuthSession } from '@treeline/acquire'
 import type { CrawlConfig, CrawlResult, HardPageReasonCode } from './types.js'
-import { normalizeUrl, isSameOrigin, isUrlDenied } from './url-utils.js'
+import { normalizeUrl, isSameOrigin, isUrlDenied, detectSuspiciousActionVerb } from './url-utils.js'
 import { fetchRobotsRules } from './robots.js'
 import { fetchSitemapUrls } from './sitemap.js'
 import { fetchSeedPage, findCanonicalHref, detectHostnameMismatches } from './origin-scope.js'
@@ -57,6 +57,16 @@ async function runCrawl(
   }
   const frontier: Array<{ url: string; depth: number }> = [{ url: seedNorm, depth: 0 }]
   const deniedUrls = new Set<string>()
+  const suspiciousActionUrls = new Map<string, string>()
+  const flagSuspiciousActionUrl = (url: string): void => {
+    if (suspiciousActionUrls.has(url)) return
+    const verb = detectSuspiciousActionVerb(url)
+    if (!verb) return
+    suspiciousActionUrls.set(url, verb)
+    console.warn(
+      `[treeline] URL query string looks like it may trigger a state-changing action (matched "${verb}"): ${url}. This is a heuristic warning only — the crawl is still following it normally. Use --deny-url-pattern to actually block it if that's not desired.`,
+    )
+  }
   for (const sUrl of sitemapUrls) {
     try {
       const norm = normalizeUrl(sUrl)
@@ -65,6 +75,7 @@ async function runCrawl(
         deniedUrls.add(norm)
         continue
       }
+      flagSuspiciousActionUrl(norm)
       frontier.push({ url: norm, depth: 0 })
     } catch {
       // skip invalid
@@ -120,6 +131,7 @@ async function runCrawl(
               deniedUrls.add(normLink)
               continue
             }
+            flagSuspiciousActionUrl(normLink)
             frontier.push({ url: normLink, depth: depth + 1 })
           } catch {
             // skip invalid
@@ -159,5 +171,10 @@ async function runCrawl(
       })
     }
   }
-  return { hostnameMismatches, abortedAt, deniedUrlCount: deniedUrls.size }
+  return {
+    hostnameMismatches,
+    abortedAt,
+    deniedUrlCount: deniedUrls.size,
+    suspiciousActionUrls: Array.from(suspiciousActionUrls, ([url, matchedVerb]) => ({ url, matchedVerb })),
+  }
 }

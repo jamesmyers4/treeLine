@@ -319,6 +319,50 @@ describe('runTreelineCrawl', () => {
       denyServer.close()
     }
   }, 120_000)
+
+  it('flags a URL whose query string looks state-changing, but still captures it (heuristic warning only, no --deny-url-pattern configured)', async () => {
+    const suspiciousPages: Record<string, string> = {
+      '/': '<html><body><a href="/safe">safe</a><a href="/forms_admin.php?id=18&method=disable&csrf_token_form=abc">disable</a></body></html>',
+      '/safe': '<html><body>safe page</body></html>',
+      '/forms_admin.php': '<html><body>disable page</body></html>',
+    }
+    const suspiciousServer = createServer((req, res) => {
+      const html = suspiciousPages[req.url ?? '/'] ?? '<html><body>not found</body></html>'
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.end(html)
+    })
+    await new Promise<void>((resolve) => suspiciousServer.listen(0, '127.0.0.1', resolve))
+    const addr = suspiciousServer.address() as { port: number }
+    const suspiciousBaseUrl = `http://127.0.0.1:${addr.port}`
+    const suspiciousOutputDir = join(tmpDir, 'output-suspicious-action')
+    try {
+      const summary = await runTreelineCrawl({
+        url: `${suspiciousBaseUrl}/`,
+        stealth: false,
+        maxPages: 10,
+        maxDepth: 5,
+        throttleMs: 0,
+        outputDir: suspiciousOutputDir,
+        skipInterpretation: true,
+        captureResponseBodies: false,
+        maxResponseBodyBytes: 512000,
+        captureRequestBodies: false,
+        maxRequestBodyBytes: 65536,
+        detectAuthWall: false,
+        insecureCerts: false,
+        denyUrlPatterns: [],
+      })
+      expect(summary.suspiciousActionUrlCount).toBe(1)
+      expect(summary.deniedUrlCount).toBe(0)
+      expect(summary.pagesCaptured).toBe(3)
+      const db = openCrawlDb(join(suspiciousOutputDir, 'crawl.sqlite'))
+      const urls = db.getAllPages().map((p) => p.url)
+      db.close()
+      expect(urls.some((u) => u.includes('method=disable'))).toBe(true)
+    } finally {
+      suspiciousServer.close()
+    }
+  }, 120_000)
 })
 
 function makeElement(overrides: Partial<DomInteractiveElement>): DomInteractiveElement {

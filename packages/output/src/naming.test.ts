@@ -33,6 +33,14 @@ describe('urlToClassName', () => {
   it('prefixes an underscore when the path starts with a digit', () => {
     expect(urlToClassName('https://example.com/3d-printers')).toBe('_3dPrintersPage')
   })
+
+  it('strips a non-.html server-side extension too (e.g. .php), rather than leaving a "." in the identifier (real bug: a literal "." is not valid TS identifier syntax)', () => {
+    expect(urlToClassName('https://example.com/forms_admin.php')).toBe('Forms_adminPage')
+  })
+
+  it('strips any query string and other punctuation from a path segment rather than embedding it in the identifier', () => {
+    expect(urlToClassName('https://example.com/search+results')).toBe('SearchresultsPage')
+  })
 })
 
 describe('urlToFileBaseName', () => {
@@ -46,6 +54,10 @@ describe('urlToFileBaseName', () => {
 
   it('derives a kebab-case name from a hyphenated path and strips .html', () => {
     expect(urlToFileBaseName('https://example.com/our-brands.html')).toBe('our-brands')
+  })
+
+  it('strips a non-.html server-side extension too (e.g. .php)', () => {
+    expect(urlToFileBaseName('https://example.com/forms_admin.php')).toBe('forms_admin')
   })
 })
 

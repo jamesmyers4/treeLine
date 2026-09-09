@@ -36,10 +36,16 @@ export interface HostnameMismatch {
   url: string
 }
 
+export interface SuspiciousActionUrl {
+  url: string
+  matchedVerb: string
+}
+
 export interface CrawlResult {
   hostnameMismatches: HostnameMismatch[]
   abortedAt?: { url: string; reason: 'auth-expired' }
   deniedUrlCount: number
+  suspiciousActionUrls: SuspiciousActionUrl[]
 }
 
 export interface ProposedFormFieldValue {

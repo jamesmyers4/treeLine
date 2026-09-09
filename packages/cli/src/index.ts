@@ -102,6 +102,7 @@ program
       console.log(`High-latency elements: ${summary.flaggedHighLatencyElements}`)
       console.log(`Distinct colors found: ${summary.distinctColorsFound}`)
       console.log(`URLs skipped by deny pattern: ${summary.deniedUrlCount}`)
+      console.log(`URLs flagged as possible state-changing actions (not blocked, see warnings above): ${summary.suspiciousActionUrlCount}`)
       if (summary.apiTestScaffoldGenerated) {
         console.log('API test scaffold: reports/api-test-scaffold.md')
       }

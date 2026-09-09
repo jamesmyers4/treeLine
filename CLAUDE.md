@@ -1,6 +1,6 @@
 # CLAUDE.md — treeline
 
-_Last updated after session 59._
+_Last updated after session 60._
 
 Full design rationale lives in `CONTEXT.md` - read that first for the "why."
 This file is the operational guide: conventions, commands, and hard-won
@@ -351,17 +351,27 @@ stop and figure out why before writing new code — something regressed.
   `isUrlDenied`/`CrawlConfig.denyUrlPatterns` in
   `packages/core/src/url-utils.ts`/`types.ts`. `CrawlResult.deniedUrlCount`
   and the CLI's `URLs skipped by deny pattern: N` summary line make the
-  skip count visible on every run, not just a silent drop. **Still requires
-  the operator to know the risky pattern and pass it explicitly — treeline
-  does not infer or auto-block `method=disable`-shaped links on its own.**
-  The warning is the only unconditional part; the actual protection is
-  opt-in by design, consistent with this repo's "warn-with-a-fix, not
-  auto-widen" posture elsewhere (see the origin-mismatch judgment call
-  below). See CONTEXT.md's "Authenticated crawling" section (session 53
-  addendum) for the full writeup, including why the earlier per-page
-  POST+CSRF source check for this same real crawl didn't catch it (it only
-  covered the specific pages flagged as write-sounding ahead of time, not
-  `forms_admin.php`).
+  skip count visible on every run, not just a silent drop. **The
+  operator-has-to-already-know-the-pattern gap is now narrowed (session
+  60), not fully closed:** `detectSuspiciousActionVerb` in
+  `packages/core/src/url-utils.ts` checks every query-string key/value
+  against a fixed verb list (`delete`, `disable`, `remove`, `deactivate`)
+  and, when matched, `console.warn`s once per URL plus records it on
+  `CrawlResult.suspiciousActionUrls` — surfaced in the CLI as `URLs
+flagged as possible state-changing actions (not blocked, see warnings
+  above): N`. **Still only a heuristic, still opt-in for the actual
+  block** — a suspicious URL is still crawled and captured exactly as
+  before (real regression test confirms byte-identical output when no
+  suspicious URL is present); `--deny-url-pattern` remains the only thing
+  that stops a crawl from reaching a URL at all. This is the deliberate
+  next step this file used to describe as unbuilt future work — warn
+  automatically, block only when the operator says so — same
+  "warn-with-a-fix, not auto-widen" posture as the origin-mismatch
+  judgment call below. See CONTEXT.md's "Authenticated crawling" section
+  (session 53 addendum) for the full writeup, including why the earlier
+  per-page POST+CSRF source check for this same real crawl didn't catch it
+  (it only covered the specific pages flagged as write-sounding ahead of
+  time, not `forms_admin.php`).
 - **A per-login nonce in the URL can make the "obvious" seed URL
   unreachable even with a perfectly valid session.** OpenEMR gates its
   top-level frame (`interface/main/tabs/main.php`) behind a `token_main`
@@ -606,6 +616,20 @@ status` / look for the `[new branch]`-style confirmation line rather than
   place — that's exactly what caused a real silent-data-loss bug (sessions
   30-31): two different URLs slugifying to the same filename silently
   overwrote each other's generated POM/spec files.
+- **`urlToClassName`/`urlToFileBaseName` (`packages/output/src/naming.ts`)
+  used to strip only a trailing `.html` extension — any other server-side
+  extension (`.php`, `.aspx`, `.jsp`, ...) survived into the generated POM
+  class name as a literal `.`, which is not valid TypeScript identifier
+  syntax.** Fixed session 60, caught by the syntax gate (not a type check —
+  generated code isn't type-checked against this repo's own tsconfig) the
+  first time a real test actually captured and POM-generated a `.php` URL
+  rather than only referencing one in a denied-URL fixture. Now strips any
+  trailing `\.[a-zA-Z0-9]+$` suffix, plus strips any other non-identifier
+  character from each path segment as defense-in-depth. Worth remembering:
+  a URL shape that only ever appears in a *skipped* test path (denied,
+  filtered, mocked) hasn't actually been exercised through generation —
+  don't assume a fixture "covers" a shape just because the string appears
+  in a test file.
 - **This repo is public.** Actions history, logs, and artifacts from any
   crawl run are visible to anyone. The API key itself is masked
   automatically in logs, but the actual crawled content (reports, POMs,

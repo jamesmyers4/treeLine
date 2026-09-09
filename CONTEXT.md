@@ -2277,15 +2277,58 @@ locked-decision brief there; this section is the outcome summary. See
   whenever `--login-url` produces a real session, both covered by real
   fixture tests (`packages/core/src/crawler-deny.test.ts`,
   `packages/cli/src/orchestrate-auth.test.ts`) and a manual local-fixture
-  crawl confirming the denied links never reach `crawl.sqlite`. **Still a
-  real, deliberate limitation, not a full close:** the denylist is opt-in
-  and pattern-based — treeline still does not infer or auto-detect a
-  `method=disable`-shaped link on its own, so an operator who doesn't know
-  to write the pattern gets no protection beyond the warning. A future
-  session could look at heuristic detection (flagging query params that
-  look like verbs — `delete`, `disable`, `remove`, `deactivate` — as a
-  warning, not an automatic block) if this proves insufficient in
-  practice.
+  crawl confirming the denied links never reach `crawl.sqlite`. **The
+  opt-in-only gap this left is now also closed (session 60)** — see the
+  heuristic verb-detection entry below. The denylist itself is still
+  opt-in and pattern-based by design (a human still has to write
+  `--deny-url-pattern` to actually *block* anything); the new heuristic
+  only adds visibility for an operator who didn't know to write one.
+- **Closed (session 60) — heuristic verb-detection for the GET-mutation
+  risk, the specific follow-up this file used to list as future work.**
+  `packages/core/src/url-utils.ts`'s new `detectSuspiciousActionVerb(url)`
+  checks every query-string key and value (case-insensitive) against a
+  small fixed list — `delete`, `disable`, `remove`, `deactivate` — and
+  returns the first match, or `null`. **Warning only, never a block** —
+  deliberately distinct from `--deny-url-pattern`: `crawler.ts` calls it
+  at the same two frontier-push sites the deny check already covers
+  (sitemap-discovered URLs, same-origin links found during a page's own
+  capture), and a match is recorded plus `console.warn`'d once per URL,
+  but the URL is still queued and captured exactly as before — a crawl
+  with no suspicious URLs present is byte-identical to one before this
+  feature existed (covered by a real regression test). No new CLI flag —
+  always on, since it changes nothing about what gets captured, only what
+  gets surfaced; same "warn honestly, block only when asked" posture as
+  the existing unconditional authSession warning. New
+  `CrawlResult.suspiciousActionUrls: {url, matchedVerb}[]` and CLI summary
+  line `URLs flagged as possible state-changing actions (not blocked, see
+  warnings above): N`, mirroring `deniedUrlCount`'s existing shape.
+  Real fixture-server tests in
+  `packages/core/src/crawler-suspicious-action.test.ts` (query-param key
+  match, query-param value match — the real OpenEMR `method=disable`
+  shape — sitemap-discovered match, a deny-pattern URL correctly
+  producing zero suspicious-URL entries since it's never reached at all,
+  and the byte-identical-when-absent case) plus a CLI-level test in
+  `packages/cli/src/orchestrate.test.ts` confirming the count reaches
+  `TreelineCrawlSummary` end-to-end. **Found and fixed a real, unrelated
+  bug while writing that CLI-level test:** the fixture URL
+  (`forms_admin.php?...`) had never actually been captured and POM-
+  generated in any prior test — every existing use of that exact URL
+  shape was in a *denied*-URL test, so it was discovered but never
+  captured. Once genuinely captured here, `packages/output/src/naming.ts`
+  produced a generated POM class name containing a literal `.`
+  (`Forms_admin.phpPage`), correctly rejected by the TypeScript syntax
+  gate as invalid identifier syntax. Root cause: `urlToClassName`/
+  `urlToFileBaseName` only ever stripped a trailing `.html` extension,
+  never any other server-side extension (`.php`, `.aspx`, `.jsp`, ...) a
+  real target can serve. Fixed by generalizing the strip to any trailing
+  `\.[a-zA-Z0-9]+$` suffix, plus stripping any other non-identifier
+  character from each path segment as defense-in-depth (covers stray
+  punctuation like a literal `+` in a path, not just extensions) — see
+  `naming.test.ts`'s new `.php` and `+`-in-path regression tests. This is
+  the same class of bug the syntax gate exists to catch generally (see
+  "Nothing verified generated artifacts actually parse before shipping
+  them" above) — found via real end-to-end testing, not a type check,
+  exactly per this repo's own "verify, don't assume" discipline.
 - `--success-indicator` is a single selector reused for both `performLogin`
   and every ongoing `checkAuthStillValid` check; a target whose
   authenticated-chrome template and authenticated-content template diverge

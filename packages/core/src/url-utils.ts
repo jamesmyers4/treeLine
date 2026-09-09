@@ -28,3 +28,26 @@ export function isUrlDenied(url: string, patterns: string[] | undefined): boolea
   if (!patterns || patterns.length === 0) return false
   return patterns.some((pattern) => url.includes(pattern))
 }
+
+// Heuristic only, not a block — a warning surface for the real GET-mutation risk (CLAUDE.md's
+// "Operational gotchas"). --deny-url-pattern remains the only thing that actually stops a
+// crawl from reaching a URL; this just flags a query string that *looks* state-changing so an
+// operator who didn't already know to write a deny pattern still gets a signal.
+const SUSPICIOUS_ACTION_VERBS = ['delete', 'disable', 'remove', 'deactivate']
+
+export function detectSuspiciousActionVerb(url: string): string | null {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+  for (const [key, value] of parsed.searchParams) {
+    const lowerKey = key.toLowerCase()
+    const lowerValue = value.toLowerCase()
+    for (const verb of SUSPICIOUS_ACTION_VERBS) {
+      if (lowerKey.includes(verb) || lowerValue.includes(verb)) return verb
+    }
+  }
+  return null
+}
