@@ -93,7 +93,7 @@ export interface AxeFindingSummary {
   help: string
   helpUrl: string
   affectedElementCount: number
-  exampleSelector: string
+  exampleSelectors: string[]
 }
 
 export interface PageAxeReport {

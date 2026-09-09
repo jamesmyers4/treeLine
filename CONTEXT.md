@@ -2357,7 +2357,20 @@ locked-decision brief there; this section is the outcome summary. See
   path segments.
 - POM property naming doesn't disambiguate same-text/different-destination
   links.
-- Axe report's `exampleSelector` doesn't show all affected elements.
+- **Closed (session 62) — axe report shows every affected element, not just
+  the first.** `AxeFindingSummary.exampleSelector: string` (one selector,
+  from `nodes[0]` only) is now `exampleSelectors: string[]`, populated from
+  every node up to a new `MAX_EXAMPLE_SELECTORS_PER_FINDING = 5` cap
+  (`packages/output/src/axe-report.ts`), rendered as one semicolon-joined
+  markdown-table cell with a `(+N more)` suffix when a finding has more
+  affected elements than the cap shows — same "cap + honest remainder
+  count" pattern this repo already uses elsewhere (`MAX_COLOR_SWATCHES`,
+  `MAX_ASSERTABLE_ATTRIBUTES`). Purely additive to the report's own
+  internal type (not persisted/round-tripped anywhere, so no cross-package
+  fixture fallout) — confirmed via a full `pnpm -r build` sweep and the
+  existing golden-master CLI tests, which show no drift since none of the
+  three locked fixture scenarios trigger an axe violation with more than
+  one affected element.
 - Atlas's "not yet interpreted" message doesn't distinguish skipped vs.
   failed interpretation.
 - **Closed (post-session-58) — the GET-mutation risk from session 53 now

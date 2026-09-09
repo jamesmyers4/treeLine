@@ -3,15 +3,16 @@ import type { CrawledPage } from './input.js'
 import type { AxeFindingSummary, AxeReport, PageAxeReport } from './types.js'
 import { sanitizeMarkdownTableCell, sanitizeMarkdownText } from './markdown-safety.js'
 
+const MAX_EXAMPLE_SELECTORS_PER_FINDING = 5
+
 function toSummary(finding: AxeViolation | AxeIncompleteResult): AxeFindingSummary {
-  const firstNode = finding.nodes[0]
   return {
     id: finding.id,
     impact: finding.impact,
     help: finding.help,
     helpUrl: finding.helpUrl,
     affectedElementCount: finding.nodes.length,
-    exampleSelector: firstNode ? firstNode.target.join(' ') : '',
+    exampleSelectors: finding.nodes.slice(0, MAX_EXAMPLE_SELECTORS_PER_FINDING).map((node) => node.target.join(' ')),
   }
 }
 
@@ -31,11 +32,17 @@ export function generateAxeReport(pages: CrawledPage[]): AxeReport {
   return { generatedAt: new Date().toISOString(), pages: pageReports, totalViolations, totalNeedsReview }
 }
 
+function renderExampleSelectors(finding: AxeFindingSummary): string {
+  const joined = finding.exampleSelectors.join('; ')
+  const remaining = finding.affectedElementCount - finding.exampleSelectors.length
+  return remaining > 0 ? `${joined} (+${remaining} more)` : joined
+}
+
 function renderFindingsTable(findings: AxeFindingSummary[], emptyMessage: string): string[] {
   if (findings.length === 0) return [emptyMessage, '']
-  const lines: string[] = ['| Rule | Impact | Affected Elements | Example Selector | Help |', '| --- | --- | --- | --- | --- |']
+  const lines: string[] = ['| Rule | Impact | Affected Elements | Example Selectors | Help |', '| --- | --- | --- | --- | --- |']
   for (const finding of findings) {
-    lines.push(`| ${finding.id} | ${finding.impact ?? '—'} | ${finding.affectedElementCount} | ${sanitizeMarkdownTableCell(finding.exampleSelector)} | ${finding.help} |`)
+    lines.push(`| ${finding.id} | ${finding.impact ?? '—'} | ${finding.affectedElementCount} | ${sanitizeMarkdownTableCell(renderExampleSelectors(finding))} | ${finding.help} |`)
   }
   lines.push('')
   return lines
