@@ -120,6 +120,7 @@ function baseOptions(outputDir: string, url: string): TreelineCrawlOptions {
   return {
     url,
     stealth: false,
+    headless: false,
     maxPages: 5,
     maxDepth: 2,
     throttleMs: 0,

@@ -117,6 +117,7 @@ export interface PageState {
 
 export interface AcquireOptions {
   stealth?: boolean
+  headless?: boolean
   proxy?: string
   captureResponseBodies?: boolean
   maxResponseBodyBytes?: number

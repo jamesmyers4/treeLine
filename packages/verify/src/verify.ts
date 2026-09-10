@@ -39,7 +39,7 @@ export async function runNavMapAudit(options: VerifyRunOptions): Promise<VerifyR
   const entries = await loadNavMap(options.navMapPath)
   await mkdir(options.outputDir, { recursive: true })
   const mismatchesDir = join(options.outputDir, 'verify-mismatches')
-  const browser = await launchHardened({ insecureCerts: options.insecureCerts })
+  const browser = await launchHardened({ insecureCerts: options.insecureCerts, headless: options.headless })
   const results: NavMapAuditResult[] = []
   try {
     const credentials: LoginCredentials = {

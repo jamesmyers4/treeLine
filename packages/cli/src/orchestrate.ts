@@ -49,6 +49,7 @@ async function readHardPageEntries(hardPagesDir: string): Promise<HardPageEntry[
 export interface TreelineCrawlOptions {
   url: string
   stealth: boolean
+  headless: boolean
   maxPages: number
   maxDepth: number
   throttleMs: number
@@ -127,7 +128,7 @@ async function resolveAuthSession(options: TreelineCrawlOptions): Promise<AuthSe
     passwordSelector: options.passwordSelector,
     submitSelector: options.submitSelector,
   }
-  const browser = await launchHardened({ stealth: options.stealth })
+  const browser = await launchHardened({ stealth: options.stealth, headless: options.headless })
   try {
     const storageState = await performLogin(browser, creds, { insecureCerts: options.insecureCerts })
     return { storageState, successIndicator: creds.successIndicator, loginUrl: creds.loginUrl }
@@ -175,6 +176,7 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
       maxDepth: options.maxDepth,
       maxPages: options.maxPages,
       stealth: options.stealth,
+      headless: options.headless,
       respectRobotsTxt: true,
       throttleMs: options.throttleMs,
       captureResponseBodies: options.captureResponseBodies,

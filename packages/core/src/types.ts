@@ -4,6 +4,7 @@ export interface CrawlConfig {
   maxDepth: number
   maxPages: number
   stealth: boolean
+  headless?: boolean
   respectRobotsTxt: boolean
   throttleMs?: number
   captureResponseBodies?: boolean

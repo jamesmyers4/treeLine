@@ -8,11 +8,12 @@ export async function launchHardened(options: AcquireOptions = {}): Promise<Brow
     return patchrightChromium.launch({
       channel: 'chrome',
       args: ['--disable-blink-features=AutomationControlled'],
+      headless: options.headless ?? false,
       proxy,
     }) as unknown as Browser
   }
   return chromium.launch({
-    headless: false,
+    headless: options.headless ?? false,
     proxy,
   })
 }

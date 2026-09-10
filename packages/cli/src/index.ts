@@ -4,6 +4,7 @@ import type { TreelineCrawlOptions, TreelineDiffOptions } from './orchestrate.js
 
 interface RawCrawlOptions {
   stealth: boolean
+  headless: boolean
   maxPages: string
   maxDepth: string
   throttleMs: string
@@ -36,6 +37,7 @@ program
   .command('crawl <url>')
   .description('Crawl a site and generate test artifacts, docs, and data')
   .option('--stealth', 'enable hardened stealth acquisition', false)
+  .option('--headless', 'run the browser headless (no visible window) instead of the default headed mode', false)
   .option('--max-pages <n>', 'maximum number of pages to crawl', '20')
   .option('--max-depth <n>', 'maximum link depth to crawl', '2')
   .option('--throttle-ms <n>', 'delay between requests in milliseconds', '500')
@@ -63,6 +65,7 @@ program
     const options: TreelineCrawlOptions = {
       url,
       stealth: rawOptions.stealth,
+      headless: rawOptions.headless,
       maxPages: Number(rawOptions.maxPages),
       maxDepth: Number(rawOptions.maxDepth),
       throttleMs: Number(rawOptions.throttleMs),

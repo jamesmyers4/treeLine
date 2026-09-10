@@ -106,6 +106,7 @@ describe('runTreelineCrawl', () => {
     const summary = await runTreelineCrawl({
       url: `${baseUrl}/`,
       stealth: false,
+      headless: false,
       maxPages: 10,
       maxDepth: 5,
       throttleMs: 0,
@@ -181,6 +182,7 @@ describe('runTreelineCrawl', () => {
       const summary = await runTreelineCrawl({
         url: `${baseUrl}/`,
         stealth: false,
+        headless: false,
         maxPages: 10,
         maxDepth: 5,
         throttleMs: 0,
@@ -212,6 +214,7 @@ describe('runTreelineCrawl', () => {
     const summary = await runTreelineCrawl({
       url: `${baseUrl}/`,
       stealth: false,
+      headless: false,
       maxPages: 10,
       maxDepth: 5,
       throttleMs: 0,
@@ -234,6 +237,7 @@ describe('runTreelineCrawl', () => {
     const summary = await runTreelineCrawl({
       url: `${baseUrl}/`,
       stealth: false,
+      headless: false,
       maxPages: 10,
       maxDepth: 5,
       throttleMs: 0,
@@ -260,6 +264,7 @@ describe('runTreelineCrawl', () => {
     const summary = await runTreelineCrawl({
       url: `${baseUrl}/`,
       stealth: false,
+      headless: false,
       maxPages: 10,
       maxDepth: 5,
       throttleMs: 0,
@@ -297,6 +302,7 @@ describe('runTreelineCrawl', () => {
       const summary = await runTreelineCrawl({
         url: `${denyBaseUrl}/`,
         stealth: false,
+        headless: false,
         maxPages: 10,
         maxDepth: 5,
         throttleMs: 0,
@@ -340,6 +346,7 @@ describe('runTreelineCrawl', () => {
       const summary = await runTreelineCrawl({
         url: `${suspiciousBaseUrl}/`,
         stealth: false,
+        headless: false,
         maxPages: 10,
         maxDepth: 5,
         throttleMs: 0,

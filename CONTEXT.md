@@ -2191,6 +2191,51 @@ click: menuActionClick...">Config</div>`, verified via a role-based-match
   complexity; worth revisiting only if `packages/verify` sees continued
   real use and this specific gap keeps recurring.
 
+## Opt-in `--headless` flag (session 64)
+
+Not a bug fix — a DX request, prompted directly by this session's own real
+`packages/verify`/`crawl` runs popping up a real visible browser window
+every single invocation. `launchHardened`'s non-stealth path had
+`headless: false` hardcoded with genuinely no override anywhere (see
+CLAUDE.md's Xvfb gotcha) — confirmed by reading `packages/acquire/src/
+launch.ts` before assuming a flag already existed and was just
+undocumented.
+
+- **`AcquireOptions.headless?: boolean`** (`packages/acquire/src/types.ts`)
+  — `launchHardened` now launches with `options.headless ?? false` on
+  *both* the stealth (patchright) and non-stealth (plain chromium) paths,
+  preserving the exact prior default (headed) when the option is omitted.
+- **Threaded all the way from the CLI down**, matching the existing
+  `--insecure-certs`/`--stealth` opt-in convention exactly (new flag,
+  default `false`, no change to existing behavior unless explicitly
+  passed): `CrawlConfig.headless?: boolean` (`packages/core`) →
+  `crawler.ts`'s `capturePage` call and `origin-scope.ts`'s
+  `fetchSeedPage` (extended with a new fourth `headless` param, mirroring
+  its existing `insecureCerts` one, so an authenticated crawl's seed-
+  resolution browser respects it too) → `TreelineCrawlOptions.headless:
+boolean` (`packages/cli`, required — matching that interface's existing
+  all-required-boolean-flags convention, not the optional-field convention
+  used everywhere else) → new `--headless` commander flag on `treeline
+crawl`. `orchestrate.ts`'s `resolveAuthSession` also passes it to its own
+  separate `launchHardened` call for the login browser.
+- **`packages/verify` got the same flag independently** — `VerifyRunOptions.
+headless?: boolean`, a new `--headless` flag on the `verify` CLI, passed
+  straight into its own `launchHardened` call. `packages/verify` never
+  exposed `--stealth` at all, so this is the first opt-in launch-behavior
+  flag that package has.
+- **Real regression tests, not just a type-checks-so-it-must-work
+  assumption:** `packages/acquire/src/capture.test.ts`'s new `headless
+option` describe block proves `capturePage`/`launchHardened` actually
+  accept and act on `headless: true` against a real local fixture server
+  (not just that the option threads through the type system), and that
+  omitting the option still launches headed (unchanged default) —
+  confirmed via a real page load and title check in both modes, not just
+  "doesn't throw."
+- **CI unaffected, deliberately.** `.github/workflows/crawl.yml` does not
+  pass `--headless`, so it still needs Xvfb exactly as before — this flag
+  exists for local/interactive use, not as a change to how CI runs. See
+  CLAUDE.md's Xvfb gotcha for the updated wording.
+
 ## Golden-master pipeline tests and CI (session 58, `GOLDEN-MASTER-BUILDOUT.md`)
 
 Not a `V2.md` roadmap item; closes the two gaps `GOLDEN-MASTER-BUILDOUT.md`

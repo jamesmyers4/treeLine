@@ -57,6 +57,56 @@ describe('capturePage', () => {
   }, 30000)
 })
 
+describe('headless option', () => {
+  let server: Server
+  let baseUrl: string
+
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.end('<!doctype html><html><head><title>Headless Test</title></head><body><button>Click me</button></body></html>')
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const addr = server.address() as { port: number }
+    baseUrl = `http://127.0.0.1:${addr.port}`
+  })
+
+  afterAll(() => {
+    server.close()
+  })
+
+  it('launches and captures successfully with headless: true, no visible browser window required', async () => {
+    const result = await capturePage(baseUrl, { headless: true })
+    expect(result.title).toBeTruthy()
+    expect(result.interactiveElements.length).toBeGreaterThan(0)
+  }, 30000)
+
+  it('still launches headed by default when headless is unset, unchanged from prior behavior', async () => {
+    const result = await capturePage(baseUrl, {})
+    expect(result.title).toBeTruthy()
+    expect(result.interactiveElements.length).toBeGreaterThan(0)
+  }, 30000)
+
+  it('passes headless through launchHardened directly without throwing, for both true and false', async () => {
+    const headlessBrowser = await launchHardened({ headless: true })
+    try {
+      const page = await headlessBrowser.newPage()
+      await page.goto(baseUrl)
+      expect(await page.title()).toBe('Headless Test')
+    } finally {
+      await headlessBrowser.close()
+    }
+    const headedBrowser = await launchHardened({ headless: false })
+    try {
+      const page = await headedBrowser.newPage()
+      await page.goto(baseUrl)
+      expect(await page.title()).toBe('Headless Test')
+    } finally {
+      await headedBrowser.close()
+    }
+  }, 30000)
+})
+
 describe('response body capture', () => {
   let server: Server
   let baseUrl: string

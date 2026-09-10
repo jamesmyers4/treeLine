@@ -1,6 +1,6 @@
 # CLAUDE.md — treeline
 
-_Last updated after session 63._
+_Last updated after session 64._
 
 Full design rationale lives in `CONTEXT.md` - read that first for the "why."
 This file is the operational guide: conventions, commands, and hard-won
@@ -88,17 +88,17 @@ pnpm install
 pnpm --filter @treeline/<package> build
 pnpm --filter @treeline/<package> test
 pnpm --filter @treeline/<package> lint
-pnpm --filter @treeline/cli dev -- crawl <url> [--stealth] [--max-pages n]
-  [--max-depth n] [--throttle-ms n] [--output dir] [--skip-interpretation]
-  [--insecure-certs] [--capture-response-bodies] [--max-response-body-bytes n]
-  [--capture-request-bodies] [--max-request-body-bytes n]
-  [--deny-url-pattern pattern] (repeatable)
+pnpm --filter @treeline/cli dev -- crawl <url> [--stealth] [--headless]
+  [--max-pages n] [--max-depth n] [--throttle-ms n] [--output dir]
+  [--skip-interpretation] [--insecure-certs] [--capture-response-bodies]
+  [--max-response-body-bytes n] [--capture-request-bodies]
+  [--max-request-body-bytes n] [--deny-url-pattern pattern] (repeatable)
 pnpm --filter @treeline/cli dev -- diff <baselineDir> <currentDir>
   [--output dir] [--fail-on-regression]
 pnpm --filter @treeline/verify verify -- <navMapFile> --base-url <url>
   --login-url <url> --username <user> --success-indicator <selector>
-  [--output dir] [--insecure-certs] [--dismiss-selector <selector>]
-  [--findings-file <path>]
+  [--output dir] [--insecure-certs] [--headless]
+  [--dismiss-selector <selector>] [--findings-file <path>]
 ```
 
 `verify` is manual/on-demand only, never wired into `crawl`/`diff` or CI —
@@ -598,12 +598,19 @@ status` / look for the `[new branch]`-style confirmation line rather than
   resource, a SQLite db handle** (`packages/pages/src/meta.ts`'s
   `buildRunMeta`) — same principle, any resource with a lifecycle, not
   just browsers.
-- **The GitHub Actions crawl workflow needs Xvfb.** Default (non-stealth)
-  capture launches headed (`headless: false`); there's no flag to change
-  this. `.github/workflows/crawl.yml` installs Xvfb and runs the crawl
-  under `xvfb-run` — any future CI-related session touching the crawl
-  workflow needs to know this or the run fails outright on a GitHub-hosted
-  runner.
+- **The GitHub Actions crawl workflow needs Xvfb.** Capture launches headed
+  (`headless: false`) by default — session 64 added an opt-in `--headless`
+  flag (`packages/acquire/src/launch.ts`'s `launchHardened`, threaded
+  through `CrawlConfig.headless`/`TreelineCrawlOptions.headless` and
+  `packages/verify`'s own `VerifyRunOptions.headless`), but the *default*
+  is deliberately unchanged — same "opt-in, never silently change the
+  default" posture as every other flag here. `.github/workflows/crawl.yml`
+  does not pass `--headless`, so it still installs Xvfb and runs the crawl
+  under `xvfb-run` exactly as before — any future CI-related session
+  touching the crawl workflow still needs to know this or the run fails
+  outright on a GitHub-hosted runner. `--headless` exists for local/
+  interactive use (no browser window popping up during ordinary dev work),
+  not as a CI change.
 - **Crawl origin must be resolved from the post-redirect URL**, not the
   originally-typed seed URL. `fetch()` (used for `sitemap.xml`) follows
   redirects transparently; `page.goto()`'s origin-scope check needs to

@@ -9,6 +9,7 @@ interface RawVerifyOptions {
   successIndicator: string
   output?: string
   insecureCerts: boolean
+  headless: boolean
   dismissSelector?: string
   findingsFile?: string
 }
@@ -29,6 +30,7 @@ program
   .option('--success-indicator <selector>', 'CSS selector present only when authenticated')
   .option('--output <dir>', 'output directory for verify-report.md')
   .option('--insecure-certs', 'ignore TLS certificate errors (self-signed/invalid certs) — for local/internal targets only', false)
+  .option('--headless', 'run the browser headless (no visible window) instead of the default headed mode', false)
   .option('--dismiss-selector <selector>', 'optional selector for a blocking overlay/modal to dismiss once after login, before auditing')
   .option('--findings-file <path>', 'optional path to a markdown file whose blank-line-separated paragraphs are appended to verify-report.md under a Findings section')
   .action(async (navMapFile: string, rawOptions: RawVerifyOptions) => {
@@ -56,6 +58,7 @@ program
         successIndicator: rawOptions.successIndicator,
         outputDir: rawOptions.output ?? deriveOutputDir(rawOptions.baseUrl),
         insecureCerts: rawOptions.insecureCerts,
+        headless: rawOptions.headless,
         dismissSelector: rawOptions.dismissSelector,
         findings,
       })

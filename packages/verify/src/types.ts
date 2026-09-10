@@ -25,6 +25,7 @@ export interface VerifyRunOptions {
   successIndicator: string
   outputDir: string
   insecureCerts?: boolean
+  headless?: boolean
   dismissSelector?: string
   findings?: string[]
 }

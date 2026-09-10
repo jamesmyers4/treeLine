@@ -33,6 +33,7 @@ describe('golden master: form-and-api', () => {
     const summary = await runTreelineCrawl({
       url: `${baseUrl}/`,
       stealth: false,
+      headless: false,
       maxPages: 10,
       maxDepth: 5,
       throttleMs: 0,
