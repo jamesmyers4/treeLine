@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { CapturedForm, NetworkEntry } from '@treeline/acquire'
 import type { CrawledPage } from './input.js'
-import { generateFlowMap, isApiSurfaceCandidate, renderFlowMapMarkdown } from './flow-map.js'
+import { generateFlowMap, isApiSurfaceCandidate, isOwnSiteApiSurface, renderFlowMapMarkdown } from './flow-map.js'
 
 function makeForm(overrides: Partial<CapturedForm>): CapturedForm {
   return {
@@ -84,6 +84,23 @@ describe('isApiSurfaceCandidate', () => {
     expect(isApiSurfaceCandidate(makeNetworkEntry({ resourceType: 'script', method: 'GET' }))).toBe(false)
     expect(isApiSurfaceCandidate(makeNetworkEntry({ resourceType: 'font', method: 'GET' }))).toBe(false)
     expect(isApiSurfaceCandidate(makeNetworkEntry({ resourceType: 'document', method: 'GET' }))).toBe(false)
+  })
+})
+
+describe('isOwnSiteApiSurface', () => {
+  it('excludes a real cross-origin resource-loading call even though it is a genuine xhr (real Google Fonts shape)', () => {
+    const entry = makeNetworkEntry({ url: 'https://fonts.googleapis.com/css2?family=Roboto', method: 'GET', resourceType: 'xhr' })
+    expect(isOwnSiteApiSurface('https://example.com/pricing', entry)).toBe(false)
+  })
+
+  it('includes a same-origin xhr call to the site\'s own API', () => {
+    const entry = makeNetworkEntry({ url: 'https://example.com/api/data', method: 'GET', resourceType: 'xhr' })
+    expect(isOwnSiteApiSurface('https://example.com/pricing', entry)).toBe(true)
+  })
+
+  it('still excludes a same-origin GET to a static asset (resourceType rule still applies)', () => {
+    const entry = makeNetworkEntry({ url: 'https://example.com/app.css', method: 'GET', resourceType: 'stylesheet' })
+    expect(isOwnSiteApiSurface('https://example.com/pricing', entry)).toBe(false)
   })
 })
 
@@ -184,6 +201,20 @@ describe('generateFlowMap', () => {
     expect(surfaceEntry.url).toBe('https://example.com/cdn-cgi/challenge-platform/h/g/orchestrate/jsch/v1/{id}')
     expect(surfaceEntry.occurrenceCount).toBe(5)
     expect(surfaceEntry.distinctUrlCount).toBe(5)
+    expect(flowMap.distinctApiEndpoints).toBe(1)
+  })
+
+  it('excludes a real third-party resource-loading call from the API surface, even though the capture layer genuinely tags it resourceType: xhr (real Google Fonts shape, CONTEXT.md known gap, now closed)', () => {
+    const page = makePage({
+      url: 'https://example.com/pricing',
+      networkLog: [
+        makeNetworkEntry({ url: 'https://fonts.googleapis.com/css2?family=Roboto', method: 'GET', resourceType: 'xhr' }),
+        makeNetworkEntry({ url: 'https://example.com/api/pricing-data', method: 'GET', resourceType: 'xhr' }),
+      ],
+    })
+    const flowMap = generateFlowMap([page])
+    expect(flowMap.apiSurface).toHaveLength(1)
+    expect(flowMap.apiSurface[0]!.url).toBe('https://example.com/api/pricing-data')
     expect(flowMap.distinctApiEndpoints).toBe(1)
   })
 

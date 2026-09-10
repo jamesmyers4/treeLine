@@ -1,7 +1,7 @@
 import type { RequestBodyContentTypeCategory, ResponseBodyContentTypeCategory } from '@treeline/acquire'
 import type { CrawledPage } from './input.js'
 import type { ApiTestScaffoldEntry, ApiTestScaffoldReport, ApiTestScaffoldRequestFields, ApiTestScaffoldResponseSchema } from './types.js'
-import { isApiSurfaceCandidate } from './flow-map.js'
+import { isOwnSiteApiSurface } from './flow-map.js'
 import { sanitizeMarkdownText } from './markdown-safety.js'
 import { normalizeApiPath } from './url-normalize.js'
 
@@ -100,7 +100,7 @@ export function buildApiTestScaffoldEntries(pages: CrawledPage[], config: ApiTes
   const byKey = new Map<string, AggregatedEntry>()
   for (const page of pages) {
     for (const entry of page.networkLog) {
-      if (!isApiSurfaceCandidate(entry)) continue
+      if (!isOwnSiteApiSurface(page.url, entry)) continue
       const key = `${entry.method} ${endpointPath(entry.url)}`
       const existing = byKey.get(key)
       if (existing) {

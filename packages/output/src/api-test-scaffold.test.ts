@@ -52,6 +52,19 @@ describe('buildApiTestScaffoldEntries', () => {
     expect(entries).toHaveLength(0)
   })
 
+  it('excludes a real third-party resource-loading call, same filter as the flow map (real Google Fonts shape)', () => {
+    const page = makePage({
+      url: 'https://example.com/pricing',
+      networkLog: [
+        makeNetworkEntry({ url: 'https://fonts.googleapis.com/css2?family=Roboto', method: 'GET', resourceType: 'xhr' }),
+        makeNetworkEntry({ url: 'https://example.com/api/pricing-data', method: 'GET', resourceType: 'xhr' }),
+      ],
+    })
+    const entries = buildApiTestScaffoldEntries([page], { captureRequestBodies: true, captureResponseBodies: true })
+    expect(entries).toHaveLength(1)
+    expect(entries[0]!.endpoint).toBe('https://example.com/api/pricing-data')
+  })
+
   it('dedupes the same method/url pair across pages into one entry', () => {
     const entry = makeNetworkEntry({ url: 'https://example.com/api/track', method: 'POST', resourceType: 'fetch' })
     const pages = ['a', 'b'].map((slug) => makePage({ url: `https://example.com/${slug}`, networkLog: [entry] }))

@@ -1,4 +1,5 @@
 import type { CapturedForm, CapturedFormField, NetworkEntry } from '@treeline/acquire'
+import { isSameOrigin } from '@treeline/core'
 import type { CrawledPage } from './input.js'
 import type { ApiSurfaceEntry, FlowMap, PageFormsEntry } from './types.js'
 import { safeCodeFence, sanitizeMarkdownTableCell, sanitizeMarkdownText } from './markdown-safety.js'
@@ -8,6 +9,10 @@ const API_SURFACE_RESOURCE_TYPES = new Set(['xhr', 'fetch', 'websocket', 'events
 
 export function isApiSurfaceCandidate(entry: NetworkEntry): boolean {
   return API_SURFACE_RESOURCE_TYPES.has(entry.resourceType) || entry.method !== 'GET'
+}
+
+export function isOwnSiteApiSurface(pageUrl: string, entry: NetworkEntry): boolean {
+  return isApiSurfaceCandidate(entry) && isSameOrigin(pageUrl, entry.url)
 }
 
 function buildFormsEntries(pages: CrawledPage[]): PageFormsEntry[] {
@@ -28,7 +33,7 @@ function buildApiSurface(pages: CrawledPage[]): ApiSurfaceEntry[] {
   >()
   for (const page of pages) {
     for (const entry of page.networkLog) {
-      if (!isApiSurfaceCandidate(entry)) continue
+      if (!isOwnSiteApiSurface(page.url, entry)) continue
       const normalizedUrl = normalizeApiSurfaceUrl(entry.url)
       const key = `${entry.method} ${normalizedUrl}`
       const existing = byKey.get(key)

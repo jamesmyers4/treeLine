@@ -2365,13 +2365,49 @@ locked-decision brief there; this section is the outcome summary. See
   change with its own blast radius. `selector-report.md` and
   `testid-audit.md` needed no separate fix — both read the same
   `PageState.interactiveElements`/`forms` this closes at the source.
-- The API surface filter (`isApiSurfaceCandidate` in flow map) is
-  technically correct per its resourceType-based rule, but can surface
-  third-party resource-loading calls that aren't really part of a site's
-  business API — confirmed via a real crawl where a Google Fonts request
-  was genuinely tagged `resourceType: 'xhr'` by the capture layer and
-  correctly included per the rule, even though it isn't meaningfully an
-  "API endpoint" in the spirit of the original pitch.
+- **Closed (session 67) — the API surface filter no longer surfaces
+  third-party resource-loading calls just because they happen to be
+  tagged `resourceType: 'xhr'`/`fetch`/etc.** `isApiSurfaceCandidate` (flow
+  map) was already technically correct per its resourceType-based rule,
+  but that rule alone can't distinguish a site's own API calls from a
+  real third-party one — confirmed via a real crawl where a Google Fonts
+  request was genuinely tagged `resourceType: 'xhr'` and correctly
+  included per the old rule, even though it isn't meaningfully an "API
+  endpoint" in the spirit of the original pitch. New
+  `isOwnSiteApiSurface(pageUrl, entry)` (`packages/output/src/flow-map.ts`,
+  exported) layers a same-origin check on top of the existing
+  `isApiSurfaceCandidate` rule, reusing `isSameOrigin` from
+  `@treeline/core` — the exact same origin-equality function the crawl
+  frontier itself already uses for `sameOriginOnly` — rather than
+  reinventing origin comparison a second time. `isApiSurfaceCandidate`
+  itself is unchanged (still resourceType/method-only, still exported,
+  still unit-tested on its own) since `api-test-scaffold.ts` and
+  `flow-map.ts`'s own `buildApiSurface`/`buildApiTestScaffoldEntries` both
+  now call `isOwnSiteApiSurface(page.url, entry)` instead — same filter,
+  reused by both report generators, matching this repo's existing
+  single-source-of-truth discipline (`api-test-scaffold.test.ts`'s own
+  comment already said "same filter as the flow map" before this session;
+  now it's actually true for the *complete* filter, not just the
+  resourceType half of it). Since `sameOriginOnly: true` is hardcoded for
+  every crawl (never a flag), every page's own `.url` origin is always the
+  crawl's fixed site origin, so this check is really "is this network call
+  same-origin as the site being crawled," not per-page-specific. **Known,
+  accepted limitation, not chased further:** this uses strict origin
+  equality (scheme+host+port), the same definition the crawl frontier
+  itself uses — a site whose real business API lives on a genuinely
+  different origin (e.g. `api.example.com` vs. a crawled `www.example.com`)
+  will have that traffic filtered out too, same as a real third-party
+  call. Not fixed here; flagged as a known trade-off rather than assumed
+  away, same "confirmed and documented, not silently perfect" posture as
+  every other report-generation gap in this file. Covered by real
+  regression tests proving the actual reported bug and the fix: a
+  Google-Fonts-shaped cross-origin `xhr` call is excluded while a
+  same-origin `xhr` call on the same page is retained
+  (`packages/output/src/flow-map.test.ts`,
+  `packages/output/src/api-test-scaffold.test.ts`) — plus a unit-level
+  test on `isOwnSiteApiSurface` itself confirming the pre-existing
+  resourceType rule (excluding a same-origin GET to a static asset) still
+  applies on top of the new origin check, not instead of it.
 - **Closed (post-session-58) — the API surface dedup logic no longer groups
   by exact `(method, url)` string match.** New shared
   `packages/output/src/url-normalize.ts` (`normalizeApiPath`,
