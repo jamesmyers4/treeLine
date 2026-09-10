@@ -7,6 +7,7 @@ interface RawVerifyOptions {
   loginUrl: string
   username: string
   successIndicator: string
+  authValidIndicator?: string
   output?: string
   insecureCerts: boolean
   headless: boolean
@@ -27,7 +28,8 @@ program
   .option('--base-url <url>', 'URL to start the audit from, after login')
   .option('--login-url <url>', 'URL of the login page')
   .option('--username <user>', 'username for authentication')
-  .option('--success-indicator <selector>', 'CSS selector present only when authenticated')
+  .option('--success-indicator <selector>', 'CSS selector present only when authenticated, checked once right after login')
+  .option('--auth-valid-indicator <selector>', 'CSS selector confirming the session is still valid, checked before and after every clickPath entry — defaults to --success-indicator when omitted; set this separately only when the post-login landing page and ordinary content pages use different templates')
   .option('--output <dir>', 'output directory for verify-report.md')
   .option('--insecure-certs', 'ignore TLS certificate errors (self-signed/invalid certs) — for local/internal targets only', false)
   .option('--headless', 'run the browser headless (no visible window) instead of the default headed mode', false)
@@ -56,6 +58,7 @@ program
         username: rawOptions.username,
         password,
         successIndicator: rawOptions.successIndicator,
+        authValidIndicator: rawOptions.authValidIndicator,
         outputDir: rawOptions.output ?? deriveOutputDir(rawOptions.baseUrl),
         insecureCerts: rawOptions.insecureCerts,
         headless: rawOptions.headless,

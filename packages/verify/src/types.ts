@@ -23,6 +23,7 @@ export interface VerifyRunOptions {
   username: string
   password: string
   successIndicator: string
+  authValidIndicator?: string
   outputDir: string
   insecureCerts?: boolean
   headless?: boolean

@@ -96,6 +96,7 @@ export interface CapturedForm {
 export interface AuthSession {
   storageState: StorageState
   successIndicator: string
+  authValidIndicator?: string
   loginUrl: string
 }
 

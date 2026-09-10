@@ -1,6 +1,6 @@
 import { readFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { launchHardened, performLoginSession, AuthExpiredError, SeedAuthenticationError } from '@treeline/acquire'
+import { launchHardened, performLoginSession, resolveAuthValidSelector, AuthExpiredError, SeedAuthenticationError } from '@treeline/acquire'
 import type { LoginCredentials } from '@treeline/acquire'
 import { auditNavMapEntry } from './nav-audit.js'
 import { writeVerifyReport } from './report.js'
@@ -41,6 +41,7 @@ export async function runNavMapAudit(options: VerifyRunOptions): Promise<VerifyR
   const mismatchesDir = join(options.outputDir, 'verify-mismatches')
   const browser = await launchHardened({ insecureCerts: options.insecureCerts, headless: options.headless })
   const results: NavMapAuditResult[] = []
+  const authValidIndicator = resolveAuthValidSelector(options.successIndicator, options.authValidIndicator)
   try {
     const credentials: LoginCredentials = {
       loginUrl: options.loginUrl,
@@ -54,7 +55,7 @@ export async function runNavMapAudit(options: VerifyRunOptions): Promise<VerifyR
         await page.goto(options.baseUrl, { waitUntil: 'domcontentloaded' })
         await page.waitForLoadState('networkidle').catch(() => undefined)
       }
-      const stillValidAtStart = await page.locator(options.successIndicator).count() > 0
+      const stillValidAtStart = await page.locator(authValidIndicator).count() > 0
       if (!stillValidAtStart) {
         throw new SeedAuthenticationError(options.baseUrl, page.url())
       }
@@ -68,7 +69,7 @@ export async function runNavMapAudit(options: VerifyRunOptions): Promise<VerifyR
       for (const entry of entries) {
         let result: NavMapAuditResult
         try {
-          result = await auditNavMapEntry(page, entry, options.loginUrl, options.successIndicator)
+          result = await auditNavMapEntry(page, entry, options.loginUrl, authValidIndicator)
         } catch (err) {
           if (err instanceof AuthExpiredError) {
             results.push({ label: entry.label, expectedUrl: entry.expectedUrl, observedUrl: null, status: 'error', errorMessage: 'Session expired mid-run; remaining entries not attempted' })

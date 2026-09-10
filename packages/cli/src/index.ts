@@ -20,6 +20,7 @@ interface RawCrawlOptions {
   passwordSelector?: string
   submitSelector?: string
   successIndicator?: string
+  authValidIndicator?: string
   detectAuthWall: boolean
   insecureCerts: boolean
   denyUrlPattern: string[]
@@ -52,7 +53,8 @@ program
   .option('--username-selector <selector>', 'CSS selector for the login form username field')
   .option('--password-selector <selector>', 'CSS selector for the login form password field')
   .option('--submit-selector <selector>', 'CSS selector for the login form submit control')
-  .option('--success-indicator <selector>', 'CSS selector present only when authenticated (required alongside --login-url)')
+  .option('--success-indicator <selector>', 'CSS selector present only when authenticated, checked once right after the login submit (required alongside --login-url)')
+  .option('--auth-valid-indicator <selector>', 'CSS selector confirming the session is still valid, checked on every captured page thereafter — defaults to --success-indicator when omitted; set this separately only when the post-login landing page and ordinary content pages use different templates (e.g. one renders logged-in chrome, the other does not)')
   .option('--detect-auth-wall', 'flag pages that appear to require authentication when no credentials are configured', false)
   .option('--insecure-certs', 'ignore TLS certificate errors (self-signed/invalid certs) — for local/internal targets only, never a public site', false)
   .option(
@@ -81,6 +83,7 @@ program
       passwordSelector: rawOptions.passwordSelector,
       submitSelector: rawOptions.submitSelector,
       successIndicator: rawOptions.successIndicator,
+      authValidIndicator: rawOptions.authValidIndicator,
       detectAuthWall: rawOptions.detectAuthWall,
       insecureCerts: rawOptions.insecureCerts,
       denyUrlPatterns: rawOptions.denyUrlPattern,

@@ -2540,12 +2540,35 @@ locked-decision brief there; this section is the outcome summary. See
   "Nothing verified generated artifacts actually parse before shipping
   them" above) — found via real end-to-end testing, not a type check,
   exactly per this repo's own "verify, don't assume" discipline.
-- `--success-indicator` is a single selector reused for both `performLogin`
-  and every ongoing `checkAuthStillValid` check; a target whose
-  authenticated-chrome template and authenticated-content template diverge
-  enough (confirmed real on OpenEMR — see "Authenticated crawling" above)
-  can require an OR-selector workaround per target rather than one clean
-  selector. Not fixed; no redesign attempted yet.
+- **Closed (session 66) — `--success-indicator` is no longer a single
+  selector reused for both `performLogin`'s check and every ongoing
+  `checkAuthStillValid` check.** A target whose authenticated-chrome
+  template and authenticated-content template diverge enough (confirmed
+  real on OpenEMR — see "Authenticated crawling" above) used to force an
+  operator-hand-written CSS OR-selector into `--success-indicator` itself,
+  serving both roles at once. New optional `--auth-valid-indicator
+<selector>` flag (`packages/cli`, `packages/verify`) cleanly separates the
+  two roles: `--success-indicator` stays scoped to `performLogin`'s
+  post-submit check only; `--auth-valid-indicator` is an additional marker
+  for pages whose template doesn't render `--success-indicator`'s marker,
+  used for every ongoing validity check. The two are combined
+  automatically by the tool (`resolveAuthValidSelector`,
+  `packages/acquire/src/auth.ts`, exported from the package) rather than
+  by the operator — when `--auth-valid-indicator` is set, ongoing checks
+  use `"<successIndicator>, <authValidIndicator>"`; when it's omitted,
+  behavior is byte-identical to before (falls back to `successIndicator`
+  alone). OpenEMR's real hand-written OR-selector remains valid as a value
+  for either flag — nothing about the OR-selector *technique* CLAUDE.md
+  already documents changes — but the common single-marker-per-template
+  case no longer requires an operator to know CSS `,` union syntax at all.
+  Real fixture-server regression tests prove the actual failure mode and
+  the fix at three layers (`packages/acquire/src/auth.test.ts` and
+  `capture-auth.test.ts`'s `/content-fragment` fixture route,
+  `packages/cli/src/orchestrate-auth.test.ts`'s `/content-only` seed URL,
+  `packages/verify/src/verify.test.ts`'s `/content-dashboard` →
+  `/content-only` clickPath) — each shows the false `auth-expired`/
+  `SeedAuthenticationError` without the new flag and a correct result with
+  it. See CLAUDE.md's "Operational gotchas" for the full writeup.
 - **Closed (session 61) — both quirks from session 57's live OpenEMR run
   are now root-caused; one has a real, tested code fix, the other is
   confirmed non-bug app behavior.** `Admin > Config`/cascading

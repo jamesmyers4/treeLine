@@ -80,6 +80,17 @@ function startAuthFixture(expireAfterHits: number = Infinity): Promise<{ server:
         })
         return
       }
+      if (url === '/content-only') {
+        const cookies = parseCookies(req.headers.cookie)
+        if (!(cookies[SESSION_COOKIE] && sessions.has(cookies[SESSION_COOKIE]))) {
+          res.writeHead(200, { 'Content-Type': 'text/html' })
+          res.end('<!doctype html><html><body>please log in</body></html>')
+          return
+        }
+        res.writeHead(200, { 'Content-Type': 'text/html' })
+        res.end('<!doctype html><html><body><p data-restore-session="true">content pane, no logout chrome — real template-divergence shape</p></body></html>')
+        return
+      }
       if (url === '/dashboard' || url === '/account') {
         const cookies = parseCookies(req.headers.cookie)
         let authenticated = false
@@ -400,6 +411,53 @@ describe('runTreelineCrawl — authenticated crawling', () => {
         expect(message).toContain(String(summary.pagesCaptured))
         expect(message).toContain('aborted')
         expect(message).not.toMatch(/^Output directory:/)
+      })
+    } finally {
+      if (previousPassword === undefined) delete process.env.TREELINE_LOGIN_PASSWORD
+      else process.env.TREELINE_LOGIN_PASSWORD = previousPassword
+      server.close()
+    }
+  }, 30_000)
+
+  it('rejects with SeedAuthenticationError against /content-only when relying solely on --success-indicator, since that page\'s real template never renders the login-landing marker (the --success-indicator template-divergence bug)', async () => {
+    const { server, baseUrl } = await startAuthFixture()
+    const previousPassword = process.env.TREELINE_LOGIN_PASSWORD
+    process.env.TREELINE_LOGIN_PASSWORD = FIXTURE_PASSWORD
+    try {
+      await withTmpDir(async (outputDir) => {
+        const options = {
+          ...baseOptions(outputDir, `${baseUrl}/content-only`),
+          maxDepth: 0,
+          loginUrl: `${baseUrl}/login`,
+          successIndicator: '#logout-link',
+          username: FIXTURE_USERNAME,
+        }
+        await expect(runTreelineCrawl(options)).rejects.toThrow(/could not be resolved as authenticated content/)
+      })
+    } finally {
+      if (previousPassword === undefined) delete process.env.TREELINE_LOGIN_PASSWORD
+      else process.env.TREELINE_LOGIN_PASSWORD = previousPassword
+      server.close()
+    }
+  }, 30_000)
+
+  it('captures /content-only successfully when --auth-valid-indicator supplies a marker that page\'s own template actually renders', async () => {
+    const { server, baseUrl } = await startAuthFixture()
+    const previousPassword = process.env.TREELINE_LOGIN_PASSWORD
+    process.env.TREELINE_LOGIN_PASSWORD = FIXTURE_PASSWORD
+    try {
+      await withTmpDir(async (outputDir) => {
+        const options = {
+          ...baseOptions(outputDir, `${baseUrl}/content-only`),
+          maxDepth: 0,
+          loginUrl: `${baseUrl}/login`,
+          successIndicator: '#logout-link',
+          authValidIndicator: '[data-restore-session]',
+          username: FIXTURE_USERNAME,
+        }
+        const summary = await runTreelineCrawl(options)
+        expect(summary.abortedAt).toBeUndefined()
+        expect(summary.pagesCaptured).toBe(1)
       })
     } finally {
       if (previousPassword === undefined) delete process.env.TREELINE_LOGIN_PASSWORD

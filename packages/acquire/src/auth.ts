@@ -106,6 +106,10 @@ export function normalizeForComparison(url: string): string {
   }
 }
 
+export function resolveAuthValidSelector(successIndicator: string, authValidIndicator?: string): string {
+  return authValidIndicator ? `${successIndicator}, ${authValidIndicator}` : successIndicator
+}
+
 export async function checkAuthStillValid(page: Page, indicator: string, loginUrl: string): Promise<boolean> {
   if (normalizeForComparison(page.url()) === normalizeForComparison(loginUrl)) return false
   return (await page.locator(indicator).count()) > 0

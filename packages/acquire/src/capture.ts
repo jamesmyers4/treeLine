@@ -2,7 +2,7 @@ import { AxeBuilder } from '@axe-core/playwright'
 import type { Browser, BrowserContext, Page, Request } from 'playwright'
 import type { AcquireOptions, AssertableAttribute, AxeIncompleteResult, AxeViolation, CapturedForm, CaptureHandler, ColorSwatch, DomInteractiveElement, NetworkEntry, PageState, RequestBodyContentTypeCategory, ResponseBodyContentTypeCategory } from './types.js'
 import { launchHardened } from './launch.js'
-import { AuthExpiredError, AuthWallError, SeedAuthenticationError, checkAuthStillValid } from './auth.js'
+import { AuthExpiredError, AuthWallError, SeedAuthenticationError, checkAuthStillValid, resolveAuthValidSelector } from './auth.js'
 
 const INTERACTIVE_SELECTOR = 'button, a[href], input, select, textarea, [role]'
 const APPEARED_ATTR = 'data-treeline-appeared-at'
@@ -411,7 +411,8 @@ export async function resolveSeedUrlWithBrowser(url: string, browser: Browser, o
     const resolvedUrl = page.url()
     const html = await page.content()
     if (options?.authSession) {
-      const stillValid = await checkAuthStillValid(page, options.authSession.successIndicator, options.authSession.loginUrl)
+      const indicator = resolveAuthValidSelector(options.authSession.successIndicator, options.authSession.authValidIndicator)
+      const stillValid = await checkAuthStillValid(page, indicator, options.authSession.loginUrl)
       if (!stillValid) throw new SeedAuthenticationError(url, resolvedUrl)
     }
     return { resolvedUrl, html }
@@ -696,7 +697,8 @@ async function captureWithContext(url: string, context: BrowserContext, options?
     if (hasPasswordField) throw new AuthWallError(url)
   }
   if (options?.authSession) {
-    const stillValid = await checkAuthStillValid(page, options.authSession.successIndicator, options.authSession.loginUrl)
+    const indicator = resolveAuthValidSelector(options.authSession.successIndicator, options.authSession.authValidIndicator)
+    const stillValid = await checkAuthStillValid(page, indicator, options.authSession.loginUrl)
     if (!stillValid) throw new AuthExpiredError(url)
   }
   return pageState

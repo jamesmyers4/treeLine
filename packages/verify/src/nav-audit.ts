@@ -104,7 +104,7 @@ async function clickSegment(page: Page, segment: string): Promise<void> {
   }
 }
 
-export async function auditNavMapEntry(page: Page, entry: NavMapEntry, loginUrl: string, successIndicator: string): Promise<NavMapAuditResult> {
+export async function auditNavMapEntry(page: Page, entry: NavMapEntry, loginUrl: string, authValidIndicator: string): Promise<NavMapAuditResult> {
   if (entry.precondition) {
     return { label: entry.label, expectedUrl: entry.expectedUrl, observedUrl: null, status: 'skipped', precondition: entry.precondition }
   }
@@ -120,7 +120,7 @@ export async function auditNavMapEntry(page: Page, entry: NavMapEntry, loginUrl:
     const message = err instanceof Error ? err.message : String(err)
     return { label: entry.label, expectedUrl: entry.expectedUrl, observedUrl: null, status: 'error', errorMessage: message }
   }
-  const stillValid = await checkAuthStillValid(page, successIndicator, loginUrl)
+  const stillValid = await checkAuthStillValid(page, authValidIndicator, loginUrl)
   if (!stillValid) {
     throw new AuthExpiredError(page.url())
   }

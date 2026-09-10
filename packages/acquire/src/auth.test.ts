@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeAll, afterAll } from 'vitest'
 import type { Browser } from 'playwright'
-import { performLogin, performLoginSession, checkAuthStillValid, normalizeForComparison, LoginFailedError, type LoginCredentials } from './auth.js'
+import { performLogin, performLoginSession, checkAuthStillValid, resolveAuthValidSelector, normalizeForComparison, LoginFailedError, type LoginCredentials } from './auth.js'
 import { buildAuthFixtureServer, FIXTURE_USERNAME, FIXTURE_PASSWORD, SESSION_COOKIE_NAME } from './auth-fixture-server.js'
 import { launchHardened } from './launch.js'
 import type { FastifyInstance } from 'fastify'
@@ -138,6 +138,41 @@ describe('auth', () => {
         await context.close()
       }
     }, 30000)
+
+    it('checkAuthStillValid using the login-landing marker returns a false negative on /content-fragment, a real page whose template never renders that marker', async () => {
+      const state = await performLogin(browser, validCreds)
+      const context = await browser.newContext({ storageState: state })
+      try {
+        const page = await context.newPage()
+        await page.goto(`${baseUrl}/content-fragment`, { waitUntil: 'domcontentloaded' })
+        expect(await checkAuthStillValid(page, '#logout-link', validCreds.loginUrl)).toBe(false)
+      } finally {
+        await context.close()
+      }
+    }, 30000)
+
+    it('checkAuthStillValid using a content-page-specific marker correctly returns true on /content-fragment with a valid session', async () => {
+      const state = await performLogin(browser, validCreds)
+      const context = await browser.newContext({ storageState: state })
+      try {
+        const page = await context.newPage()
+        await page.goto(`${baseUrl}/content-fragment`, { waitUntil: 'domcontentloaded' })
+        expect(await checkAuthStillValid(page, '[data-restore-session]', validCreds.loginUrl)).toBe(true)
+      } finally {
+        await context.close()
+      }
+    }, 30000)
+  })
+
+  describe('resolveAuthValidSelector', () => {
+    it('returns successIndicator unchanged when authValidIndicator is not set (default, unchanged behavior)', () => {
+      expect(resolveAuthValidSelector('#logout-link')).toBe('#logout-link')
+      expect(resolveAuthValidSelector('#logout-link', undefined)).toBe('#logout-link')
+    })
+
+    it('ORs successIndicator and authValidIndicator into one CSS selector list when both are supplied, so the operator never hand-writes the comma union', () => {
+      expect(resolveAuthValidSelector('#logout-link', '[data-restore-session]')).toBe('#logout-link, [data-restore-session]')
+    })
   })
 
   describe('normalizeForComparison', () => {

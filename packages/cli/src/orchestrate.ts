@@ -65,6 +65,7 @@ export interface TreelineCrawlOptions {
   passwordSelector?: string
   submitSelector?: string
   successIndicator?: string
+  authValidIndicator?: string
   detectAuthWall: boolean
   insecureCerts: boolean
   denyUrlPatterns: string[]
@@ -107,7 +108,8 @@ async function resolveAuthSession(options: TreelineCrawlOptions): Promise<AuthSe
     options.usernameSelector !== undefined ||
     options.passwordSelector !== undefined ||
     options.submitSelector !== undefined ||
-    options.successIndicator !== undefined
+    options.successIndicator !== undefined ||
+    options.authValidIndicator !== undefined
   if (!authFlagsUsed) return undefined
   if (!options.loginUrl || !options.successIndicator) {
     throw new Error('Authenticated crawling requires both --login-url and --success-indicator to be set')
@@ -131,7 +133,7 @@ async function resolveAuthSession(options: TreelineCrawlOptions): Promise<AuthSe
   const browser = await launchHardened({ stealth: options.stealth, headless: options.headless })
   try {
     const storageState = await performLogin(browser, creds, { insecureCerts: options.insecureCerts })
-    return { storageState, successIndicator: creds.successIndicator, loginUrl: creds.loginUrl }
+    return { storageState, successIndicator: creds.successIndicator, authValidIndicator: options.authValidIndicator, loginUrl: creds.loginUrl }
   } finally {
     await browser.close()
   }

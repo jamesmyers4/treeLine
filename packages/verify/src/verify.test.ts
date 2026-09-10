@@ -148,4 +148,49 @@ describe('runNavMapAudit', () => {
     expect(summary.matches).toBe(1)
     rmSync(retryDir, { recursive: true, force: true })
   }, 60000)
+
+  it('reports a false auth-expired error against a real content page whose template never renders --success-indicator\'s marker, when authValidIndicator is not set (the --success-indicator template-divergence bug)', async () => {
+    const contentDir = mkdtempSync(join(tmpdir(), 'treeline-verify-test-content-'))
+    const navMapPath = join(contentDir, 'nav-map.json')
+    writeFileSync(navMapPath, JSON.stringify([
+      { label: 'Content Page', expectedUrl: `http://localhost:${port}/content-only`, clickPath: ['Content Page'] },
+    ]))
+
+    const summary = await runNavMapAudit({
+      navMapPath,
+      baseUrl: `http://localhost:${port}/content-dashboard`,
+      loginUrl: `http://localhost:${port}/login`,
+      username: FIXTURE_USERNAME,
+      password: FIXTURE_PASSWORD,
+      successIndicator: '#logout-link',
+      outputDir: contentDir,
+    })
+
+    expect(summary.errors).toBe(1)
+    expect(summary.matches).toBe(0)
+    rmSync(contentDir, { recursive: true, force: true })
+  }, 60000)
+
+  it('correctly matches the same content page once authValidIndicator supplies just the content-page-specific marker — the tool ORs it with successIndicator automatically, so the operator never hand-writes a CSS union selector', async () => {
+    const contentFixedDir = mkdtempSync(join(tmpdir(), 'treeline-verify-test-content-fixed-'))
+    const navMapPath = join(contentFixedDir, 'nav-map.json')
+    writeFileSync(navMapPath, JSON.stringify([
+      { label: 'Content Page', expectedUrl: `http://localhost:${port}/content-only`, clickPath: ['Content Page'] },
+    ]))
+
+    const summary = await runNavMapAudit({
+      navMapPath,
+      baseUrl: `http://localhost:${port}/content-dashboard`,
+      loginUrl: `http://localhost:${port}/login`,
+      username: FIXTURE_USERNAME,
+      password: FIXTURE_PASSWORD,
+      successIndicator: '#logout-link',
+      authValidIndicator: '[data-restore-session]',
+      outputDir: contentFixedDir,
+    })
+
+    expect(summary.errors).toBe(0)
+    expect(summary.matches).toBe(1)
+    rmSync(contentFixedDir, { recursive: true, force: true })
+  }, 60000)
 })

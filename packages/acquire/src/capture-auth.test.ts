@@ -76,4 +76,26 @@ describe('capturePageWithBrowser (auth threading)', () => {
       }),
     ).rejects.toThrow(AuthExpiredError)
   }, 30000)
+
+  it('throws a false-positive AuthExpiredError against /content-fragment with a genuinely valid session, when authValidIndicator is not set and successIndicator is the login-landing-only marker (the --success-indicator template-divergence bug)', async () => {
+    const storageState = await performLogin(browser, validCreds)
+    await expect(
+      capturePageWithBrowser(`${baseUrl}/content-fragment`, browser, {
+        authSession: { storageState, successIndicator: validCreds.successIndicator, loginUrl: validCreds.loginUrl },
+      }),
+    ).rejects.toThrow(AuthExpiredError)
+  }, 30000)
+
+  it('captures /content-fragment successfully with a valid session when authValidIndicator supplies the content-page-specific marker', async () => {
+    const storageState = await performLogin(browser, validCreds)
+    const pageState = await capturePageWithBrowser(`${baseUrl}/content-fragment`, browser, {
+      authSession: {
+        storageState,
+        successIndicator: validCreds.successIndicator,
+        authValidIndicator: '[data-restore-session]',
+        loginUrl: validCreds.loginUrl,
+      },
+    })
+    expect(pageState.url).toBe(`${baseUrl}/content-fragment`)
+  }, 30000)
 })

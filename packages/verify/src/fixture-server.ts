@@ -95,6 +95,20 @@ export function startFixtureServer(): Promise<{ server: Server; port: number }> 
       )
       return
     }
+    if (url.pathname === '/content-dashboard') {
+      res.setHeader('content-type', 'text/html')
+      res.end(
+        page(
+          '<a href="/content-only">Content Page</a><a id="logout-link" href="/logout">Logout</a>',
+        ),
+      )
+      return
+    }
+    if (url.pathname === '/content-only') {
+      res.setHeader('content-type', 'text/html')
+      res.end(page('<p data-restore-session="true">content pane, no logout chrome — real template-divergence shape</p>'))
+      return
+    }
     if (url.pathname === '/token-dashboard') {
       res.setHeader('content-type', 'text/html')
       res.end(

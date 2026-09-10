@@ -13,6 +13,7 @@ export {
   performLogin,
   performLoginSession,
   checkAuthStillValid,
+  resolveAuthValidSelector,
   normalizeForComparison,
   LoginFailedError,
   AuthExpiredError,

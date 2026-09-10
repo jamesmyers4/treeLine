@@ -83,6 +83,15 @@ export function buildAuthFixtureServer(): FastifyInstance {
 </body></html>`
   })
 
+  app.get('/content-fragment', async (request, reply) => {
+    if (!requireSession(request)) return reply.redirect('/login', 302)
+    reply.type('text/html')
+    return `<!doctype html>
+<html><body>
+<p data-restore-session="true">Content pane fragment — no logout chrome rendered here, real OpenEMR-shaped template split</p>
+</body></html>`
+  })
+
   app.get('/logout', async (request, reply) => {
     const sessionId = parseCookies(request.headers.cookie)[SESSION_COOKIE_NAME]
     if (sessionId) sessions.delete(sessionId)

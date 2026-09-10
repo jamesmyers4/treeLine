@@ -97,8 +97,8 @@ pnpm --filter @treeline/cli dev -- diff <baselineDir> <currentDir>
   [--output dir] [--fail-on-regression]
 pnpm --filter @treeline/verify verify -- <navMapFile> --base-url <url>
   --login-url <url> --username <user> --success-indicator <selector>
-  [--output dir] [--insecure-certs] [--headless]
-  [--dismiss-selector <selector>] [--findings-file <path>]
+  [--auth-valid-indicator <selector>] [--output dir] [--insecure-certs]
+  [--headless] [--dismiss-selector <selector>] [--findings-file <path>]
 ```
 
 `verify` is manual/on-demand only, never wired into `crawl`/`diff` or CI —
@@ -418,28 +418,54 @@ flagged as possible state-changing actions (not blocked, see warnings
   repo's own locator-ranking convention (`getByRole` → testid → CSS →
   XPath) applied one rung further down than the original brief assumed was
   necessary.
-- **`--success-indicator` is one selector reused for two different
-  checks (`performLogin`'s post-login check and every ongoing
-  `checkAuthStillValid` check) — a target whose login-landing template and
-  its regular content-page template diverge enough can make a single
-  selector impossible.** On OpenEMR, `performLogin` lands on `main.php`,
-  whose only real "authenticated" marker is a knockout-rendered logout menu
-  item (`[data-bind*="logout"]`); real content-pane pages never render that
+- **Closed (session 66) — `--success-indicator` is no longer one selector
+  forced to serve two different checks.** The underlying problem (session
+  53, OpenEMR): `performLogin` lands on `main.php`, whose only real
+  "authenticated" marker is a knockout-rendered logout menu item
+  (`[data-bind*="logout"]`); real content-pane pages never render that
   chrome (they're bare fragments meant for iframe embedding) but do carry
   `onsubmit`/`onclick` attributes calling `top.restoreSession()` (OpenEMR's
   session-keepalive convention) — and `main.php` itself only mentions
   `restoreSession` inside a JS *comment*, not a real attribute, so neither
-  marker alone satisfies both checks. Confirmed real via direct probing of
-  both templates (session 53), not assumed. **Fix: combine the markers with
-  a CSS OR-selector** rather than searching for one universal marker:
-  `[data-bind*="logout"], [onsubmit*="restoreSession"],
-[onclick*="restoreSession"], input[type=hidden][name*=csrf i]` — verified
-  present on `main.php` and on every content-pane template tried, and
-  absent on the login page itself (the last clause was checked absent from
-  the login page specifically before adding it, since a false positive
-  there would silently break auth-failure detection). This selector is
-  OpenEMR-specific, not portable as-is, but the OR-selector *technique* is
-  the reusable lesson for any future target with the same template split.
+  marker alone satisfied both `performLogin`'s post-login check and every
+  ongoing `checkAuthStillValid` check. The original mitigation (still
+  correct, still shippable) was to hand-write one CSS OR-selector covering
+  both templates; this file used to describe that as a "workaround, not a
+  clean design." **The real redesign: a new, optional `--auth-valid-
+indicator <selector>` flag** (`packages/cli/src/index.ts`,
+  `packages/verify/src/cli.ts`), separate from `--success-indicator`.
+  `--success-indicator` now means exactly one thing — the marker
+  `performLogin`/`submitLogin` checks right after submitting credentials.
+  `--auth-valid-indicator` means exactly one thing — an additional marker
+  for pages whose template doesn't render `--success-indicator`'s marker.
+  **The tool ORs the two together itself** (`resolveAuthValidSelector` in
+  `packages/acquire/src/auth.ts`, exported from the package) for every
+  ongoing check — `checkAuthStillValid`'s two call sites in `capture.ts`
+  (seed-URL resolution and per-page capture) and `packages/verify`'s own
+  `stillValidAtStart` check plus every `auditNavMapEntry` call — so the
+  operator writes two small, single-purpose selectors and never hand-joins
+  a CSS selector list themselves; when `--auth-valid-indicator` is omitted,
+  `resolveAuthValidSelector` returns `successIndicator` unchanged, so this
+  is 100% backward compatible with every existing invocation (same
+  "additive, opt-in" posture as every other flag in this file).
+  `AuthSession.authValidIndicator?: string` (`packages/acquire/src/
+types.ts`) and `VerifyRunOptions.authValidIndicator?: string`
+  (`packages/verify/src/types.ts`) both default to `undefined`. Covered by
+  real fixture-server regression tests proving the actual bug and the fix
+  at three layers: `packages/acquire/src/auth.test.ts`/`capture-auth.test.ts`
+  (a `/content-fragment` fixture route that requires a session but never
+  renders `#logout-link`, only `[data-restore-session]` — mirroring
+  OpenEMR's real template split), `packages/cli/src/orchestrate-auth.test.ts`
+  (a `/content-only` seed URL that rejects with `SeedAuthenticationError`
+  under `--success-indicator` alone and captures cleanly once
+  `--auth-valid-indicator` is set), and `packages/verify/src/verify.test.ts`
+  (a `/content-dashboard` → `/content-only` clickPath that reports a false
+  `auth-expired` error without the new flag and a real `match` with it).
+  OpenEMR's own real OR-selector remains a valid thing to pass as either
+  flag's value (nothing stops an operator from still hand-writing a union),
+  but the common case — one marker for the landing template, one for the
+  content template — no longer requires knowing CSS `,` union syntax at
+  all.
 - **`window.menu_objects` (or an equivalent client-side nav-state object)
   can be the only real way to discover pages on a knockout.js/JS-nav-driven
   authenticated site — treeLine's Phase-1 discovery (link-following +
@@ -998,7 +1024,8 @@ pattern for new work:
   reason codes — see the `pageExists`-is-status-blind gotcha above.
 - Do not give `--success-indicator` (planned authenticated-crawling flag)
   a URL-substring mode — selector-only, matches this repo's locator-first
-  convention.
+  convention. Same constraint applies to `--auth-valid-indicator`
+  (session 66) — selector-only, no URL-substring mode either.
 - Do not default `--detect-auth-wall` (planned authenticated-crawling
   flag) to `true`. Its trigger only ever fires on the no-auth crawl path,
   and any real existing target mixing public and gated content (a
