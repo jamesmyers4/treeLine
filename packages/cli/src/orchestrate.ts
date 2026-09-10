@@ -197,7 +197,7 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
     await writeFile(join(reportsDir, 'selector-report.md'), renderSelectorReportMarkdown(selectorReport))
     const testIdAudit = generateTestIdAudit(pages)
     await writeFile(join(reportsDir, 'testid-audit.md'), renderTestIdAuditMarkdown(testIdAudit))
-    const atlas = generateAtlas(pages, interpretations)
+    const atlas = generateAtlas(pages, interpretations, options.skipInterpretation)
     await writeFile(join(reportsDir, 'atlas.md'), renderAtlasMarkdown(atlas))
     const axeReport = generateAxeReport(pages)
     await writeFile(join(reportsDir, 'axe-report.md'), renderAxeReportMarkdown(axeReport))

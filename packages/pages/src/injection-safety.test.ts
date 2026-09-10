@@ -85,7 +85,7 @@ async function buildAdversarialReportsDir(): Promise<string> {
 
   const interpretation = makeAdversarialInterpretation()
 
-  const atlas = generateAtlas(pages, [interpretation])
+  const atlas = generateAtlas(pages, [interpretation], false)
   await fs.writeFile(path.join(outputDir, 'reports', 'atlas.md'), renderAtlasMarkdown(atlas))
 
   const selectorReport = generateSelectorReport(pages)

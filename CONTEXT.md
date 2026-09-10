@@ -2371,8 +2371,31 @@ locked-decision brief there; this section is the outcome summary. See
   existing golden-master CLI tests, which show no drift since none of the
   three locked fixture scenarios trigger an axe violation with more than
   one affected element.
-- Atlas's "not yet interpreted" message doesn't distinguish skipped vs.
-  failed interpretation.
+- **Closed (session 63) — atlas now distinguishes a deliberately-skipped
+  page from one that genuinely failed interpretation.** New
+  `PageAtlasEntry.interpretationStatus: 'interpreted' | 'skipped' |
+'failed'` (`packages/output/src/atlas.ts`), threaded from
+  `generateAtlas`'s new required `skipInterpretation: boolean` param —
+  `runTreelineCrawl` passes `options.skipInterpretation` straight through.
+  The distinction needs no cross-referencing of `hard-pages/` entries:
+  `runInterpretation` (`packages/interpret`) always either records an
+  interpretation or writes a hard-pages entry for every captured page
+  unless the whole crawl skipped interpretation, so the single global flag
+  is sufficient. `atlas.md`'s overview table column (renamed "Interpreted"
+  → "Interpretation") now reads `Interpreted`/`Skipped`/`Failed` instead of
+  a flat `Yes`/`No`, and each page's own section carries a matching,
+  distinct message (`` `--skip-interpretation` was set for this crawl ``
+  vs. `failed interpretation — check hard-pages/`). Purely additive to the
+  report's own internal type — the pre-existing `interpreted: boolean`
+  field is unchanged, so nothing else that reads it needed touching. The
+  `static-site` golden-master fixture (`--skip-interpretation` on all three
+  scenarios) was deliberately regenerated (`UPDATE_GOLDEN=1`) to reflect
+  the new wording — reviewed diff, not a rubber-stamp: only `atlas.md`
+  actually changed semantically; the ephemeral port-number/timestamp churn
+  `UPDATE_GOLDEN=1` also touched in unrelated golden files (poms/specs/
+  selector-report/testid-audit, from the fixture server's random port)
+  was reverted since it wasn't a real difference, keeping the commit
+  minimal.
 - **Closed (post-session-58) — the GET-mutation risk from session 53 now
   has a real mitigation, not just a documented gap.** `--deny-url-pattern`
   (repeatable substring denylist, enforced in `crawler.ts` at both

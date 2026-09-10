@@ -39,6 +39,8 @@ export interface TestIdAuditReport {
   overallCoveragePercent: number
 }
 
+export type InterpretationStatus = 'interpreted' | 'skipped' | 'failed'
+
 export interface PageAtlasEntry {
   url: string
   title: string
@@ -49,6 +51,7 @@ export interface PageAtlasEntry {
   interactiveElementCount: number
   testIdCount: number
   interpreted: boolean
+  interpretationStatus: InterpretationStatus
 }
 
 export interface SiteAtlas {

@@ -80,7 +80,7 @@ const interpretation = makeInterpretation({ url: 'https://example.com/signup', p
 
 describe('generateAtlas', () => {
   it('excludes pages that failed capture entirely', () => {
-    const atlas = generateAtlas([interpretedPage, uninterpretedPage, failedCapturePage], [interpretation])
+    const atlas = generateAtlas([interpretedPage, uninterpretedPage, failedCapturePage], [interpretation], false)
     const urls = atlas.pages.map((entry) => entry.url)
     expect(urls).toContain('https://example.com/signup')
     expect(urls).toContain('https://example.com/about')
@@ -88,15 +88,16 @@ describe('generateAtlas', () => {
   })
 
   it('computes totalPagesCaptured and totalPagesInterpreted', () => {
-    const atlas = generateAtlas([interpretedPage, uninterpretedPage, failedCapturePage], [interpretation])
+    const atlas = generateAtlas([interpretedPage, uninterpretedPage, failedCapturePage], [interpretation], false)
     expect(atlas.totalPagesCaptured).toBe(2)
     expect(atlas.totalPagesInterpreted).toBe(1)
   })
 
   it('populates fields from a matching interpretation', () => {
-    const atlas = generateAtlas([interpretedPage], [interpretation])
+    const atlas = generateAtlas([interpretedPage], [interpretation], false)
     const entry = atlas.pages.find((e) => e.url === 'https://example.com/signup')!
     expect(entry.interpreted).toBe(true)
+    expect(entry.interpretationStatus).toBe('interpreted')
     expect(entry.pageType).toBe('form')
     expect(entry.purpose).toBe('Collect user signup details')
     expect(entry.keyDataEntities).toEqual(['user', 'email'])
@@ -106,8 +107,8 @@ describe('generateAtlas', () => {
   })
 
   it('leaves an uninterpreted page with null/empty fields and does not throw', () => {
-    expect(() => generateAtlas([uninterpretedPage], [])).not.toThrow()
-    const atlas = generateAtlas([uninterpretedPage], [])
+    expect(() => generateAtlas([uninterpretedPage], [], false)).not.toThrow()
+    const atlas = generateAtlas([uninterpretedPage], [], false)
     const entry = atlas.pages[0]!
     expect(entry.interpreted).toBe(false)
     expect(entry.pageType).toBeNull()
@@ -115,15 +116,53 @@ describe('generateAtlas', () => {
     expect(entry.keyDataEntities).toEqual([])
     expect(entry.confidence).toBeNull()
   })
+
+  it('marks an uninterpreted page "failed" when interpretation was not skipped for the crawl', () => {
+    const atlas = generateAtlas([uninterpretedPage], [], false)
+    expect(atlas.pages[0]!.interpretationStatus).toBe('failed')
+  })
+
+  it('marks an uninterpreted page "skipped" when --skip-interpretation was set for the crawl', () => {
+    const atlas = generateAtlas([uninterpretedPage], [], true)
+    const entry = atlas.pages[0]!
+    expect(entry.interpreted).toBe(false)
+    expect(entry.interpretationStatus).toBe('skipped')
+  })
+
+  it('still marks a page "interpreted" even when skipInterpretation is true, if a stored interpretation exists (e.g. a resumed crawl)', () => {
+    const atlas = generateAtlas([interpretedPage], [interpretation], true)
+    expect(atlas.pages[0]!.interpretationStatus).toBe('interpreted')
+  })
 })
 
 describe('renderAtlasMarkdown', () => {
-  it('renders the overview table, page headings, and an uninterpreted note', () => {
-    const atlas = generateAtlas([interpretedPage, uninterpretedPage, failedCapturePage], [interpretation])
+  it('renders the overview table and page headings', () => {
+    const atlas = generateAtlas([interpretedPage, uninterpretedPage, failedCapturePage], [interpretation], false)
     const markdown = renderAtlasMarkdown(atlas)
-    expect(markdown).toContain('| URL | Page Type | Confidence | Interpreted | Interactive Elements | Test IDs |')
+    expect(markdown).toContain('| URL | Page Type | Confidence | Interpretation | Interactive Elements | Test IDs |')
     expect(markdown).toContain('## Signup')
     expect(markdown).toContain('## About')
-    expect(markdown).toContain('This page has not yet been interpreted. Check hard-pages/ for details.')
+  })
+
+  it('renders a distinct "failed" note when interpretation was attempted but failed, not the skipped wording', () => {
+    const atlas = generateAtlas([uninterpretedPage], [], false)
+    const markdown = renderAtlasMarkdown(atlas)
+    expect(markdown).toContain('This page failed interpretation. Check hard-pages/ for details.')
+    expect(markdown).not.toContain('--skip-interpretation')
+    expect(markdown).toContain('| Failed |')
+  })
+
+  it('renders a distinct "skipped" note when --skip-interpretation was set, not the failed wording', () => {
+    const atlas = generateAtlas([uninterpretedPage], [], true)
+    const markdown = renderAtlasMarkdown(atlas)
+    expect(markdown).toContain('This page was not interpreted — `--skip-interpretation` was set for this crawl.')
+    expect(markdown).not.toContain('failed interpretation')
+    expect(markdown).toContain('| Skipped |')
+  })
+
+  it('renders "Interpreted" in the overview table for a genuinely interpreted page', () => {
+    const atlas = generateAtlas([interpretedPage], [interpretation], false)
+    const markdown = renderAtlasMarkdown(atlas)
+    expect(markdown).toContain('| Interpreted |')
   })
 })
