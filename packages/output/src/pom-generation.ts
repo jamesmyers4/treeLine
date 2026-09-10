@@ -1,7 +1,7 @@
 import type { DomInteractiveElement } from '@treeline/acquire'
 import { computeSelectorCandidates } from '@treeline/core'
 import type { CrawledPage } from './input.js'
-import { urlToClassName, urlToFileBaseName, elementToPropertyName, deduplicatePropertyNames, assignUniqueNames, sanitizeIdentifier, capitalize } from './naming.js'
+import { urlToClassName, urlToFileBaseName, elementToPropertyName, deduplicatePropertyNames, deduplicatePropertyNamesWithHref, assignUniqueNames, sanitizeIdentifier, capitalize } from './naming.js'
 import { detectRepeatingRegions } from './repeating-regions.js'
 import type { RepeatingPatternGroup } from './repeating-regions.js'
 import { assertGeneratedArtifactParses } from './syntax-gate.js'
@@ -226,7 +226,7 @@ function buildPOM(page: CrawledPage, className: string, fileName: string): { pom
     }
     chosen.push({ element, candidate: selected, propertyName: elementToPropertyName(element) })
   }
-  const dedupedNames = deduplicatePropertyNames(chosen.map((c) => c.propertyName))
+  const dedupedNames = deduplicatePropertyNamesWithHref(chosen.map((c) => ({ propertyName: c.propertyName, href: c.element.href })))
   const fields = chosen.map((c, index) => {
     const matching = remainingElements.filter((el) => {
       const elCandidates = candidatesByElement.get(el)!

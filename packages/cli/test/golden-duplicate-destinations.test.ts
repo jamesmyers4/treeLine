@@ -30,11 +30,13 @@ afterAll(() => {
 
 describe('golden master: duplicate-destinations', () => {
   it(
-    'two same-text "Read more" links pointing at genuinely different URLs produce POM properties disambiguated only by ' +
-      'occurrence order (readMoreLink1/readMoreLink2), not by destination — this is the documented, accepted ' +
-      "current limitation (CONTEXT.md's 'Open items': POM property naming doesn't disambiguate same-text/" +
-      'different-destination links), locked in here deliberately. If a future session adds href capture and fixes ' +
-      'this, these golden files are expected to change as a deliberate, reviewed update, not treated as a regression.',
+    'two same-text "Read more" links pointing at genuinely different URLs produce POM properties disambiguated by ' +
+      'the real destination (readMoreLinkArticle1/readMoreLinkArticle2), not a blind occurrence-order number — ' +
+      'closes the gap CONTEXT.md previously documented under "Open items" (POM property naming did not ' +
+      'disambiguate same-text/different-destination links) now that href capture exists. The underlying selector ' +
+      'locators still use .nth() — getByRole role+name alone still cannot distinguish the two elements, only the ' +
+      'property-naming layer changed — so the real thing this test proves is that the property name is ' +
+      'destination-aware, not a claim about selector strategy.',
     async () => {
       const summary = await runTreelineCrawl({
         url: `${baseUrl}/`,
@@ -58,8 +60,10 @@ describe('golden master: duplicate-destinations', () => {
       compareOrUpdateGoldenFile(selectorReport, join(GOLDEN_DIR, 'reports', 'selector-report.md'), 'selector-report.md')
 
       const homePom = readFileSync(join(outputDir, 'poms', 'home.page.ts'), 'utf-8')
-      expect(homePom).toContain('readMoreLink1')
-      expect(homePom).toContain('readMoreLink2')
+      expect(homePom).toContain('readMoreLinkArticle1')
+      expect(homePom).toContain('readMoreLinkArticle2')
+      expect(homePom).not.toContain('readMoreLink1')
+      expect(homePom).not.toContain('readMoreLink2')
 
       compareOrUpdateGoldenDir(join(outputDir, 'poms'), join(GOLDEN_DIR, 'poms'), 'duplicate-destinations poms')
       compareOrUpdateGoldenDir(join(outputDir, 'specs'), join(GOLDEN_DIR, 'specs'), 'duplicate-destinations specs')

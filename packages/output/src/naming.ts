@@ -116,3 +116,55 @@ export function deduplicatePropertyNames(names: string[]): string[] {
     return `${name}${next}`
   })
 }
+
+function hrefSuffixWords(href: string): string[] {
+  return pathSegments(href).map(capitalize)
+}
+
+export interface PropertyNameCandidate {
+  propertyName: string
+  href: string | null
+}
+
+// Disambiguates same-text/different-destination links (e.g. two "Read more" links on a blog
+// index, each pointing at a different article) by the real destination instead of a blind
+// occurrence-order number — readMoreLinkArticle1/readMoreLinkArticle2 rather than
+// readMoreLink1/readMoreLink2. Falls back to the plain numeric suffix whenever destination-based
+// naming genuinely can't help: any element in the colliding group has no href (not a link, or an
+// href-less anchor never matched by the capture selector), every href in the group normalizes to
+// the same real destination (nothing to disambiguate by), or two different hrefs happen to
+// produce the same derived words (e.g. both resolve to "/") — that residual collision still gets
+// a numeric suffix on top, so uniqueness is always guaranteed regardless of URL shape.
+export function deduplicatePropertyNamesWithHref(entries: PropertyNameCandidate[]): string[] {
+  const groups = new Map<string, number[]>()
+  entries.forEach((entry, index) => {
+    const indices = groups.get(entry.propertyName)
+    if (indices) indices.push(index)
+    else groups.set(entry.propertyName, [index])
+  })
+  const result = new Array<string>(entries.length)
+  for (const indices of groups.values()) {
+    if (indices.length === 1) {
+      result[indices[0]!] = entries[indices[0]!]!.propertyName
+      continue
+    }
+    const allHaveHref = indices.every((i) => entries[i]!.href !== null)
+    const distinctHrefs = allHaveHref ? new Set(indices.map((i) => normalizeUrl(entries[i]!.href!))) : null
+    if (!allHaveHref || distinctHrefs!.size === 1) {
+      indices.forEach((i, order) => {
+        result[i] = `${entries[i]!.propertyName}${order + 1}`
+      })
+      continue
+    }
+    const usedCounts = new Map<string, number>()
+    for (const i of indices) {
+      const baseName = entries[i]!.propertyName
+      const words = hrefSuffixWords(entries[i]!.href!)
+      const candidate = words.length > 0 ? sanitizeIdentifier(`${baseName}${words.join('')}`) : baseName
+      const priorCount = usedCounts.get(candidate) ?? 0
+      usedCounts.set(candidate, priorCount + 1)
+      result[i] = priorCount === 0 ? candidate : `${candidate}${priorCount + 1}`
+    }
+  }
+  return result
+}

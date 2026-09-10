@@ -14,6 +14,7 @@ function makeElement(overrides: Partial<DomInteractiveElement>): DomInteractiveE
     cssPath: 'body > button',
     xpath: '/html/body/button',
     appearedAtMs: null,
+    href: null,
     ...overrides,
   }
 }

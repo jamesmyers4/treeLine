@@ -31,6 +31,7 @@ export interface DomInteractiveElement {
   cssPath: string
   xpath: string
   appearedAtMs: number | null
+  href: string | null
 }
 
 export interface ColorSwatch {

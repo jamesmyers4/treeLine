@@ -528,6 +528,48 @@ describe('interactiveElements accessibleName heuristic (label/img-alt gap)', () 
   }, 30000)
 })
 
+describe('interactiveElements href capture (POM naming disambiguation)', () => {
+  let server: Server
+  let baseUrl: string
+
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.end(`<!doctype html>
+<html><body>
+<a href="/relative-page" id="relative-link">Relative link</a>
+<a href="https://other.example.com/absolute" id="absolute-link">Absolute link</a>
+<button id="plain-button">Not a link</button>
+</body></html>`)
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const addr = server.address() as { port: number }
+    baseUrl = `http://127.0.0.1:${addr.port}`
+  })
+
+  afterAll(() => {
+    server.close()
+  })
+
+  it('captures href as the browser-resolved absolute URL for a relative <a href>', async () => {
+    const result = await capturePage(baseUrl)
+    const link = result.interactiveElements.find((el) => el.elementId === 'relative-link')
+    expect(link?.href).toBe(`${baseUrl}/relative-page`)
+  }, 30000)
+
+  it('captures href unchanged for an already-absolute <a href>', async () => {
+    const result = await capturePage(baseUrl)
+    const link = result.interactiveElements.find((el) => el.elementId === 'absolute-link')
+    expect(link?.href).toBe('https://other.example.com/absolute')
+  }, 30000)
+
+  it('leaves href null for a non-anchor interactive element', async () => {
+    const result = await capturePage(baseUrl)
+    const button = result.interactiveElements.find((el) => el.elementId === 'plain-button')
+    expect(button?.href).toBeNull()
+  }, 30000)
+})
+
 describe('extractAssertableAttributes (feedback #5 — assertable data sources)', () => {
   let server: Server
   let baseUrl: string

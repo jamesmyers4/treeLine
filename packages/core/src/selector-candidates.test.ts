@@ -13,6 +13,7 @@ function makeElement(overrides: Partial<DomInteractiveElement>): DomInteractiveE
     cssPath: 'td > a',
     xpath: '/html/body/table/tbody/tr/td/a',
     appearedAtMs: null,
+    href: null,
     ...overrides,
   }
 }

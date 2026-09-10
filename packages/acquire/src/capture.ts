@@ -660,6 +660,7 @@ async function captureWithContext(url: string, context: BrowserContext, options?
           cssPath: computeCssPath(el),
           xpath: computeXPath(el),
           appearedAtMs: el.hasAttribute(attr) ? Number(el.getAttribute(attr)) : null,
+          href: tagName === 'a' ? (el as HTMLAnchorElement).href : null,
         }
       }),
     APPEARED_ATTR,

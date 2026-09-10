@@ -14,6 +14,7 @@ function makeElement(overrides: Partial<DomInteractiveElement>): DomInteractiveE
     cssPath: 'body > button',
     xpath: '/html/body/button',
     appearedAtMs: null,
+    href: null,
     ...overrides,
   }
 }
@@ -65,6 +66,52 @@ describe('generatePOM', () => {
     expect(pom.code).toContain('this.aboutLink2 = page.getByRole(')
     expect(pom.code).toContain('.nth(0)')
     expect(pom.code).toContain('.nth(1)')
+  })
+
+  it('disambiguates same-text links to genuinely different destinations by the destination, not occurrence order, when href is captured (real "Read more" shape)', () => {
+    const readMoreOne = makeElement({
+      role: 'link',
+      accessibleName: 'Read more',
+      cssPath: 'article:nth-of-type(1) > a',
+      xpath: '/html/body/article[1]/a',
+      href: 'https://example.com/article-1',
+    })
+    const readMoreTwo = makeElement({
+      role: 'link',
+      accessibleName: 'Read more',
+      cssPath: 'article:nth-of-type(2) > a',
+      xpath: '/html/body/article[2]/a',
+      href: 'https://example.com/article-2',
+    })
+    const page = makePage({ interactiveElements: [readMoreOne, readMoreTwo] })
+    const { pom, skipped } = generatePOM(page)
+    expect(skipped).toEqual([])
+    expect(pom.code).toContain('readonly readMoreLinkArticle1: Locator')
+    expect(pom.code).toContain('readonly readMoreLinkArticle2: Locator')
+    expect(pom.code).not.toContain('readMoreLink1')
+    expect(pom.code).not.toContain('readMoreLink2')
+  })
+
+  it('still falls back to numeric disambiguation when two same-text links share the exact same href, even with href captured', () => {
+    const sameDestOne = makeElement({
+      role: 'link',
+      accessibleName: 'Learn more',
+      cssPath: 'header > a',
+      xpath: '/html/body/header/a',
+      href: 'https://example.com/learn',
+    })
+    const sameDestTwo = makeElement({
+      role: 'link',
+      accessibleName: 'Learn more',
+      cssPath: 'footer > a',
+      xpath: '/html/body/footer/a',
+      href: 'https://example.com/learn',
+    })
+    const page = makePage({ interactiveElements: [sameDestOne, sameDestTwo] })
+    const { pom, skipped } = generatePOM(page)
+    expect(skipped).toEqual([])
+    expect(pom.code).toContain('readonly learnMoreLink1: Locator')
+    expect(pom.code).toContain('readonly learnMoreLink2: Locator')
   })
 
   it('excludes an element with no stable candidate and records it as skipped', () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { DomInteractiveElement } from '@treeline/acquire'
-import { urlToClassName, urlToFileBaseName, elementToPropertyName, deduplicatePropertyNames, assignUniqueNames } from './naming.js'
+import { urlToClassName, urlToFileBaseName, elementToPropertyName, deduplicatePropertyNames, deduplicatePropertyNamesWithHref, assignUniqueNames } from './naming.js'
 
 function makeElement(overrides: Partial<DomInteractiveElement>): DomInteractiveElement {
   return {
@@ -13,6 +13,7 @@ function makeElement(overrides: Partial<DomInteractiveElement>): DomInteractiveE
     cssPath: 'body > button',
     xpath: '/html/body/button',
     appearedAtMs: null,
+    href: null,
     ...overrides,
   }
 }
@@ -149,5 +150,66 @@ describe('deduplicatePropertyNames', () => {
   it('suffixes duplicate names starting at 1 in DOM order', () => {
     const result = deduplicatePropertyNames(['aboutLink', 'submitButton', 'aboutLink'])
     expect(result).toEqual(['aboutLink1', 'submitButton', 'aboutLink2'])
+  })
+})
+
+describe('deduplicatePropertyNamesWithHref', () => {
+  it('leaves unique names unchanged, regardless of href', () => {
+    const result = deduplicatePropertyNamesWithHref([
+      { propertyName: 'aboutLink', href: 'https://example.com/about' },
+      { propertyName: 'submitButton', href: null },
+    ])
+    expect(result).toEqual(['aboutLink', 'submitButton'])
+  })
+
+  it('disambiguates two same-text links to genuinely different destinations by the destination, not occurrence order (real "Read more" shape)', () => {
+    const result = deduplicatePropertyNamesWithHref([
+      { propertyName: 'readMoreLink', href: 'https://example.com/article-1' },
+      { propertyName: 'readMoreLink', href: 'https://example.com/article-2' },
+    ])
+    expect(result).toEqual(['readMoreLinkArticle1', 'readMoreLinkArticle2'])
+  })
+
+  it('falls back to a numeric suffix when every colliding element shares the exact same href — nothing to disambiguate by', () => {
+    const result = deduplicatePropertyNamesWithHref([
+      { propertyName: 'readMoreLink', href: 'https://example.com/article-1' },
+      { propertyName: 'readMoreLink', href: 'https://example.com/article-1' },
+    ])
+    expect(result).toEqual(['readMoreLink1', 'readMoreLink2'])
+  })
+
+  it('falls back to a numeric suffix for the whole group when any colliding element has no href at all (e.g. a non-link sharing the same accessible name/role)', () => {
+    const result = deduplicatePropertyNamesWithHref([
+      { propertyName: 'submitButton', href: 'https://example.com/submit' },
+      { propertyName: 'submitButton', href: null },
+    ])
+    expect(result).toEqual(['submitButton1', 'submitButton2'])
+  })
+
+  it('treats normalization-equivalent hrefs (differing only by fragment) as the same destination, falling back to numeric', () => {
+    const result = deduplicatePropertyNamesWithHref([
+      { propertyName: 'jumpLink', href: 'https://example.com/page#section' },
+      { propertyName: 'jumpLink', href: 'https://example.com/page' },
+    ])
+    expect(result).toEqual(['jumpLink1', 'jumpLink2'])
+  })
+
+  it('still guarantees uniqueness when two different hrefs happen to derive the same suffix words (e.g. both resolve to "/")', () => {
+    const result = deduplicatePropertyNamesWithHref([
+      { propertyName: 'homeLink', href: 'https://example.com/' },
+      { propertyName: 'homeLink', href: 'https://other.example.com/' },
+    ])
+    expect(result).toEqual(['homeLink', 'homeLink2'])
+    expect(new Set(result).size).toBe(2)
+  })
+
+  it('disambiguates three or more colliding links by destination, including a repeated destination within the group', () => {
+    const result = deduplicatePropertyNamesWithHref([
+      { propertyName: 'readMoreLink', href: 'https://example.com/article-1' },
+      { propertyName: 'readMoreLink', href: 'https://example.com/article-2' },
+      { propertyName: 'readMoreLink', href: 'https://example.com/article-1' },
+    ])
+    expect(result).toEqual(['readMoreLinkArticle1', 'readMoreLinkArticle2', 'readMoreLinkArticle12'])
+    expect(new Set(result).size).toBe(3)
   })
 })

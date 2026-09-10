@@ -2400,8 +2400,48 @@ locked-decision brief there; this section is the outcome summary. See
   term like `/api/user-settings` is confirmed to survive unnormalized
   (real regression test) — the fix targets tokens, not ordinary hyphenated
   path segments.
-- POM property naming doesn't disambiguate same-text/different-destination
-  links.
+- **Closed (session 65) — POM property naming now disambiguates same-text/
+  different-destination links by the real destination, not just occurrence
+  order.** New `DomInteractiveElement.href: string | null`
+  (`packages/acquire`) — the browser-resolved absolute URL for an `<a>`
+  element, `null` for everything else — captured alongside the existing
+  fields in `capture.ts`'s interactive-element extraction and round-tripped
+  through `@treeline/core` persistence the same additive-JSON-column way
+  every other `DomInteractiveElement` field already does (no migration
+  needed). New `packages/output/src/naming.ts` export,
+  `deduplicatePropertyNamesWithHref` (additive — the existing plain-string
+  `deduplicatePropertyNames` is unchanged and still used for repeating-
+  region row-field names, which have no href concept), used only in
+  `pom-generation.ts`'s per-page field-naming path: two same-text links to
+  *different* real destinations now become e.g. `readMoreLinkArticle1`/
+  `readMoreLinkArticle2` instead of `readMoreLink1`/`readMoreLink2` — the
+  href's own path segments, reusing the exact same word-extraction logic
+  `urlToClassName` already uses for page names, inserted between the
+  accessible-name-derived base and the role suffix. **Falls back to the
+  original blind numeric suffix whenever destination-based naming
+  genuinely cannot help** (any element in the colliding group has no href;
+  every href in the group normalizes — via the existing `normalizeUrl` —
+  to the identical destination; or two different hrefs happen to derive
+  the same suffix words, e.g. both resolve to `/`), with a final numeric
+  tiebreak layered on top of href-based naming so uniqueness is always
+  guaranteed regardless of URL shape — covered by dedicated unit tests for
+  each fallback case, not just the happy path. **Deliberately unchanged:**
+  the underlying *selector* locator still uses `.nth()` — `getByRole`
+  role+name alone still cannot distinguish the two elements in the DOM;
+  only the generated *property name* became destination-aware, not
+  selector strategy, which is a separate, unrelated system
+  (`computeSelectorCandidates` in `@treeline/core`). The
+  `duplicate-destinations` golden-master fixture (session 58) was
+  deliberately regenerated (`UPDATE_GOLDEN=1`) to reflect this — reviewed
+  diff, not a rubber-stamp: only `poms/home.page.ts` actually changed
+  (`readMoreLink1`/`readMoreLink2` → `readMoreLinkArticle1`/
+  `readMoreLinkArticle2`, locators still `.nth()`-based as expected); the
+  ephemeral port-number/timestamp churn `UPDATE_GOLDEN=1` also produced in
+  five unrelated golden files (the two article POMs, all three specs, the
+  selector report) was reverted since it was not a real difference, same
+  discipline as session 63's atlas golden update. The test's own docstring
+  and assertions were updated to match — it no longer asserts the old
+  occurrence-order-only naming as the expected, accepted behavior.
 - **Closed (session 62) — axe report shows every affected element, not just
   the first.** `AxeFindingSummary.exampleSelector: string` (one selector,
   from `nodes[0]` only) is now `exampleSelectors: string[]`, populated from

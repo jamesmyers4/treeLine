@@ -104,6 +104,7 @@ function makeElement(overrides: Partial<DomInteractiveElement> = {}): DomInterac
     cssPath: 'body > article > a',
     xpath: '/html/body/article/a',
     appearedAtMs: null,
+    href: null,
     ...overrides,
   }
 }

@@ -72,6 +72,7 @@ async function buildAdversarialReportsDir(): Promise<string> {
         cssPath: 'body > button',
         xpath: '/html/body/button',
         appearedAtMs: null,
+        href: null,
       },
     ],
     axeViolations: [],

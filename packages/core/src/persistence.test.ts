@@ -359,6 +359,7 @@ describe('appearedAtMs persistence (per-element appearance latency)', () => {
         cssPath: 'body > button',
         xpath: '/html/body/button',
         appearedAtMs: null,
+        href: null,
       },
       {
         role: 'link',
@@ -370,6 +371,7 @@ describe('appearedAtMs persistence (per-element appearance latency)', () => {
         cssPath: 'body > a',
         xpath: '/html/body/a',
         appearedAtMs: 842,
+        href: 'https://example.com/delayed',
       },
     ]
     const page = makePage('https://example.com/')

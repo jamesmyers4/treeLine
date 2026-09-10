@@ -588,6 +588,7 @@ describe('interpretPage — content-presence assertions (form-less pages)', () =
         cssPath: 'body > article > a',
         xpath: '/html/body/article/a',
         appearedAtMs: null,
+        href: 'https://example.com/how-treeline-works',
       },
       {
         role: 'link',
@@ -599,6 +600,7 @@ describe('interpretPage — content-presence assertions (form-less pages)', () =
         cssPath: 'body > article > .author a',
         xpath: '/html/body/article/div/a',
         appearedAtMs: null,
+        href: 'https://example.com/author/jane',
       },
     ],
   }
