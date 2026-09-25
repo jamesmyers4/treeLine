@@ -1,6 +1,6 @@
 # CLAUDE.md — treeline
 
-_Last updated after session 70._
+_Last updated after session 71._
 
 Full design rationale lives in `CONTEXT.md` - read that first for the "why."
 This file is the operational guide: conventions, commands, and hard-won
@@ -1030,7 +1030,19 @@ authenticated target (OpenEMR, session 53) — see CONTEXT.md's
 "Authenticated crawling" section for the full design and verification
 history. `captureSnapshot` carries a truncated real
 error message when available (session 5.97 fix) — do not hardcode this back
-to always-`null`. A small reader for this manifest was added in
+to always-`null`. **Until session 71 that was only true for interpretation
+failures and the two auth reason codes** — the crawler's generic
+`timeout`/`parse-error` capture path still wrote `null`, left over from the
+first scaffold commit, even though those are exactly the entries that most
+need it (`markFailed` means they're never retried, so this workflow is the
+only way they get fixed). Every path now records the message, with ANSI
+color codes stripped (Playwright's `page.goto` errors embed them in the
+call log) and capped at 500 characters in the crawler (interpretation
+failures are still capped at 200 — `packages/interpret/src/orchestrate.ts`).
+Note that `parse-error` is simply "any capture failure that isn't a
+timeout" — e.g. `net::ERR_UNSAFE_PORT` or a connection reset lands there
+too; read `captureSnapshot` for the real cause, don't trust the code
+alone. A small reader for this manifest was added in
 `packages/cli/src/orchestrate.ts` (session 38) so `coverage-report.md` can
 surface unresolved entries as real parsed data rather than a raw file
 count — this reader lives in `cli`, not `core`/`acquire`, kept scoped to

@@ -1847,7 +1847,9 @@ Built as both a library and a network-callable API from day one.
   `reasonCode: 'parse-error'` and a truncated real error message in
   `captureSnapshot` (session 5.97 — the original design had this hardcoded
   to `null`; a swallowed-exception bug made early debugging much harder
-  than it needed to be, fixed by actually surfacing the real error).
+  than it needed to be, fixed by actually surfacing the real error). The
+  crawler's own capture-failure entries only got the same treatment in
+  session 71 — see "Open items."
 
 ## v1 core output set — status
 
@@ -2354,6 +2356,30 @@ locked-decision brief there; this section is the outcome summary. See
 
 **Known gaps worth fixing eventually, not blocking:**
 
+- **Closed (session 71) — capture-failure hard-pages entries now carry the
+  real error.** CLAUDE.md and this file both said `captureSnapshot`
+  carries a truncated real error message (session 5.97), but that fix only
+  ever covered interpretation failures (and later the `auth-expired`/
+  `auth-wall` codes). The crawler's generic catch path in
+  `packages/core/src/crawler.ts` — every `timeout` and `parse-error`
+  capture failure — has written `captureSnapshot: null` since the first
+  scaffold commit (confirmed via `git log -S`). Those are the entries the
+  manual escalation workflow depends on most, since `markFailed` means
+  they're never retried. Fix: the same `truncateCaptureSnapshot` the auth
+  codes use (500-character cap), applied to `err.message` or `String(err)`
+  for a non-`Error` throw, now also stripping ANSI color escapes, which a
+  real Playwright `page.goto` error embeds in its call log. Verified with
+  `packages/core/src/crawler-hard-pages.test.ts` (timeout message,
+  non-timeout message, non-`Error` throw, ANSI stripping, truncation; the
+  first four confirmed to fail against the pre-fix crawler), and a live
+  CLI crawl of `http://127.0.0.1:9/`, whose hard-pages entry went from
+  `null` to `page.goto: net::ERR_UNSAFE_PORT at http://127.0.0.1:9/` plus
+  the call log. **Noted, not changed:** that same live entry is labelled
+  `parse-error`, because the crawler classifies every non-timeout capture
+  failure that way (network errors included); the reason-code taxonomy is
+  left as-is, since the real message now says what actually happened.
+  Interpretation-failure entries are still capped at 200 characters rather
+  than 500.
 - **Open (found session 70) — POM generation trusts volatile text.** The
   generated POM for a fast-changing page bakes in role+name locators built
   from content that changes on its own: relative timestamps (`_0MinutesAgoLink

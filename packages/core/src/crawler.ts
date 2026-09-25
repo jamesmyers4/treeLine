@@ -9,9 +9,11 @@ import { openCrawlDb } from './persistence.js'
 import { clearHardPageEntry, writeHardPageEntry } from './hard-pages.js'
 
 const MAX_CAPTURE_SNAPSHOT_LENGTH = 500
+const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g')
 
 function truncateCaptureSnapshot(message: string): string {
-  return message.length > MAX_CAPTURE_SNAPSHOT_LENGTH ? message.slice(0, MAX_CAPTURE_SNAPSHOT_LENGTH) : message
+  const plain = message.replace(ANSI_ESCAPE, '')
+  return plain.length > MAX_CAPTURE_SNAPSHOT_LENGTH ? plain.slice(0, MAX_CAPTURE_SNAPSHOT_LENGTH) : plain
 }
 
 export async function crawl(
@@ -194,7 +196,7 @@ async function runCrawl(
         url,
         reasonCode,
         attemptedAt: new Date().toISOString(),
-        captureSnapshot: null,
+        captureSnapshot: truncateCaptureSnapshot(err instanceof Error ? err.message : String(err)),
       })
     }
   }
