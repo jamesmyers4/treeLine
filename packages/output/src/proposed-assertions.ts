@@ -20,14 +20,16 @@ function toSafeComment(text: string): string {
   return text.replace(/\r\n|\r|\n/g, ' ')
 }
 
+const SUBMITTING_INPUT_TYPES = new Set(['submit', 'image'])
+
 function findSubmitField(form: CapturedForm | undefined): CapturedFormField | undefined {
-  return form?.fields.find((field) => field.role === 'button')
+  return form?.fields.find((field) => field.inputType !== null && SUBMITTING_INPUT_TYPES.has(field.inputType))
 }
 
 function buildFieldLocator(field: CapturedFormField | undefined, accessibleName: string): string {
-  if (!field) return `page.getByRole(${JSON.stringify('textbox')}, { name: ${JSON.stringify(accessibleName)} })`
+  if (!field) return `page.getByRole(${JSON.stringify('textbox')}, { name: ${JSON.stringify(accessibleName)}, exact: true })`
   if (field.accessibleName.trim() !== '') {
-    return `page.getByRole(${JSON.stringify(field.role)}, { name: ${JSON.stringify(field.accessibleName)} })`
+    return `page.getByRole(${JSON.stringify(field.role)}, { name: ${JSON.stringify(field.accessibleName)}, exact: true })`
   }
   if (field.testId) return `page.getByTestId(${JSON.stringify(field.testId)})`
   return `page.locator(${JSON.stringify(field.cssPath)})`
@@ -63,7 +65,7 @@ function buildSubmitLine(form: CapturedForm | undefined, interactiveElements: Do
 
 function buildContentElementLocator(element: DomInteractiveElement): string {
   if (element.accessibleName.trim() !== '') {
-    return `page.getByRole(${JSON.stringify(element.role)}, { name: ${JSON.stringify(element.accessibleName)} })`
+    return `page.getByRole(${JSON.stringify(element.role)}, { name: ${JSON.stringify(element.accessibleName)}, exact: true })`
   }
   if (element.testId) return `page.getByTestId(${JSON.stringify(element.testId)})`
   return `page.locator(${JSON.stringify(element.cssPath)})`
@@ -73,7 +75,7 @@ function renderFormFillSpec(page: CrawledPage, assertion: FormFillAssertion): st
   const form = page.forms[assertion.formIndex]
   const filledFields = assertion.fieldValues
     .map((fieldValue) => ({ fieldValue, field: form?.fields[fieldValue.fieldIndex] }))
-    .filter(({ field }) => field?.role !== 'button')
+    .filter(({ field }) => field?.role !== 'button' && field?.inputType !== 'hidden')
   const fieldLines = filledFields.map(({ fieldValue, field }) => {
     const locator = buildFieldLocator(field, fieldValue.accessibleName)
     return buildFieldAction(field, locator, fieldValue.value)

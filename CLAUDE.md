@@ -1,6 +1,6 @@
 # CLAUDE.md — treeline
 
-_Last updated after session 65._
+_Last updated after session 68._
 
 Full design rationale lives in `CONTEXT.md` - read that first for the "why."
 This file is the operational guide: conventions, commands, and hard-won
@@ -65,6 +65,14 @@ golden/<scenario>/`, compared via `test/normalize-golden.ts` — separate
   perfectly stable and still throw a Playwright strict-mode violation if
   it's not unique. If only `stable` is true, scope it (`.nth(i)`, a parent
   locator, `.filter()`) rather than using it as-is.
+- **Every generated `getByRole` locator must pass `exact: true`** (session
+  68). Without it Playwright matches the name as a case-insensitive
+  substring, so `uniqueOnPage` (computed by exact, whitespace-normalized
+  name equality in `computeSelectorCandidates`) would be a lie — `Home`
+  would also match `Home page`. Uniqueness and `.nth()` indexes are
+  computed over *every* captured element on the page, including ones
+  absorbed into a repeating-row component, since those are still in the
+  DOM.
 - Same-origin crawl scope is the default and should not be silently widened.
 - Stealth mode is opt-in (`--stealth` flag) — never the default posture.
 - **Any dynamic/untrusted value spliced into generated code or markdown
@@ -505,6 +513,22 @@ types.ts`) and `VerifyRunOptions.authValidIndicator?: string`
   state the limitation plainly with real numbers, don't silently claim
   completeness, and don't burn unbounded time closing the last few percent
   of an inherently template-diverse target.
+- **Captured `role`/`accessibleName` must agree with what Playwright's
+  `getByRole` resolves, not with what looks reasonable — test against
+  Playwright itself.** Session 68 found the capture heuristic
+  (`packages/acquire/src/capture.ts`, three duplicated copies — keep them
+  in step) disagreeing with Playwright in several real ways: a `submit`
+  input's `value` never used (so its name was `""`), a `<select>` named by
+  its selected value, `search`/`number`/`file`/`image` inputs mapped to the
+  wrong role, and `<input type=hidden>` captured as an unnamed textbox.
+  Hidden inputs are now excluded at capture. The regression tests in
+  `forms.test.ts`/`capture.test.ts` use `page.getByRole(role, { name,
+  exact: true }).count()` as the oracle — extend those fixtures, rather
+  than hand-asserting expected names, when touching this heuristic. Note:
+  `tsx` can't run a script that imports `capture.ts` directly
+  (esbuild's `__name` helper leaks into the browser-evaluated callbacks →
+  `ReferenceError: __name is not defined`); import from the built
+  `dist/` in a plain `.mjs` throwaway script instead.
 - **`tsx` is not hoisted to the workspace root.** Each package that needs to
   run a script directly (throwaway sanity scripts, `dev` scripts) needs
   `tsx` as its own devDependency: `pnpm add -D tsx --filter @treeline/<pkg>`.

@@ -7,8 +7,8 @@ export class HomePage {
 
   constructor(page: Page) {
     this.page = page
-    this.readMoreLinkArticle1 = page.getByRole("link", { name: "Read more" }).nth(0)
-    this.readMoreLinkArticle2 = page.getByRole("link", { name: "Read more" }).nth(1)
+    this.readMoreLinkArticle1 = page.getByRole("link", { name: "Read more", exact: true }).nth(0)
+    this.readMoreLinkArticle2 = page.getByRole("link", { name: "Read more", exact: true }).nth(1)
   }
 
   async goto(): Promise<void> {

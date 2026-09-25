@@ -83,3 +83,27 @@ describe('isCssStable — pre-existing rules unchanged', () => {
     expect(cssCandidate(el).stable).toBe(true)
   })
 })
+
+describe('role candidate uniqueness — matches Playwright getByRole exact: true semantics', () => {
+  function roleCandidate(el: DomInteractiveElement, all: DomInteractiveElement[]) {
+    return computeSelectorCandidates(all).get(el)!.find((c) => c.strategy === 'role')!
+  }
+
+  it('treats names differing only in internal whitespace as the same name, since Playwright collapses whitespace', () => {
+    const a = makeElement({ accessibleName: 'Read\n    more' })
+    const b = makeElement({ accessibleName: 'Read more' })
+    expect(roleCandidate(a, [a, b]).uniqueOnPage).toBe(false)
+    expect(roleCandidate(b, [a, b]).uniqueOnPage).toBe(false)
+  })
+
+  it('keeps a name that is only a substring of another name unique, since generated locators use exact: true', () => {
+    const home = makeElement({ accessibleName: 'Home' })
+    const homePage = makeElement({ accessibleName: 'Home page' })
+    expect(roleCandidate(home, [home, homePage]).uniqueOnPage).toBe(true)
+  })
+
+  it('JSON-escapes quotes in the role selector value and collapses whitespace', () => {
+    const el = makeElement({ accessibleName: 'Say  "hi"\n' })
+    expect(roleCandidate(el, [el]).value).toBe('role=link[name="Say \\"hi\\""]')
+  })
+})

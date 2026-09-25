@@ -37,8 +37,13 @@ function isCssStable(el: DomInteractiveElement): boolean {
   return true
 }
 
+export function normalizeAccessibleName(name: string): string {
+  return name.replace(/\s+/g, ' ').trim()
+}
+
 function isRoleUnique(el: DomInteractiveElement, allElements: DomInteractiveElement[]): boolean {
-  return !allElements.some((other) => other !== el && other.role === el.role && other.accessibleName === el.accessibleName)
+  const name = normalizeAccessibleName(el.accessibleName)
+  return !allElements.some((other) => other !== el && other.role === el.role && normalizeAccessibleName(other.accessibleName) === name)
 }
 
 function isTestIdUnique(el: DomInteractiveElement, allElements: DomInteractiveElement[]): boolean {
@@ -55,7 +60,7 @@ function buildCandidates(el: DomInteractiveElement, allElements: DomInteractiveE
   if (hasRealRole && el.accessibleName.trim() !== '') {
     candidates.push({
       strategy: 'role',
-      value: `role=${el.role}[name="${el.accessibleName}"]`,
+      value: `role=${el.role}[name=${JSON.stringify(normalizeAccessibleName(el.accessibleName))}]`,
       stable: true,
       uniqueOnPage: isRoleUnique(el, allElements),
     })

@@ -6,7 +6,7 @@ export class Article1Page {
 
   constructor(page: Page) {
     this.page = page
-    this.backToBlogLink = page.getByRole("link", { name: "Back to Blog" })
+    this.backToBlogLink = page.getByRole("link", { name: "Back to Blog", exact: true })
   }
 
   async goto(): Promise<void> {

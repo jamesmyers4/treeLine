@@ -138,18 +138,43 @@ describe('renderProposedAssertionSpec', () => {
 
   it('uses a role-based locator with .fill() for a textbox field', () => {
     const code = renderProposedAssertionSpec(makePage(), makeAssertion())
-    expect(code).toContain(`page.getByRole("textbox", { name: "Email" }).fill("test@example.com")`)
+    expect(code).toContain(`page.getByRole("textbox", { name: "Email", exact: true }).fill("test@example.com")`)
   })
 
   it('uses .check() rather than .fill() for a checkbox field', () => {
     const code = renderProposedAssertionSpec(makePage(), makeAssertion())
-    expect(code).toContain(`page.getByRole("checkbox", { name: "Subscribe" }).check()`)
-    expect(code).not.toContain(`page.getByRole("checkbox", { name: "Subscribe" }).fill(`)
+    expect(code).toContain(`page.getByRole("checkbox", { name: "Subscribe", exact: true }).check()`)
+    expect(code).not.toContain(`page.getByRole("checkbox", { name: "Subscribe", exact: true }).fill(`)
   })
 
   it('clicks the real captured submit button by its role and accessible name', () => {
     const code = renderProposedAssertionSpec(makePage(), makeAssertion())
-    expect(code).toContain(`page.getByRole("button", { name: "Sign Up" }).click()`)
+    expect(code).toContain(`page.getByRole("button", { name: "Sign Up", exact: true }).click()`)
+  })
+
+  it('clicks the real submit button even when a Reset or plain type=button field comes first in the form', () => {
+    const base = makeForm()
+    const buttonField = (name: string, inputType: string) => ({ ...base.fields[2]!, accessibleName: name, inputType, cssPath: `form > input[type=${inputType}]` })
+    const form = makeForm({ fields: [base.fields[0]!, buttonField('Clear', 'reset'), buttonField('Preview', 'button'), base.fields[2]!] })
+    const code = renderProposedAssertionSpec(makePage({ forms: [form] }), makeAssertion({ fieldValues: [{ fieldIndex: 0, accessibleName: 'Email', value: 'test@example.com' }] }))
+    expect(code).toContain(`page.getByRole("button", { name: "Sign Up", exact: true }).click()`)
+    expect(code).not.toContain('"Clear"')
+    expect(code).not.toContain('"Preview"')
+  })
+
+  it('never fills a hidden field left over in a crawl.sqlite captured before hidden inputs were excluded', () => {
+    const base = makeForm()
+    const hidden = { ...base.fields[0]!, role: 'textbox', accessibleName: '', inputType: 'hidden', cssPath: 'form > input[name=csrf]' }
+    const form = makeForm({ fields: [hidden, ...base.fields] })
+    const code = renderProposedAssertionSpec(makePage({ forms: [form] }), makeAssertion({
+      fieldValues: [
+        { fieldIndex: 0, accessibleName: '', value: 'fake-token' },
+        { fieldIndex: 1, accessibleName: 'Email', value: 'test@example.com' },
+      ],
+    }))
+    expect(code).not.toContain('fake-token')
+    expect(code).not.toContain('input[name=csrf]')
+    expect(code).toContain(`page.getByRole("textbox", { name: "Email", exact: true }).fill("test@example.com")`)
   })
 
   it('does not generate a fill/check line for the submit button itself, even if the model referenced its fieldIndex', () => {
@@ -171,7 +196,7 @@ describe('renderProposedAssertionSpec', () => {
       interactiveElements: [makeElement({ role: 'button', tagName: 'button', accessibleName: 'Send Message', cssPath: 'body > button' })],
     })
     const code = renderProposedAssertionSpec(page, makeAssertion())
-    expect(code).toContain(`page.getByRole("button", { name: "Send Message" }).click()`)
+    expect(code).toContain(`page.getByRole("button", { name: "Send Message", exact: true }).click()`)
     expect(code).not.toContain('submit|create|save')
   })
 
@@ -181,7 +206,7 @@ describe('renderProposedAssertionSpec', () => {
     const code = renderProposedAssertionSpec(page, makeAssertion({
       fieldValues: [{ fieldIndex: 0, accessibleName: 'Email', value: 'test@example.com' }],
     }))
-    expect(code).toContain(`await page.getByRole("textbox", { name: "Email" }).press('Enter')`)
+    expect(code).toContain(`await page.getByRole("textbox", { name: "Email", exact: true }).press('Enter')`)
     expect(code).toContain('// No submit button exists anywhere in the captured form or page snapshot')
     expect(code).not.toContain('submit|create|save')
     expect(code).not.toContain('.click()')
@@ -220,7 +245,7 @@ describe('renderProposedAssertionSpec', () => {
     const code = renderProposedAssertionSpec(makePage(), makeAssertion({
       fieldValues: [{ fieldIndex: 99, accessibleName: 'Nonexistent Field', value: 'Test Value' }],
     }))
-    expect(code).toContain(`page.getByRole("textbox", { name: "Nonexistent Field" }).fill("Test Value")`)
+    expect(code).toContain(`page.getByRole("textbox", { name: "Nonexistent Field", exact: true }).fill("Test Value")`)
   })
 
   it('collapses an embedded newline in the success assertion so it stays a single commented line, not a bare injected statement', () => {
@@ -271,8 +296,8 @@ describe('renderProposedAssertionSpec — content-presence', () => {
 
   it('produces one toBeVisible() line per referenced element, using the accessibleName locator', () => {
     const code = renderProposedAssertionSpec(makeContentPage(), makeContentAssertion())
-    expect(code).toContain(`await expect(page.getByRole("link", { name: "How Treeline Works" })).toBeVisible()`)
-    expect(code).toContain(`await expect(page.getByRole("link", { name: "By Jane Author" })).toBeVisible()`)
+    expect(code).toContain(`await expect(page.getByRole("link", { name: "How Treeline Works", exact: true })).toBeVisible()`)
+    expect(code).toContain(`await expect(page.getByRole("link", { name: "By Jane Author", exact: true })).toBeVisible()`)
   })
 
   it('falls back to testId then cssPath when an element has no accessibleName', () => {

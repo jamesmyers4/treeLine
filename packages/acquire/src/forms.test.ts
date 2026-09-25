@@ -232,4 +232,95 @@ describe('extractForms', () => {
     const forms = await extractForms(page)
     expect(forms[0].fields[0].accessibleName).toBe('')
   })
+
+  it('excludes <input type=hidden> fields entirely, since they have no role and are not fillable', async () => {
+    await loadFixture(page, '/hidden-field', `
+      <html><body>
+        <form method="post">
+          <input type="hidden" name="csrf_token" value="abc123" />
+          <input type="HIDDEN" name="upper" value="x" />
+          <input type="text" name="q" aria-label="Query" />
+        </form>
+      </body></html>
+    `)
+    const forms = await extractForms(page)
+    expect(forms[0].fields.length).toBe(1)
+    expect(forms[0].fields[0].accessibleName).toBe('Query')
+  })
+
+  it("names <input type=submit/reset/button> from value (with Submit/Reset defaults), never a text input's own value or a select's selected value", async () => {
+    await loadFixture(page, '/button-values', `
+      <html><body>
+        <form>
+          <input type="text" name="prefilled" value="typed value" />
+          <input type="text" name="ph" placeholder="Search here" />
+          <select name="sel"><option value="v1">Option one</option></select>
+          <input type="submit" value="Send it" />
+          <input type="submit" />
+          <input type="reset" />
+          <input type="button" value="Go" />
+        </form>
+      </body></html>
+    `)
+    const forms = await extractForms(page)
+    expect(forms[0].fields.map((f) => [f.role, f.accessibleName])).toEqual([
+      ['textbox', ''],
+      ['textbox', 'Search here'],
+      ['combobox', ''],
+      ['button', 'Send it'],
+      ['button', 'Submit'],
+      ['button', 'Reset'],
+      ['button', 'Go'],
+    ])
+  })
+
+  it('maps input types to the same roles Playwright getByRole resolves them to', async () => {
+    await loadFixture(page, '/input-roles', `
+      <html><body>
+        <form>
+          <input type="search" aria-label="f-search" />
+          <input type="number" aria-label="f-number" />
+          <input type="file" aria-label="f-file" />
+          <input type="image" alt="f-image" src="x.png" />
+          <input type="email" aria-label="f-email" />
+          <input type="range" aria-label="f-range" />
+        </form>
+      </body></html>
+    `)
+    const forms = await extractForms(page)
+    expect(forms[0].fields.map((f) => [f.accessibleName, f.role])).toEqual([
+      ['f-search', 'searchbox'],
+      ['f-number', 'spinbutton'],
+      ['f-file', 'button'],
+      ['f-image', 'button'],
+      ['f-email', 'textbox'],
+      ['f-range', 'slider'],
+    ])
+  })
+
+  it('produces a role+name pair for every named field that Playwright getByRole resolves with exact: true', async () => {
+    await loadFixture(page, '/playwright-agreement', `
+      <html><body>
+        <form>
+          <label>Customer name: <input name="custname" /></label>
+          <label for="flavor">Pizza Flavor</label>
+          <select id="flavor"><option>Bacon</option><option>Cheese</option></select>
+          <textarea placeholder="Comments"></textarea>
+          <input type="search" placeholder="Find a pizza" />
+          <input type="number" aria-label="Quantity" />
+          <input type="checkbox" aria-label="Extra cheese" />
+          <input type="submit" value="Place order" />
+          <input type="reset" />
+          <input type="image" alt="Pay now" src="pay.png" />
+        </form>
+      </body></html>
+    `)
+    const forms = await extractForms(page)
+    const named = forms[0].fields.filter((f) => f.accessibleName !== '')
+    expect(named.length).toBe(forms[0].fields.length)
+    for (const field of named) {
+      const count = await page.getByRole(field.role as Parameters<Page['getByRole']>[0], { name: field.accessibleName, exact: true }).count()
+      expect(count, `${field.role} "${field.accessibleName}"`).toBe(1)
+    }
+  })
 })

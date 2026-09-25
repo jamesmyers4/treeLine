@@ -152,7 +152,7 @@ async function runBaseInterpretation(
 function buildProposalPrompt(pageState: PageState, form: CapturedForm): string {
   const fieldsDescription = form.fields
     .map((field, index) => {
-      if (field.role === "button") return null;
+      if (field.role === "button" || field.inputType === "hidden") return null;
       const label = field.accessibleName || "(unlabeled)";
       const kind = field.inputType ?? field.tagName;
       return `[${index}] ${label} (role: ${field.role}, type: ${kind}${field.required ? ", required" : ""})`;
@@ -268,7 +268,7 @@ async function proposeAssertion(
       return null;
     }
     const fieldValues = (input.fieldValues as { fieldIndex: number; value: string }[])
-      .filter((fv) => fv.fieldIndex >= 0 && fv.fieldIndex < form.fields.length && form.fields[fv.fieldIndex]!.role !== "button")
+      .filter((fv) => fv.fieldIndex >= 0 && fv.fieldIndex < form.fields.length && form.fields[fv.fieldIndex]!.role !== "button" && form.fields[fv.fieldIndex]!.inputType !== "hidden")
       .map((fv) => ({
         fieldIndex: fv.fieldIndex,
         accessibleName: form.fields[fv.fieldIndex]!.accessibleName,

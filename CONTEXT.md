@@ -1720,7 +1720,15 @@ Grew significantly beyond the original plan through sessions 1, 4.5, 4.6, 9,
   `el.closest('label')` (wrapping label, no `id`/`for` required) →
   `textContent` → `<img alt>` (self, or the first non-empty `alt` among
   descendant `<img>`s — covers an icon-only button and `input[type=image]`)
-  → `placeholder`/`value`. Both real, common sources this heuristic
+  → a type-specific input fallback (session 68: `<input type=submit|reset>`
+  uses `value`, defaulting to `Submit`/`Reset`; `type=button` uses
+  `value`; every other input and `<textarea>` uses `placeholder` only —
+  never a text field's own typed `value`, and `<select>`/`<textarea>`
+  never take a name from `textContent`, matching what Playwright's
+  `getByRole` actually resolves). Session 68 also aligned `role` with
+  Playwright (`search` → `searchbox`, `number` → `spinbutton`, `file`/
+  `image` → `button`) and stopped capturing `<input type=hidden>` at all,
+  in either `interactiveElements` or `forms` — see "Open items." Both real, common sources this heuristic
   previously missed — a `<label for="nav-toggle">`-associated checkbox and
   a logo link's `<img alt>`, both confirmed via a real cross-check against
   axe-core's independent (correct) computation — now resolve correctly;
@@ -1848,7 +1856,11 @@ Built as both a library and a network-callable API from day one.
    now) as independent properties — a candidate can be one without being
    the other. **This is the rule POM generation depends on: only treat a
    candidate as safe to bake into generated code directly when both
-   `stable` and `uniqueOnPage` are true.**
+   `stable` and `uniqueOnPage` are true.** Since session 68, `uniqueOnPage`
+   for a role candidate means "unique under Playwright's `exact: true`
+   matching" (whitespace-collapsed, case-sensitive, whole-string), and
+   every generated `getByRole` locator emits `exact: true` to match — see
+   "Open items."
 2. **data-testid coverage audit** — ✅ done.
 3. **Network/API capture** — ✅ done. Captured and persisted since session
    1/3; folded into flow map's API surface table (session 18) rather than
@@ -2336,6 +2348,83 @@ locked-decision brief there; this section is the outcome summary. See
 
 **Known gaps worth fixing eventually, not blocking:**
 
+- **Closed (session 68) — generated role locators now match what
+  treeLine's own uniqueness check assumes, and the captured role/name
+  pairs now match what Playwright actually resolves.** Found by a repo-wide
+  code audit, not a user report; three related bugs, one root cause
+  (treeLine's model of "which elements does this locator match" disagreed
+  with Playwright's):
+  1. **Generated `getByRole` locators matched by substring.** Every
+     generated locator (`pom-generation.ts`'s `buildLocatorExpression` and
+     flat-entity row roots, `proposed-assertions.ts`'s field/content/submit
+     locators) was `getByRole(role, { name })`, which Playwright matches as
+     a case-insensitive *substring* — while `computeSelectorCandidates`
+     (`@treeline/core`) computed `uniqueOnPage` by exact string equality.
+     Confirmed real with a throwaway Playwright check: links `Home` and
+     `Home page` on one page → treeLine said `Home` was unique, and the
+     generated `getByRole('link', { name: 'Home' })` matched 2 elements (a
+     strict-mode violation at runtime, or a wrong `.nth()` index). Fix:
+     every generated role locator now emits `exact: true`, and
+     `isRoleUnique` compares names through a new exported
+     `normalizeAccessibleName` (whitespace-collapse + trim) — confirmed
+     against real Playwright that `exact: true` still collapses/trims
+     whitespace on both sides, so this is exactly its semantics. The
+     `role=...[name=...]` report string also now JSON-escapes the name (a
+     `"` in a name used to produce a broken selector string in
+     `selector-report.md`).
+  2. **Uniqueness ignored row-consumed elements.** `buildPOM` computed
+     candidates and `.nth()` indexes over only the elements *not* absorbed
+     into a repeating-row component — but those elements are still in the
+     DOM. A standalone `upvote` link next to three row-ified `upvote` links
+     was marked unique and emitted without `.nth()`. Now computed over
+     every element on the page (`.nth(3)` in that case).
+  3. **Role/name capture disagreed with Playwright** (`packages/acquire/
+     src/capture.ts`, all three duplicated heuristic copies — forms,
+     interactive elements, assertable attributes). `placeholder?.trim() ??
+     value?.trim()` never reached `value` (`placeholder` is `""`, not
+     nullish, when absent), so `<input type=submit value="Send it">` was
+     captured with name `""`; `<select>` meanwhile got its *selected
+     option's value* as its name (Playwright gives `""`), and a text field's
+     prefilled `value` could leak into its name. Input-type → role mapping
+     was also wrong for `search` (Playwright: `searchbox`), `number`
+     (`spinbutton`), `file` and `image` (`button`) — a generated
+     `getByRole('textbox', …)` for a search box matched nothing. And
+     `<input type=hidden>` (CSRF tokens) was captured as an unnamed
+     `textbox` in both `forms` and `interactiveElements`, so a proposed
+     form-fill spec could `.fill()` a hidden field. Fixes: hidden inputs
+     are excluded at capture (`INTERACTIVE_SELECTOR`/`FORM_FIELD_SELECTOR`);
+     the role map matches Playwright; the final name fallback is now
+     type-specific (see "PageState shape" above). Defense-in-depth for
+     `crawl.sqlite` files captured before this fix: `proposed-assertions.ts`
+     never fills a field with `inputType: 'hidden'`, and `interpret.ts`
+     omits hidden fields from the proposal prompt and drops any value the
+     model proposes for one. `findSubmitField` also now picks only a real
+     submitting input (`inputType` `submit`/`image`) — it used to pick the
+     first `role: 'button'` field, which could be a Reset button.
+  **Verification:** new tests use Playwright itself as the oracle rather
+  than asserting treeLine's own expectations — `forms.test.ts` and
+  `capture.test.ts` ("role/name agreement with Playwright getByRole")
+  assert every captured, named element resolves to exactly one match via
+  `getByRole(role, { name, exact: true })`; unit tests cover the
+  substring case, the row-consumed case, whitespace normalization, quote
+  escaping, Reset-before-Submit, and legacy hidden fields. The new POM
+  tests were confirmed to fail against the pre-fix `pom-generation.ts`.
+  Real-data check: a fresh `--skip-interpretation` crawl of
+  httpbin.org/forms/post, with its generated POM loaded and every locator
+  run against the live page — 9/9 resolved to exactly one element.
+  (httpbin has no hidden/search/value-named-submit inputs, so those shapes
+  are proven by fixture tests only.) All eight golden POM files were
+  updated by hand to add `exact: true` — reviewed, the only change; the
+  `UPDATE_GOLDEN=1` port/timestamp churn in other golden files was
+  discarded, and no report golden changed. **Deliberately not touched:**
+  `<button>` elements are still not captured as `forms[].fields` (only
+  `input, select, textarea`), so a `<button type=submit>` is still found via
+  the page-level `SUBMIT_NAME_PATTERN` fallback; multiple
+  `aria-labelledby` IDs and the `aria-label`-vs-`aria-labelledby`
+  precedence are still unfixed (see "PageState shape"); and the three
+  duplicated heuristic copies in `capture.ts` are still three copies —
+  kept in step by hand here, a consolidation candidate for a future
+  session.
 - **Closed (post-session-58) — the `<label for>` and `<img alt>` misses are
   fixed, not just documented.** All three duplicated accessible-name
   computations in `packages/acquire/src/capture.ts` (`extractForms`, the

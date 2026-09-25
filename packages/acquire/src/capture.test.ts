@@ -570,6 +570,74 @@ describe('interactiveElements href capture (POM naming disambiguation)', () => {
   }, 30000)
 })
 
+describe('interactiveElements role/name agreement with Playwright getByRole', () => {
+  let server: Server
+  let baseUrl: string
+
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.end(`<!doctype html>
+<html><body>
+<form method="post">
+  <input type="hidden" name="csrf_token" value="abc123" />
+  <input type="search" id="search" placeholder="Search products" />
+  <input type="number" id="qty" aria-label="Quantity" />
+  <input type="text" id="prefilled" value="typed value" />
+  <select id="size"><option value="s">Small</option><option value="l">Large</option></select>
+  <input type="submit" id="submit" value="Add to cart" />
+  <input type="reset" id="reset" />
+  <input type="image" id="pay" alt="Pay now" src="pay.png" />
+</form>
+<a href="/home" id="home">Home</a>
+<a href="/home-page" id="home-page">Home page</a>
+</body></html>`)
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const addr = server.address() as { port: number }
+    baseUrl = `http://127.0.0.1:${addr.port}`
+  })
+
+  afterAll(() => {
+    server.close()
+  })
+
+  it('never captures <input type=hidden> as an interactive element', async () => {
+    const result = await capturePage(baseUrl)
+    const inputIds = result.interactiveElements.filter((el) => el.tagName === 'input').map((el) => el.elementId)
+    expect(inputIds).toEqual(['search', 'qty', 'prefilled', 'submit', 'reset', 'pay'])
+  }, 30000)
+
+  it('captures the role and name Playwright itself resolves, per element', async () => {
+    const result = await capturePage(baseUrl)
+    const byId = (id: string) => result.interactiveElements.find((el) => el.elementId === id)
+    expect([byId('search')?.role, byId('search')?.accessibleName]).toEqual(['searchbox', 'Search products'])
+    expect([byId('qty')?.role, byId('qty')?.accessibleName]).toEqual(['spinbutton', 'Quantity'])
+    expect([byId('prefilled')?.role, byId('prefilled')?.accessibleName]).toEqual(['textbox', ''])
+    expect([byId('size')?.role, byId('size')?.accessibleName]).toEqual(['combobox', ''])
+    expect([byId('submit')?.role, byId('submit')?.accessibleName]).toEqual(['button', 'Add to cart'])
+    expect([byId('reset')?.role, byId('reset')?.accessibleName]).toEqual(['button', 'Reset'])
+    expect([byId('pay')?.role, byId('pay')?.accessibleName]).toEqual(['button', 'Pay now'])
+  }, 30000)
+
+  it('every named element resolves to exactly one match via getByRole with exact: true', async () => {
+    const result = await capturePage(baseUrl)
+    const browser = await launchHardened()
+    try {
+      const page = await (await browser.newContext()).newPage()
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
+      const named = result.interactiveElements.filter((el) => el.accessibleName !== '')
+      expect(named.length).toBeGreaterThan(0)
+      for (const el of named) {
+        const count = await page.getByRole(el.role as Parameters<typeof page.getByRole>[0], { name: el.accessibleName, exact: true }).count()
+        expect(count, `${el.role} "${el.accessibleName}"`).toBe(1)
+      }
+    } finally {
+      await browser.close()
+    }
+  }, 30000)
+})
+
 describe('extractAssertableAttributes (feedback #5 — assertable data sources)', () => {
   let server: Server
   let baseUrl: string

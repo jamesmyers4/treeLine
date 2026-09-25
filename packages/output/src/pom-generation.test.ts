@@ -68,6 +68,22 @@ describe('generatePOM', () => {
     expect(pom.code).toContain('.nth(1)')
   })
 
+  it('emits exact: true on role locators, so a name that is a substring of another link name does not also match it', () => {
+    const home = makeElement({ role: 'link', accessibleName: 'Home', cssPath: 'header > a.home', xpath: '/html/body/header/a[1]' })
+    const homePage = makeElement({ role: 'link', accessibleName: 'Home page', cssPath: 'footer > a.home-page', xpath: '/html/body/footer/a[1]' })
+    const { pom } = generatePOM(makePage({ interactiveElements: [home, homePage] }))
+    expect(pom.code).toContain('this.homeLink = page.getByRole("link", { name: "Home", exact: true })\n')
+    expect(pom.code).not.toContain('.nth(')
+  })
+
+  it('computes uniqueness and .nth() against every element on the page, including ones absorbed into a row component', () => {
+    const rowMembers = [1, 2, 3].map((i) => makeElement({ role: 'link', accessibleName: 'upvote', tagName: 'a', elementId: `up_${1000000 + i}`, cssPath: `#up_${1000000 + i}`, xpath: `/html/body/a[${i}]` }))
+    const standalone = makeElement({ role: 'link', accessibleName: 'upvote', tagName: 'a', cssPath: 'footer > a.vote', xpath: '/html/body/footer/a' })
+    const { pom } = generatePOM(makePage({ interactiveElements: [...rowMembers, standalone] }))
+    expect(pom.code).toContain('export class UpvoteLinkRow {')
+    expect(pom.code).toContain('this.upvoteLink = page.getByRole("link", { name: "upvote", exact: true }).nth(3)')
+  })
+
   it('disambiguates same-text links to genuinely different destinations by the destination, not occurrence order, when href is captured (real "Read more" shape)', () => {
     const readMoreOne = makeElement({
       role: 'link',
@@ -220,7 +236,7 @@ describe('generatePOM — repeating rows (feedback #3)', () => {
     expect(pom.code).toContain('readonly upvoteLink: Locator')
     expect(pom.code).toContain('this.upvoteLink = root')
     expect(pom.code).toContain('upvoteLinkRow(index: number): UpvoteLinkRow {')
-    expect(pom.code).toContain('return new UpvoteLinkRow(this.page.getByRole("link", { name: "upvote" }).nth(index))')
+    expect(pom.code).toContain('return new UpvoteLinkRow(this.page.getByRole("link", { name: "upvote", exact: true }).nth(index))')
     expect(pom.code).not.toContain('readonly upvoteLink1: Locator')
   })
 

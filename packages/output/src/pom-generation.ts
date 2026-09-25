@@ -126,7 +126,7 @@ function buildFlatEntityRows(groups: RepeatingPatternGroup[], usedClassNames: Se
     if (!group.members.every((member) => member.accessibleName === representative.accessibleName)) continue
     const fieldName = elementToPropertyName(representative)
     const className = reserveClassName(usedClassNames, sanitizeIdentifier(`${capitalize(fieldName)}Row`))
-    const rowRootExpression = `this.page.getByRole(${JSON.stringify(representative.role)}, { name: ${JSON.stringify(representative.accessibleName)} })`
+    const rowRootExpression = `this.page.getByRole(${JSON.stringify(representative.role)}, { name: ${JSON.stringify(representative.accessibleName)}, exact: true })`
     rows.push({ className, accessorName: lowerFirst(className), rowRootExpression, fields: [{ propertyName: fieldName, relativeCss: null }] })
     for (const member of group.members) consumed.add(member)
   }
@@ -179,7 +179,7 @@ function selectStableCandidate(candidates: SelectorCandidate[]): SelectorCandida
 function buildLocatorExpression(element: DomInteractiveElement, candidate: SelectorCandidate, nth: number | null): string {
   let base: string
   if (candidate.strategy === 'role') {
-    base = `page.getByRole(${JSON.stringify(element.role)}, { name: ${JSON.stringify(element.accessibleName)} })`
+    base = `page.getByRole(${JSON.stringify(element.role)}, { name: ${JSON.stringify(element.accessibleName)}, exact: true })`
   } else if (candidate.strategy === 'xpath') {
     base = `page.locator(\`xpath=${candidate.value}\`)`
   } else {
@@ -214,7 +214,7 @@ ${accessorsBlock}
 function buildPOM(page: CrawledPage, className: string, fileName: string): { pom: GeneratedPOM; skipped: SkippedElement[] } {
   const { rows, consumed } = buildRowComponents(page.interactiveElements)
   const remainingElements = page.interactiveElements.filter((element) => !consumed.has(element))
-  const candidatesByElement = computeSelectorCandidates(remainingElements)
+  const candidatesByElement = computeSelectorCandidates(page.interactiveElements)
   const skipped: SkippedElement[] = []
   const chosen: { element: DomInteractiveElement; candidate: SelectorCandidate; propertyName: string }[] = []
   for (const element of remainingElements) {
@@ -228,7 +228,7 @@ function buildPOM(page: CrawledPage, className: string, fileName: string): { pom
   }
   const dedupedNames = deduplicatePropertyNamesWithHref(chosen.map((c) => ({ propertyName: c.propertyName, href: c.element.href })))
   const fields = chosen.map((c, index) => {
-    const matching = remainingElements.filter((el) => {
+    const matching = page.interactiveElements.filter((el) => {
       const elCandidates = candidatesByElement.get(el)!
       return elCandidates.some((cand) => cand.strategy === c.candidate.strategy && cand.value === c.candidate.value)
     })

@@ -4,7 +4,8 @@ import type { AcquireOptions, AssertableAttribute, AxeIncompleteResult, AxeViola
 import { launchHardened } from './launch.js'
 import { AuthExpiredError, AuthWallError, SeedAuthenticationError, checkAuthStillValid, resolveAuthValidSelector } from './auth.js'
 
-const INTERACTIVE_SELECTOR = 'button, a[href], input, select, textarea, [role]'
+const INTERACTIVE_SELECTOR = 'button, a[href], input:not([type="hidden" i]), select, textarea, [role]'
+const FORM_FIELD_SELECTOR = 'input:not([type="hidden" i]), select, textarea'
 const APPEARED_ATTR = 'data-treeline-appeared-at'
 const DEFAULT_MAX_RESPONSE_BODY_BYTES = 512000
 const DEFAULT_MAX_REQUEST_BODY_BYTES = 65536
@@ -123,7 +124,7 @@ async function installAppearanceTracker(page: Page): Promise<void> {
 }
 
 export async function extractForms(page: Page): Promise<CapturedForm[]> {
-  return page.$$eval('form', (formEls) => {
+  return page.$$eval('form', (formEls, fieldSelector) => {
     const computeCssPath = (target: Element): string => {
       if (target.id && document.querySelectorAll(`#${CSS.escape(target.id)}`).length === 1) {
         return `#${CSS.escape(target.id)}`
@@ -150,17 +151,19 @@ export async function extractForms(page: Page): Promise<CapturedForm[]> {
       const formElement = formEl as HTMLFormElement
       const action = formElement.action
       const method = (formElement.method || 'get').toUpperCase()
-      const fieldEls = Array.from(formElement.querySelectorAll('input, select, textarea'))
+      const fieldEls = Array.from(formElement.querySelectorAll(fieldSelector))
       const fields = fieldEls.map((el) => {
         const tagName = el.tagName.toLowerCase()
         let role: string
         if (tagName === 'input') {
           const inputEl = el as HTMLInputElement
           const type = inputEl.type?.toLowerCase() ?? 'text'
-          if (type === 'submit' || type === 'button' || type === 'reset') role = 'button'
+          if (type === 'submit' || type === 'button' || type === 'reset' || type === 'image' || type === 'file') role = 'button'
           else if (type === 'checkbox') role = 'checkbox'
           else if (type === 'radio') role = 'radio'
           else if (type === 'range') role = 'slider'
+          else if (type === 'search') role = 'searchbox'
+          else if (type === 'number') role = 'spinbutton'
           else role = 'textbox'
         } else if (tagName === 'select') {
           role = 'combobox'
@@ -185,7 +188,7 @@ export async function extractForms(page: Page): Promise<CapturedForm[]> {
             const wrappingLabel = el.closest('label')
             accessibleName = wrappingLabel?.textContent?.trim() ?? ''
           }
-          if (!accessibleName) accessibleName = el.textContent?.trim() ?? ''
+          if (!accessibleName && tagName !== 'select' && tagName !== 'textarea') accessibleName = el.textContent?.trim() ?? ''
           if (!accessibleName) {
             const isAltSource = el.tagName === 'IMG' || (el.tagName === 'INPUT' && (el as HTMLInputElement).type === 'image')
             const selfAlt = isAltSource ? (el.getAttribute('alt')?.trim() ?? '') : ''
@@ -195,9 +198,15 @@ export async function extractForms(page: Page): Promise<CapturedForm[]> {
               .join(' ')
             accessibleName = selfAlt || descendantAlt
           }
-          if (!accessibleName) {
+          if (!accessibleName && tagName === 'input') {
             const inputEl = el as HTMLInputElement
-            accessibleName = inputEl.placeholder?.trim() ?? inputEl.value?.trim() ?? ''
+            const type = inputEl.type.toLowerCase()
+            if (type === 'submit') accessibleName = inputEl.value.trim() || 'Submit'
+            else if (type === 'reset') accessibleName = inputEl.value.trim() || 'Reset'
+            else if (type === 'button') accessibleName = inputEl.value.trim()
+            else accessibleName = inputEl.placeholder.trim()
+          } else if (!accessibleName && tagName === 'textarea') {
+            accessibleName = (el as HTMLTextAreaElement).placeholder.trim()
           }
         }
         const inputType = tagName === 'input' ? ((el as HTMLInputElement).type?.toLowerCase() ?? 'text') : null
@@ -215,7 +224,7 @@ export async function extractForms(page: Page): Promise<CapturedForm[]> {
       })
       return { formIndex, action, method, fields }
     })
-  })
+  }, FORM_FIELD_SELECTOR)
 }
 
 export async function extractColorPalette(page: Page): Promise<ColorSwatch[]> {
@@ -316,15 +325,27 @@ export async function extractAssertableAttributes(page: Page): Promise<Assertabl
         }
         const wrappingLabel = el.closest('label')
         if (wrappingLabel?.textContent?.trim()) return wrappingLabel.textContent.trim()
-        const textContent = el.textContent?.trim()
+        const tagName = el.tagName.toLowerCase()
+        const textContent = tagName !== 'select' && tagName !== 'textarea' ? el.textContent?.trim() : ''
         if (textContent) return textContent
         const isAltSource = el.tagName === 'IMG' || (el.tagName === 'INPUT' && (el as HTMLInputElement).type === 'image')
         const selfAlt = isAltSource ? el.getAttribute('alt')?.trim() : ''
         if (selfAlt) return selfAlt
-        return Array.from(el.querySelectorAll('img[alt]'))
+        const descendantAlt = Array.from(el.querySelectorAll('img[alt]'))
           .map((img) => img.getAttribute('alt')?.trim() ?? '')
           .filter(Boolean)
           .join(' ')
+        if (descendantAlt) return descendantAlt
+        if (tagName === 'input') {
+          const inputEl = el as HTMLInputElement
+          const type = inputEl.type.toLowerCase()
+          if (type === 'submit') return inputEl.value.trim() || 'Submit'
+          if (type === 'reset') return inputEl.value.trim() || 'Reset'
+          if (type === 'button') return inputEl.value.trim()
+          return inputEl.placeholder.trim()
+        }
+        if (tagName === 'textarea') return (el as HTMLTextAreaElement).placeholder.trim()
+        return ''
       }
       const results: Array<{
         attributeName: string
@@ -563,10 +584,12 @@ async function captureWithContext(url: string, context: BrowserContext, options?
         } else if (tagName === 'input') {
           const inputEl = el as HTMLInputElement
           const type = inputEl.type?.toLowerCase() ?? 'text'
-          if (type === 'submit' || type === 'button' || type === 'reset') role = 'button'
+          if (type === 'submit' || type === 'button' || type === 'reset' || type === 'image' || type === 'file') role = 'button'
           else if (type === 'checkbox') role = 'checkbox'
           else if (type === 'radio') role = 'radio'
           else if (type === 'range') role = 'slider'
+          else if (type === 'search') role = 'searchbox'
+          else if (type === 'number') role = 'spinbutton'
           else role = 'textbox'
         } else if (tagName === 'select') {
           role = 'combobox'
@@ -593,7 +616,7 @@ async function captureWithContext(url: string, context: BrowserContext, options?
             const wrappingLabel = el.closest('label')
             accessibleName = wrappingLabel?.textContent?.trim() ?? ''
           }
-          if (!accessibleName) accessibleName = el.textContent?.trim() ?? ''
+          if (!accessibleName && tagName !== 'select' && tagName !== 'textarea') accessibleName = el.textContent?.trim() ?? ''
           if (!accessibleName) {
             const isAltSource = el.tagName === 'IMG' || (el.tagName === 'INPUT' && (el as HTMLInputElement).type === 'image')
             const selfAlt = isAltSource ? (el.getAttribute('alt')?.trim() ?? '') : ''
@@ -603,9 +626,15 @@ async function captureWithContext(url: string, context: BrowserContext, options?
               .join(' ')
             accessibleName = selfAlt || descendantAlt
           }
-          if (!accessibleName) {
+          if (!accessibleName && tagName === 'input') {
             const inputEl = el as HTMLInputElement
-            accessibleName = inputEl.placeholder?.trim() ?? inputEl.value?.trim() ?? ''
+            const type = inputEl.type.toLowerCase()
+            if (type === 'submit') accessibleName = inputEl.value.trim() || 'Submit'
+            else if (type === 'reset') accessibleName = inputEl.value.trim() || 'Reset'
+            else if (type === 'button') accessibleName = inputEl.value.trim()
+            else accessibleName = inputEl.placeholder.trim()
+          } else if (!accessibleName && tagName === 'textarea') {
+            accessibleName = (el as HTMLTextAreaElement).placeholder.trim()
           }
         }
         const computeCssPath = (target: Element): string => {

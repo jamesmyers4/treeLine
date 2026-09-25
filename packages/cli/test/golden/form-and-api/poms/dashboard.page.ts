@@ -7,8 +7,8 @@ export class DashboardPage {
 
   constructor(page: Page) {
     this.page = page
-    this.homeLink = page.getByRole("link", { name: "Home" })
-    this.dashboardLink = page.getByRole("link", { name: "Dashboard" })
+    this.homeLink = page.getByRole("link", { name: "Home", exact: true })
+    this.dashboardLink = page.getByRole("link", { name: "Dashboard", exact: true })
   }
 
   async goto(): Promise<void> {

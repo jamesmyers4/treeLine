@@ -493,6 +493,35 @@ describe('interpretPage — proposedAssertion (forms-gated)', () => {
     expect(result.proposedAssertion.fieldValues[0]?.fieldIndex).toBe(0)
   })
 
+  it('omits a hidden field (left over from a pre-fix crawl.sqlite) from the prompt and drops any value the model proposes for it', async () => {
+    const hiddenField = { ...form.fields[0]!, accessibleName: '', inputType: 'hidden', cssPath: 'body > form > input[name=csrf]' }
+    const legacyFormPageState: PageState = { ...mockPageState, forms: [{ ...form, fields: [hiddenField, ...form.fields] }] }
+    const responseReferencingHidden = {
+      content: [{
+        type: 'tool_use',
+        id: 'tool_proposal_hidden_ref',
+        name: 'propose_assertion',
+        input: {
+          applicable: true,
+          scenario: 'Fill out and submit the signup form with synthetic data',
+          fieldValues: [
+            { fieldIndex: 0, value: 'fake-token' },
+            { fieldIndex: 1, value: 'test@example.com' }
+          ],
+          successAssertion: 'A confirmation message appears'
+        }
+      }]
+    }
+    const mockClient = makeSequentialMockClient([mockToolUseResponse, responseReferencingHidden])
+    vi.mocked(getAnthropicClient).mockReturnValue(mockClient as never)
+    const result = await interpretPage(legacyFormPageState)
+    const prompt = mockClient.messages.create.mock.calls[1][0].messages[0].content as string
+    expect(prompt).not.toContain('[0]')
+    expect(prompt).toContain('[1] Email')
+    if (result.proposedAssertion?.kind !== 'form-fill') throw new Error('expected form-fill')
+    expect(result.proposedAssertion.fieldValues).toEqual([{ fieldIndex: 1, accessibleName: 'Email', value: 'test@example.com' }])
+  })
+
   it('drops a field value whose fieldIndex is out of range', async () => {
     const responseWithBadIndex = {
       content: [{
