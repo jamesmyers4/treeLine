@@ -35,6 +35,8 @@ function makePage(overrides: Partial<CrawledPage>): CrawledPage {
     forms: [],
     colorPalette: [],
     assertableAttributes: [],
+    finalUrl: null,
+    httpStatus: null,
     status: 'ok',
     ...overrides,
   }
@@ -282,6 +284,24 @@ describe('generateSpec', () => {
 })
 
 describe('generatePOMsAndSpecs', () => {
+  it('generates no POM or spec for a page that returned an HTTP error status, but still does for 2xx and unknown-status pages', () => {
+    const element = makeElement({ role: 'link', accessibleName: 'Home' })
+    const ok = makePage({ url: 'https://example.com/about', httpStatus: 200, interactiveElements: [element] })
+    const legacy = makePage({ url: 'https://example.com/legacy', httpStatus: null, interactiveElements: [element] })
+    const notFound = makePage({ url: 'https://example.com/gone', httpStatus: 404, interactiveElements: [element] })
+    const serverError = makePage({ url: 'https://example.com/boom', httpStatus: 500, interactiveElements: [element] })
+    const result = generatePOMsAndSpecs([ok, legacy, notFound, serverError])
+    expect(result.poms.map((p) => p.className).sort()).toEqual(['AboutPage', 'LegacyPage'])
+    expect(result.specs).toHaveLength(2)
+  })
+
+  it("asserts the page's real post-redirect URL in the generated spec, while goto() still uses the recorded URL", () => {
+    const page = makePage({ url: 'https://example.com/docs', finalUrl: 'https://example.com/docs/', httpStatus: 200 })
+    const result = generatePOMsAndSpecs([page])
+    expect(result.poms[0]!.code).toContain('await this.page.goto("https://example.com/docs")')
+    expect(result.specs[0]!.code).toContain('await expect(page).toHaveURL("https://example.com/docs/")')
+  })
+
   it('skips a page that failed capture entirely', () => {
     const okPage = makePage({
       url: 'https://example.com/about',

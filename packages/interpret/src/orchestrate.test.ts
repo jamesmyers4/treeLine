@@ -28,7 +28,9 @@ function makePageState(url: string): PageState {
     axeIncomplete: [],
     forms: [],
     colorPalette: [],
-    assertableAttributes: []
+    assertableAttributes: [],
+    finalUrl: url,
+    httpStatus: 200
   }
 }
 
@@ -105,5 +107,17 @@ describe('runInterpretation', () => {
     expect(succeeded).not.toBeNull()
     expect(existsSync(hardPagesDir)).toBe(true)
     expect(readdirSync(hardPagesDir).length).toBe(1)
+  })
+
+  it('clears the stale hard-pages entry from a previous failed interpretation once the page interprets successfully', async () => {
+    const db = openCrawlDb(dbPath)
+    db.recordPageState(makePageState('https://example.com/flaky'))
+    db.close()
+    vi.mocked(interpretPage).mockRejectedValueOnce(new Error('transient'))
+    await runInterpretation(dbPath, hardPagesDir)
+    expect(readdirSync(hardPagesDir).length).toBe(1)
+    vi.mocked(interpretPage).mockResolvedValueOnce({ ...mockInterpretation, url: 'https://example.com/flaky' })
+    await runInterpretation(dbPath, hardPagesDir)
+    expect(readdirSync(hardPagesDir).length).toBe(0)
   })
 })

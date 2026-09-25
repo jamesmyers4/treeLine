@@ -80,6 +80,8 @@ async function buildAdversarialReportsDir(): Promise<string> {
     forms: [],
     colorPalette: [],
     assertableAttributes: [],
+    finalUrl: ADVERSARIAL_URL,
+    httpStatus: 200,
   })
   const pages = db.getAllPages()
   db.close()

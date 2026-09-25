@@ -1,6 +1,6 @@
 # CLAUDE.md — treeline
 
-_Last updated after session 68._
+_Last updated after session 69._
 
 Full design rationale lives in `CONTEXT.md` - read that first for the "why."
 This file is the operational guide: conventions, commands, and hard-won
@@ -584,7 +584,58 @@ test setup). If you see a wall of unrelated-looking test failures in`packages/cl
   restart.** The crawler skips URLs already in that db's `pages` table.
   Comparing two "identical" runs will show fewer newly-captured pages on
   the second one — this is correct resumability behavior (CONTEXT.md), not
-  a bug, but easy to misread as one mid-debugging.
+  a bug, but easy to misread as one mid-debugging. **Since session 69 a
+  skipped page's stored `links` are re-queued** (same same-origin/deny/
+  `--max-depth` filters as freshly-discovered links, via
+  `db.getStoredLinks`), so a crawl that stopped at `--max-pages` genuinely
+  continues where it left off on the next run. Before this, the seed was
+  skipped and nothing past `sitemap.xml` was ever re-discovered, so a
+  resumed run silently captured nothing new. Knock-on for the multi-seed
+  accumulation workflow (OpenEMR, above): a seed whose page is already
+  captured now also expands its links rather than doing nothing — keep
+  `--deny-url-pattern` set on every invocation, not just the first.
+- **A capture's recorded URL is the post-redirect URL, and 4xx/5xx pages
+  get no POM/spec (session 69).** `PageState` carries `finalUrl`
+  (`page.url()` after load) and `httpStatus` (the `goto()` response
+  status, `null` when there was none). The crawler records a page under
+  `normalizeUrl(finalUrl)`, not the requested URL: two links redirecting
+  to the same page produce one row, a same-origin redirect target that's
+  already captured is skipped, and a redirect that lands **off-origin is
+  not recorded at all** — it's `console.warn`'d and counted on
+  `CrawlResult.offOriginRedirects` / the CLI's `URLs that redirected
+  off-origin` summary line. A requested URL that only ever redirects is
+  never stored itself, so it's re-fetched on each resumed run and dropped
+  again — cheap, and deliberate (no alias rows). Generated specs assert
+  `toHaveURL(finalUrl)`, so a site that 301s `/docs` → `/docs/` (a very
+  common default, and `normalizeUrl` strips that slash) no longer produces
+  a spec that fails out of the box. Pages with `httpStatus >= 400` are still
+  captured and appear in every report, but `generatePOMsAndSpecs` and
+  `generateProposedAssertionSpecs` skip them (`isHttpErrorPage`,
+  `packages/output/src/input.ts`) and `coverage-report.md` lists them in
+  their own section. A `null` status (a legacy row, or no response) is
+  never treated as an error.
+- **`openCrawlDb` migrates an older `crawl.sqlite` in place (session 69).**
+  `CREATE TABLE IF NOT EXISTS` alone never adds a column to an existing
+  table, so every past column addition (`pageLoadMs`, `forms`,
+  `colorPalette`, `assertableAttributes`, ...) meant that resuming into a
+  db created before it would fail every `recordPageState` `INSERT` — and
+  since that call sits inside the crawler's per-page `try`, each page was
+  silently `markFailed` as `parse-error` instead of crashing loudly. Now
+  `persistence.ts` declares the full column list (`PAGES_COLUMNS`/
+  `INTERPRETATIONS_COLUMNS`) and `addMissingColumns` runs `ALTER TABLE ...
+  ADD COLUMN` for anything missing on every open. **Adding a new
+  persisted field means adding it to that list**, not to a `CREATE TABLE`
+  statement — the `CREATE` now only declares `url`.
+- **Hard-pages entries are cleared automatically once the page succeeds
+  (session 69).** `clearHardPageEntry` (`packages/core/src/hard-pages.ts`)
+  runs after a successful capture (for both the requested and the final
+  URL) and after a successful interpretation, so `coverage-report.md`'s
+  "Unresolved hard-pages entries" no longer shows stale entries — e.g. an
+  `auth-expired` abort that was resumed and completed. **This only helps
+  URLs the crawler actually retries:** `timeout`/`parse-error` capture
+  failures still go through `markFailed`, which `pageExists` treats as
+  already done forever (see the status-blind gotcha below), so those
+  entries still need the manual escalation workflow's step 5.
 - **`browser.newPage()` vs. `browser.newContext()` → `context.newPage()`
   matters for axe-core.** Axe's `finishRun()` needs to open its own helper
   page internally, which fails against an implicit single-owner context
@@ -954,7 +1005,11 @@ When invoked against `hard-pages/`, Claude Code should:
 3. Add a test proving the handler resolves the case.
 4. Commit the handler into the pipeline (not a one-off script) so the next
    crawl handles that pattern deterministically.
-5. Remove or mark the manifest entry resolved.
+5. Remove or mark the manifest entry resolved. (Since session 69 this
+   happens automatically for any URL that later captures and interprets
+   successfully — but a `timeout`/`parse-error` capture failure is never
+   retried because of `markFailed`, so for those, also delete the URL's
+   `pages` row, or the fix will never be exercised on a resumed crawl.)
 
 `CaptureHandler` interface (implement, don't redesign, unless the pattern
 genuinely doesn't fit it):

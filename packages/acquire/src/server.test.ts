@@ -23,6 +23,8 @@ const mockPageState: PageState = {
   forms: [],
   colorPalette: [],
   assertableAttributes: [],
+  finalUrl: 'https://example.com',
+  httpStatus: 200,
 }
 
 describe('server', () => {

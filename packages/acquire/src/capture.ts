@@ -529,9 +529,11 @@ async function captureWithContext(url: string, context: BrowserContext, options?
   })
   await installAppearanceTracker(page)
   const navigationStart = Date.now()
-  await page.goto(url, { waitUntil: 'domcontentloaded' })
+  const response = await page.goto(url, { waitUntil: 'domcontentloaded' })
+  const httpStatus = response?.status() ?? null
   await page.waitForLoadState('networkidle').catch(() => undefined)
   const pageLoadMs = Date.now() - navigationStart
+  const finalUrl = page.url()
   const title = await page.title()
   const ariaSnapshot = await page.locator('body').ariaSnapshot()
   let axeViolations: AxeViolation[] = []
@@ -707,6 +709,8 @@ async function captureWithContext(url: string, context: BrowserContext, options?
   await Promise.all(bodyReads)
   const pageState: PageState = {
     url,
+    finalUrl,
+    httpStatus,
     title,
     ariaSnapshot,
     links,

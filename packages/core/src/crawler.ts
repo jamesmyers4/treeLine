@@ -6,7 +6,7 @@ import { fetchRobotsRules } from './robots.js'
 import { fetchSitemapUrls } from './sitemap.js'
 import { fetchSeedPage, findCanonicalHref, detectHostnameMismatches } from './origin-scope.js'
 import { openCrawlDb } from './persistence.js'
-import { writeHardPageEntry } from './hard-pages.js'
+import { clearHardPageEntry, writeHardPageEntry } from './hard-pages.js'
 
 const MAX_CAPTURE_SNAPSHOT_LENGTH = 500
 
@@ -82,6 +82,24 @@ async function runCrawl(
     }
   }
   const visited = new Set<string>()
+  const offOriginRedirects = new Map<string, string>()
+  const enqueueLinks = (links: string[], depth: number): void => {
+    if (depth >= config.maxDepth) return
+    for (const link of links) {
+      try {
+        const normLink = normalizeUrl(link)
+        if (visited.has(normLink) || !isSameOrigin(seedNorm, normLink)) continue
+        if (isUrlDenied(normLink, config.denyUrlPatterns)) {
+          deniedUrls.add(normLink)
+          continue
+        }
+        flagSuspiciousActionUrl(normLink)
+        frontier.push({ url: normLink, depth: depth + 1 })
+      } catch {
+        // skip invalid
+      }
+    }
+  }
   const sampledEndpoints = new Set<string>()
   let pageCount = 0
   let lastRequestAt = 0
@@ -92,6 +110,7 @@ async function runCrawl(
     if (visited.has(url)) continue
     if (db.pageExists(url)) {
       visited.add(url)
+      enqueueLinks(db.getStoredLinks(url), depth)
       continue
     }
     if (config.sameOriginOnly && !isSameOrigin(seedNorm, url)) continue
@@ -121,24 +140,31 @@ async function runCrawl(
         detectAuthWall: config.detectAuthWall,
         insecureCerts: config.insecureCerts,
       })
-      db.recordPageState(pageState)
-      pageCount++
-      if (depth < config.maxDepth) {
-        for (const link of pageState.links) {
-          try {
-            const normLink = normalizeUrl(link)
-            if (visited.has(normLink) || !isSameOrigin(seedNorm, normLink)) continue
-            if (isUrlDenied(normLink, config.denyUrlPatterns)) {
-              deniedUrls.add(normLink)
-              continue
-            }
-            flagSuspiciousActionUrl(normLink)
-            frontier.push({ url: normLink, depth: depth + 1 })
-          } catch {
-            // skip invalid
-          }
+      const finalNorm = normalizeUrl(pageState.finalUrl)
+      if (finalNorm !== url) {
+        if (config.sameOriginOnly && !isSameOrigin(seedNorm, finalNorm)) {
+          offOriginRedirects.set(url, pageState.finalUrl)
+          console.warn(
+            `[treeline] ${url} redirected off-origin to ${pageState.finalUrl} — not recording it as a page of this site.`,
+          )
+          continue
         }
+        if (isUrlDenied(finalNorm, config.denyUrlPatterns)) {
+          deniedUrls.add(finalNorm)
+          continue
+        }
+        if (visited.has(finalNorm) || db.pageExists(finalNorm)) {
+          visited.add(finalNorm)
+          clearHardPageEntry(hardPagesDir, url)
+          continue
+        }
+        visited.add(finalNorm)
       }
+      db.recordPageState({ ...pageState, url: finalNorm })
+      clearHardPageEntry(hardPagesDir, url)
+      clearHardPageEntry(hardPagesDir, finalNorm)
+      pageCount++
+      enqueueLinks(pageState.links, depth)
     } catch (err) {
       if (err instanceof AuthExpiredError) {
         writeHardPageEntry(hardPagesDir, {
@@ -176,6 +202,7 @@ async function runCrawl(
     hostnameMismatches,
     abortedAt,
     deniedUrlCount: deniedUrls.size,
+    offOriginRedirects: Array.from(offOriginRedirects, ([url, finalUrl]) => ({ url, finalUrl })),
     suspiciousActionUrls: Array.from(suspiciousActionUrls, ([url, matchedVerb]) => ({ url, matchedVerb })),
   }
 }

@@ -1,5 +1,6 @@
 import type { DomInteractiveElement } from '@treeline/acquire'
 import { computeSelectorCandidates } from '@treeline/core'
+import { isHttpErrorPage } from './input.js'
 import type { CrawledPage } from './input.js'
 import { urlToClassName, urlToFileBaseName, elementToPropertyName, deduplicatePropertyNames, deduplicatePropertyNamesWithHref, assignUniqueNames, sanitizeIdentifier, capitalize } from './naming.js'
 import { detectRepeatingRegions } from './repeating-regions.js'
@@ -260,7 +261,7 @@ test('${pom.className} loads', async ({ page }) => {
 }
 
 export function generatePOMsAndSpecs(pages: CrawledPage[]): POMGenerationResult {
-  const capturedPages = pages.filter((p) => p.title !== null && p.ariaSnapshot !== null && p.capturedAt !== null)
+  const capturedPages = pages.filter((p) => p.title !== null && p.ariaSnapshot !== null && p.capturedAt !== null && !isHttpErrorPage(p))
   const { assignments, collisions } = assignUniqueNames(capturedPages.map((p) => p.url))
   const poms: GeneratedPOM[] = []
   const specs: GeneratedSpec[] = []
@@ -269,7 +270,7 @@ export function generatePOMsAndSpecs(pages: CrawledPage[]): POMGenerationResult 
     const assigned = assignments.get(page.url)!
     const result = buildPOM(page, assigned.className, `${assigned.fileBaseName}.page.ts`)
     assertGeneratedArtifactParses(result.pom.fileName, result.pom.code)
-    const spec = generateSpec(result.pom, page.url)
+    const spec = generateSpec(result.pom, page.finalUrl ?? page.url)
     assertGeneratedArtifactParses(spec.fileName, spec.code)
     poms.push(result.pom)
     specs.push(spec)

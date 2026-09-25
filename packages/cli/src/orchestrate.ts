@@ -89,6 +89,7 @@ export interface TreelineCrawlSummary {
   apiTestScaffoldGenerated: boolean
   deniedUrlCount: number
   suspiciousActionUrlCount: number
+  offOriginRedirectCount: number
   abortedAt?: CrawlResult['abortedAt']
 }
 
@@ -256,6 +257,7 @@ export async function runTreelineCrawl(options: TreelineCrawlOptions): Promise<T
       apiTestScaffoldGenerated,
       deniedUrlCount: crawlResult.deniedUrlCount,
       suspiciousActionUrlCount: crawlResult.suspiciousActionUrls.length,
+      offOriginRedirectCount: crawlResult.offOriginRedirects.length,
       abortedAt: crawlResult.abortedAt,
     }
   } finally {

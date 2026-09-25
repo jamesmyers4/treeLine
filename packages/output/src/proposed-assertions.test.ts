@@ -62,6 +62,8 @@ function makePage(overrides: Partial<CrawledPage> = {}): CrawledPage {
     forms: [makeForm()],
     colorPalette: [],
     assertableAttributes: [],
+    finalUrl: null,
+    httpStatus: null,
     status: 'ok',
     ...overrides,
   }
@@ -277,6 +279,8 @@ describe('renderProposedAssertionSpec — content-presence', () => {
       forms: [],
       colorPalette: [],
       assertableAttributes: [],
+      finalUrl: null,
+      httpStatus: null,
       status: 'ok',
       ...overrides,
     }
@@ -354,6 +358,12 @@ describe('generateProposedAssertionSpecs', () => {
     const pages = [makePage()]
     const specs = generateProposedAssertionSpecs(pages, [])
     expect(specs).toHaveLength(0)
+  })
+
+  it('generates nothing for a page that returned an HTTP error status, same as the trusted POM/spec generator', () => {
+    const pages = [makePage({ httpStatus: 404 })]
+    const interpretations = [makeInterpretation({ proposedAssertion: makeAssertion() })]
+    expect(generateProposedAssertionSpecs(pages, interpretations)).toHaveLength(0)
   })
 
   it('skips pages that were never successfully captured', () => {

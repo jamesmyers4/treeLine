@@ -43,6 +43,8 @@ function makePage(overrides: Partial<CrawledPage>): CrawledPage {
     forms: [],
     colorPalette: [],
     assertableAttributes: [],
+    finalUrl: null,
+    httpStatus: null,
     status: 'ok',
     ...overrides,
   }

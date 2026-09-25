@@ -158,6 +158,12 @@ export interface CoverageReport {
   formsWithoutTest: FormTestGap[]
   unresolvedHardPages: HardPageEntry[]
   pagesExcludedFromCoverage: string[]
+  httpErrorPages: HttpErrorPageEntry[]
+}
+
+export interface HttpErrorPageEntry {
+  url: string
+  httpStatus: number
 }
 
 export interface SlowPageEntry {

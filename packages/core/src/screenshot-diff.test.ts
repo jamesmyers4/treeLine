@@ -51,6 +51,8 @@ function makePage(url: string, screenshot: Buffer | null): PageState {
     forms: [],
     colorPalette: [],
     assertableAttributes: [],
+    finalUrl: url,
+    httpStatus: 200,
   }
 }
 

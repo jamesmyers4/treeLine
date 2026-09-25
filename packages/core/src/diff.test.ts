@@ -22,6 +22,8 @@ function makePage(url: string, title: string, interactiveElements: DomInteractiv
     forms: [],
     colorPalette: [],
     assertableAttributes: [],
+    finalUrl: url,
+    httpStatus: 200,
   }
 }
 

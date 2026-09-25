@@ -1910,7 +1910,10 @@ Built as both a library and a network-callable API from day one.
   resumable in practice: pages already in a `pages` table are skipped on a
   re-run against the same db, and `runInterpretation` independently skips
   pages that already have a `StoredInterpretation` row — the two skip
-  checks are separate and both idempotent.
+  checks are separate and both idempotent. Since session 69 a skipped page
+  still contributes its stored `links` to the frontier, so resuming
+  genuinely continues a truncated crawl, and `openCrawlDb` adds any
+  columns an older db is missing — see "Open items."
 
 ## Claude Code integration contract
 
@@ -2348,6 +2351,78 @@ locked-decision brief there; this section is the outcome summary. See
 
 **Known gaps worth fixing eventually, not blocking:**
 
+- **Closed (session 69) — resuming a crawl, redirects/HTTP status, and
+  stale hard-pages entries.** Three bugs from the same repo-wide audit as
+  session 68, all in the crawl/persistence path:
+  1. **Resume didn't continue a truncated crawl.** `crawler.ts` skipped
+     a URL already in `pages` without re-queuing its links, so re-running
+     a crawl that stopped at `--max-pages` with the same seed skipped the
+     seed and discovered nothing beyond `sitemap.xml` — a resumed run
+     silently captured zero new pages. Fix: a skipped page's stored
+     `links` (`db.getStoredLinks`, `[]` for a `markFailed` row) go through
+     the same `enqueueLinks` path as freshly captured links (same-origin,
+     `--deny-url-pattern`, suspicious-verb warning, `--max-depth`).
+  2. **Redirects and HTTP status were ignored.** `PageState.url` was the
+     requested URL, never `page.url()`; the `goto()` status was discarded.
+     Consequences: a same-origin link that redirected off-site had the
+     *external* page captured, interpreted, and POM'd as if it were part
+     of this site; two URLs redirecting to one page produced duplicate
+     rows and POMs; generated specs asserted `toHaveURL(<normalized
+     requested URL>)`, which fails out of the box on any site that
+     redirects `/docs` → `/docs/` (and `normalizeUrl` strips that trailing
+     slash, making it more likely); and 404/500 pages got a "loads" spec.
+     Fix: new `PageState.finalUrl`/`httpStatus` (persisted as new `pages`
+     columns; `CrawledPage` sees them as `string | null`/`number | null`,
+     `null` for rows written before this). The crawler records a page
+     under `normalizeUrl(finalUrl)`, drops (with a warning, plus
+     `CrawlResult.offOriginRedirects` and a CLI summary line) any page
+     whose redirect left the origin, skips a redirect target already
+     captured, and treats a redirect onto a denied URL as denied. Specs
+     assert `toHaveURL(finalUrl ?? url)`. `httpStatus >= 400` pages are
+     still captured and reported everywhere, but get no POM, spec, or
+     proposed spec, and are listed in a new `coverage-report.md` section
+     ("Pages that returned an HTTP error status") instead of counting as
+     covered.
+  3. **Hard-pages entries were never cleared.** A page that failed once
+     and later succeeded (e.g. an `auth-expired` abort, then a resumed
+     run; or a transient interpretation failure) kept its JSON entry
+     forever, so `coverage-report.md` kept listing it as unresolved. Fix:
+     `clearHardPageEntry` after every successful capture and every
+     successful interpretation.
+  **Found along the way and fixed, since this session adds columns:**
+  `openCrawlDb` never migrated an existing db — `CREATE TABLE IF NOT
+  EXISTS` doesn't add columns — so resuming into a `crawl.sqlite` from
+  before *any* past column addition failed every `INSERT`, and because
+  `recordPageState` runs inside the crawler's per-page `try`, each page was
+  silently `markFailed` as `parse-error`. Now the column list is declared
+  once and missing columns are `ALTER TABLE`'d in on open.
+  `runInterpretation` also now closes its db in a `finally`.
+  **Verification:** new real-fixture-server tests in
+  `packages/core/src/crawler-resume-redirect.test.ts` (resume continues
+  past `--max-pages`, resume still respects `--max-depth`, 301 to a
+  trailing-slash URL recorded once under its final URL with the real
+  `finalUrl` kept, off-origin 302 not recorded and warned, real 404 status
+  recorded, stale hard-pages entry removed while an unrelated one stays) —
+  6 of the 7 confirmed to fail against the pre-fix `crawler.ts` (the 404
+  one lives in capture). Plus a legacy-schema migration test
+  (`persistence.test.ts`), POM/spec exclusion and `finalUrl` spec tests
+  (`pom-generation.test.ts`, `proposed-assertions.test.ts`), a coverage
+  section test, and an interpretation-clears-hard-page test. Real-data
+  check: a live `httpbin.org/links/5/0` crawl at `--max-pages 2`, then
+  re-run into the same `--output` at `--max-pages 10` — 2 pages, then all
+  5 (before the fix the second run would have captured nothing); and a
+  live `httpbin.org/status/404` crawl — captured, 0 POMs/specs, listed in
+  the new coverage section. The redirect paths are proven by fixture
+  tests only (a live seed redirect is resolved by `fetchSeedPage` before
+  capture ever sees it). The only golden change is `static-site`'s
+  `coverage-report.md` (new section + summary count), reviewed; port/
+  timestamp churn discarded. **Known limitations, left as-is:** a
+  requested URL that only redirects is never stored, so each resumed run
+  re-fetches it and drops it again (cheap, no alias rows); `timeout`/
+  `parse-error` entries still aren't auto-cleared, because `markFailed`
+  means they're never retried (the pre-existing status-blind `pageExists`
+  gotcha, unchanged); and a redirect's intermediate hops aren't recorded,
+  only the final URL.
 - **Closed (session 68) — generated role locators now match what
   treeLine's own uniqueness check assumes, and the captured role/name
   pairs now match what Playwright actually resolves.** Found by a repo-wide

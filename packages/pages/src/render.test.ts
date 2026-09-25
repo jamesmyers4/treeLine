@@ -119,6 +119,8 @@ describe('renderOutputToHtml', () => {
       forms: [],
       colorPalette: [],
       assertableAttributes: [],
+      finalUrl: 'https://example.com/',
+      httpStatus: 200,
     })
     db.close()
 

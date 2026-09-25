@@ -35,6 +35,8 @@ function makePage(url: string, interactiveElements: DomInteractiveElement[]): Cr
     forms: [],
     colorPalette: [],
     assertableAttributes: [],
+    finalUrl: null,
+    httpStatus: null,
     status: 'ok',
   }
 }

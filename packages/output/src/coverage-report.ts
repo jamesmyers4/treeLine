@@ -1,6 +1,7 @@
 import type { HardPageEntry } from '@treeline/core'
+import { isHttpErrorPage } from './input.js'
 import type { CrawledPage } from './input.js'
-import type { CoverageReport, FormTestGap, PageCoverageEntry, SkippedElement } from './types.js'
+import type { CoverageReport, FormTestGap, HttpErrorPageEntry, PageCoverageEntry, SkippedElement } from './types.js'
 import { sanitizeMarkdownTableCell, sanitizeMarkdownText } from './markdown-safety.js'
 
 const HIGH_SKIP_THRESHOLD_PERCENT = 50
@@ -36,7 +37,8 @@ function buildFormsWithoutTest(capturedPages: CrawledPage[]): FormTestGap[] {
 export function generateCoverageReport(pages: CrawledPage[], skipped: SkippedElement[], hardPageEntries: HardPageEntry[]): CoverageReport {
   const capturedPages = pages.filter((p) => p.title !== null && p.ariaSnapshot !== null && p.capturedAt !== null)
   const pagesExcludedFromCoverage = pages.filter((p) => !capturedPages.includes(p)).map((p) => p.url)
-  const pageCoverageEntries = buildPageCoverageEntries(capturedPages, skipped)
+  const httpErrorPages: HttpErrorPageEntry[] = capturedPages.filter(isHttpErrorPage).map((p) => ({ url: p.url, httpStatus: p.httpStatus! }))
+  const pageCoverageEntries = buildPageCoverageEntries(capturedPages.filter((p) => !isHttpErrorPage(p)), skipped)
   const zeroCoveragePages = pageCoverageEntries.filter((entry) => entry.skippedCount === entry.totalInteractive)
   const highSkipPages = pageCoverageEntries.filter(
     (entry) => entry.skippedCount !== entry.totalInteractive && entry.skipPercent > HIGH_SKIP_THRESHOLD_PERCENT,
@@ -49,6 +51,7 @@ export function generateCoverageReport(pages: CrawledPage[], skipped: SkippedEle
     formsWithoutTest,
     unresolvedHardPages: hardPageEntries,
     pagesExcludedFromCoverage,
+    httpErrorPages,
   }
 }
 
@@ -85,6 +88,27 @@ function renderFormsWithoutTestSection(gaps: FormTestGap[]): string[] {
   return lines
 }
 
+function renderHttpErrorPagesSection(entries: HttpErrorPageEntry[]): string[] {
+  const lines: string[] = [
+    '## Pages that returned an HTTP error status',
+    '',
+    'These pages were captured (their content is in the other reports) but returned a 4xx/5xx status, so no POM or spec ' +
+      'was generated for them — a test asserting that a broken page loads would be wrong. Usually a broken link or a ' +
+      'removed page.',
+    '',
+  ]
+  if (entries.length === 0) {
+    lines.push('None found.', '')
+    return lines
+  }
+  lines.push('| URL | Status |', '| --- | --- |')
+  for (const entry of entries) {
+    lines.push(`| ${sanitizeMarkdownTableCell(entry.url)} | ${entry.httpStatus} |`)
+  }
+  lines.push('')
+  return lines
+}
+
 function renderHardPagesSection(entries: HardPageEntry[]): string[] {
   const lines: string[] = ['## Unresolved hard-pages entries', '']
   if (entries.length === 0) {
@@ -106,7 +130,8 @@ export function renderCoverageReportMarkdown(report: CoverageReport): string {
     `Generated: ${report.generatedAt}`,
     '',
     `${report.zeroCoveragePages.length} pages with zero POM coverage, ${report.highSkipPages.length} pages with high skip rates, ` +
-      `${report.formsWithoutTest.length} forms without field-level test coverage, ${report.unresolvedHardPages.length} unresolved hard-pages entries`,
+      `${report.formsWithoutTest.length} forms without field-level test coverage, ${report.httpErrorPages.length} pages with an HTTP error status, ` +
+      `${report.unresolvedHardPages.length} unresolved hard-pages entries`,
     '',
   ]
   if (report.pagesExcludedFromCoverage.length > 0) {
@@ -123,6 +148,7 @@ export function renderCoverageReportMarkdown(report: CoverageReport): string {
   lines.push('## High-skip pages', '', `More than ${HIGH_SKIP_THRESHOLD_PERCENT}% of interactive elements were skipped (excludes zero-coverage pages, listed above).`, '')
   lines.push(...renderPageCoverageTable(report.highSkipPages))
   lines.push(...renderFormsWithoutTestSection(report.formsWithoutTest))
+  lines.push(...renderHttpErrorPagesSection(report.httpErrorPages))
   lines.push(...renderHardPagesSection(report.unresolvedHardPages))
   return lines.join('\n')
 }

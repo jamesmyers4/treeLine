@@ -109,6 +109,7 @@ program
       console.log(`Distinct colors found: ${summary.distinctColorsFound}`)
       console.log(`URLs skipped by deny pattern: ${summary.deniedUrlCount}`)
       console.log(`URLs flagged as possible state-changing actions (not blocked, see warnings above): ${summary.suspiciousActionUrlCount}`)
+      console.log(`URLs that redirected off-origin (not recorded, see warnings above): ${summary.offOriginRedirectCount}`)
       if (summary.apiTestScaffoldGenerated) {
         console.log('API test scaffold: reports/api-test-scaffold.md')
       }

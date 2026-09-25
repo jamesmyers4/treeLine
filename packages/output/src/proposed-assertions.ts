@@ -1,5 +1,6 @@
 import type { CapturedForm, CapturedFormField, DomInteractiveElement } from '@treeline/acquire'
 import type { ContentPresenceAssertion, FormFillAssertion, ProposedAssertion, StoredInterpretation } from '@treeline/core'
+import { isHttpErrorPage } from './input.js'
 import type { CrawledPage } from './input.js'
 import { assignUniqueNames } from './naming.js'
 import { assertGeneratedArtifactParses } from './syntax-gate.js'
@@ -126,7 +127,7 @@ export function renderProposedAssertionSpec(page: CrawledPage, assertion: Propos
 }
 
 export function generateProposedAssertionSpecs(pages: CrawledPage[], interpretations: StoredInterpretation[]): GeneratedSpec[] {
-  const capturedPages = pages.filter((p) => p.title !== null && p.ariaSnapshot !== null && p.capturedAt !== null)
+  const capturedPages = pages.filter((p) => p.title !== null && p.ariaSnapshot !== null && p.capturedAt !== null && !isHttpErrorPage(p))
   const interpretationsByUrl = new Map(interpretations.map((interpretation) => [interpretation.url, interpretation]))
   const { assignments } = assignUniqueNames(capturedPages.map((p) => p.url))
   const specs: GeneratedSpec[] = []

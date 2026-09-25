@@ -9,6 +9,42 @@ function screenshotFileName(url: string): string {
   return `${urlHash(url)}.png`
 }
 
+const PAGES_COLUMNS: Record<string, string> = {
+  title: 'TEXT',
+  ariaSnapshot: 'TEXT',
+  links: 'TEXT',
+  networkLog: 'TEXT',
+  screenshotPath: 'TEXT',
+  capturedAt: 'TEXT',
+  pageLoadMs: 'INTEGER',
+  status: 'TEXT',
+  interactiveElements: 'TEXT',
+  axeViolations: 'TEXT',
+  axeIncomplete: 'TEXT',
+  forms: 'TEXT',
+  colorPalette: 'TEXT',
+  assertableAttributes: 'TEXT',
+  finalUrl: 'TEXT',
+  httpStatus: 'INTEGER',
+}
+
+const INTERPRETATIONS_COLUMNS: Record<string, string> = {
+  tierUsed: 'TEXT',
+  pageType: 'TEXT',
+  purpose: 'TEXT',
+  keyDataEntities: 'TEXT',
+  confidence: 'REAL',
+  interpretedAt: 'TEXT',
+  proposedAssertion: 'TEXT',
+}
+
+function addMissingColumns(db: Database.Database, table: string, columns: Record<string, string>): void {
+  const existing = new Set((db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name))
+  for (const [name, type] of Object.entries(columns)) {
+    if (!existing.has(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`)
+  }
+}
+
 export function openCrawlDb(dbPath: string) {
   const db = new Database(dbPath)
   const outputDir = dirname(dbPath)
@@ -19,33 +55,14 @@ export function openCrawlDb(dbPath: string) {
       config TEXT
     );
     CREATE TABLE IF NOT EXISTS pages (
-      url TEXT PRIMARY KEY,
-      title TEXT,
-      ariaSnapshot TEXT,
-      links TEXT,
-      networkLog TEXT,
-      screenshotPath TEXT,
-      capturedAt TEXT,
-      pageLoadMs INTEGER,
-      status TEXT,
-      interactiveElements TEXT,
-      axeViolations TEXT,
-      axeIncomplete TEXT,
-      forms TEXT,
-      colorPalette TEXT,
-      assertableAttributes TEXT
+      url TEXT PRIMARY KEY
     );
     CREATE TABLE IF NOT EXISTS interpretations (
-      url TEXT PRIMARY KEY,
-      tierUsed TEXT,
-      pageType TEXT,
-      purpose TEXT,
-      keyDataEntities TEXT,
-      confidence REAL,
-      interpretedAt TEXT,
-      proposedAssertion TEXT
+      url TEXT PRIMARY KEY
     );
   `)
+  addMissingColumns(db, 'pages', PAGES_COLUMNS)
+  addMissingColumns(db, 'interpretations', INTERPRETATIONS_COLUMNS)
   return {
     insertMeta(seedUrl: string, config: CrawlConfig): void {
       db.prepare('INSERT INTO crawl_meta (seedUrl, startedAt, config) VALUES (?, ?, ?)').run(
@@ -64,8 +81,8 @@ export function openCrawlDb(dbPath: string) {
         screenshotPath = join('screenshots', fileName)
       }
       db.prepare(`
-        INSERT OR REPLACE INTO pages (url, title, ariaSnapshot, links, networkLog, screenshotPath, capturedAt, pageLoadMs, status, interactiveElements, axeViolations, axeIncomplete, forms, colorPalette, assertableAttributes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO pages (url, title, ariaSnapshot, links, networkLog, screenshotPath, capturedAt, pageLoadMs, status, interactiveElements, axeViolations, axeIncomplete, forms, colorPalette, assertableAttributes, finalUrl, httpStatus)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         pageState.url,
         pageState.title,
@@ -82,10 +99,16 @@ export function openCrawlDb(dbPath: string) {
         JSON.stringify(pageState.forms),
         JSON.stringify(pageState.colorPalette),
         JSON.stringify(pageState.assertableAttributes),
+        pageState.finalUrl,
+        pageState.httpStatus,
       )
     },
     pageExists(url: string): boolean {
       return db.prepare('SELECT 1 FROM pages WHERE url = ?').get(url) !== undefined
+    },
+    getStoredLinks(url: string): string[] {
+      const row = db.prepare('SELECT links FROM pages WHERE url = ?').get(url) as { links: string | null } | undefined
+      return row?.links ? (JSON.parse(row.links) as string[]) : []
     },
     getMeta(): { seedUrl: string; startedAt: string; config: CrawlConfig } | null {
       const row = db.prepare('SELECT * FROM crawl_meta ORDER BY startedAt DESC LIMIT 1').get() as
@@ -118,6 +141,8 @@ export function openCrawlDb(dbPath: string) {
       forms: CapturedForm[]
       colorPalette: ColorSwatch[]
       assertableAttributes: AssertableAttribute[]
+      finalUrl: string | null
+      httpStatus: number | null
       status: string
     }> {
       const rows = db.prepare('SELECT * FROM pages').all() as Array<Record<string, string | number | Buffer | null>>
@@ -140,6 +165,8 @@ export function openCrawlDb(dbPath: string) {
         assertableAttributes: row.assertableAttributes
           ? (JSON.parse(row.assertableAttributes as string) as AssertableAttribute[])
           : [],
+        finalUrl: (row.finalUrl as string) ?? null,
+        httpStatus: (row.httpStatus as number) ?? null,
         status: (row.status as string) ?? '',
       }))
     },

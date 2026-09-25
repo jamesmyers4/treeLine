@@ -22,7 +22,9 @@ const mockPageState: PageState = {
   axeIncomplete: [],
   forms: [],
   colorPalette: [],
-  assertableAttributes: []
+  assertableAttributes: [],
+  finalUrl: 'https://example.com/login',
+  httpStatus: 200
 }
 
 const mockToolUseResponse = {

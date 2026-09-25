@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import type { AssertableAttribute, CapturedForm, ColorSwatch, DomInteractiveElement, NetworkEntry, PageState } from '@treeline/acquire'
 import type { CrawlConfig, StoredInterpretation } from './types.js'
+import Database from 'better-sqlite3'
 import { openCrawlDb } from './persistence.js'
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
@@ -30,6 +31,8 @@ function makePage(
     forms,
     colorPalette,
     assertableAttributes,
+    finalUrl: url,
+    httpStatus: 200,
   }
 }
 
@@ -93,6 +96,8 @@ function makePageWithNetworkLog(url: string, networkLog: NetworkEntry[]): PageSt
     forms: [],
     colorPalette: [],
     assertableAttributes: [],
+    finalUrl: url,
+    httpStatus: 200,
   }
 }
 
@@ -543,5 +548,48 @@ describe('screenshot persistence', () => {
     expect(db.pageExists('https://example.com/')).toBe(true)
     expect(db.pageExists('https://example.com/other')).toBe(false)
     db.close()
+  })
+})
+
+describe('openCrawlDb — legacy schema migration', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'treeline-migration-test-'))
+  })
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('adds columns missing from a crawl.sqlite created by an older treeline, so recording and resuming keep working', () => {
+    const dbPath = join(tmpDir, 'crawl.sqlite')
+    const legacy = new Database(dbPath)
+    legacy.exec(`
+      CREATE TABLE pages (url TEXT PRIMARY KEY, title TEXT, ariaSnapshot TEXT, links TEXT, networkLog TEXT, screenshotPath TEXT, capturedAt TEXT, status TEXT, interactiveElements TEXT);
+      CREATE TABLE interpretations (url TEXT PRIMARY KEY, tierUsed TEXT, pageType TEXT, purpose TEXT, keyDataEntities TEXT, confidence REAL, interpretedAt TEXT);
+    `)
+    legacy.prepare("INSERT INTO pages (url, title, ariaSnapshot, links, capturedAt, status, interactiveElements) VALUES (?, 'Old', '', ?, ?, 'ok', '[]')").run(
+      'https://example.com/old',
+      JSON.stringify(['https://example.com/linked']),
+      new Date().toISOString(),
+    )
+    legacy.close()
+    const db = openCrawlDb(dbPath)
+    try {
+      db.recordPageState(makePage('https://example.com/new'))
+      const pages = db.getAllPages()
+      const oldPage = pages.find((p) => p.url === 'https://example.com/old')!
+      const newPage = pages.find((p) => p.url === 'https://example.com/new')!
+      expect(oldPage.finalUrl).toBeNull()
+      expect(oldPage.httpStatus).toBeNull()
+      expect(oldPage.assertableAttributes).toEqual([])
+      expect(newPage.finalUrl).toBe('https://example.com/new')
+      expect(newPage.httpStatus).toBe(200)
+      expect(db.getStoredLinks('https://example.com/old')).toEqual(['https://example.com/linked'])
+      expect(db.getStoredLinks('https://example.com/missing')).toEqual([])
+    } finally {
+      db.close()
+    }
   })
 })

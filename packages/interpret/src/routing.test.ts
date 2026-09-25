@@ -17,7 +17,9 @@ function makePageState(ariaSnapshot: string): PageState {
     axeIncomplete: [],
     forms: [],
     colorPalette: [],
-    assertableAttributes: []
+    assertableAttributes: [],
+    finalUrl: 'https://example.com',
+    httpStatus: 200
   }
 }
 

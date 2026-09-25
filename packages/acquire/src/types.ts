@@ -102,6 +102,8 @@ export interface AuthSession {
 
 export interface PageState {
   url: string
+  finalUrl: string
+  httpStatus: number | null
   title: string
   ariaSnapshot: string
   links: string[]

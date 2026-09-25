@@ -411,6 +411,8 @@ function makePage(
     forms: [],
     colorPalette: [],
     assertableAttributes: [],
+    finalUrl: url,
+    httpStatus: 200,
   }
 }
 

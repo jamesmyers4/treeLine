@@ -58,6 +58,8 @@ function makePage(overrides: Partial<CrawledPage>): CrawledPage {
     forms: [],
     colorPalette: [],
     assertableAttributes: [],
+    finalUrl: null,
+    httpStatus: null,
     status: 'ok',
     ...overrides,
   }
@@ -135,6 +137,18 @@ describe('generateCoverageReport', () => {
     expect(report.formsWithoutTest).toHaveLength(2)
     expect(report.formsWithoutTest[0]!.url).toBe('https://example.com/signup')
     expect(report.formsWithoutTest[0]!.fieldCount).toBe(1)
+  })
+
+  it('lists HTTP-error pages separately and leaves them out of the POM coverage metrics, since no POM is generated for them', () => {
+    const allSkipped = makePage({ url: 'https://example.com/gone', httpStatus: 404, interactiveElements: [makeElement({})] })
+    const fine = makePage({ url: 'https://example.com/ok', httpStatus: 200 })
+    const report = generateCoverageReport([allSkipped, fine], [{ url: 'https://example.com/gone', elementDescription: 'x', reason: 'no stable selector candidate available' }], [])
+    expect(report.httpErrorPages).toEqual([{ url: 'https://example.com/gone', httpStatus: 404 }])
+    expect(report.zeroCoveragePages).toEqual([])
+    const markdown = renderCoverageReportMarkdown(report)
+    expect(markdown).toContain('## Pages that returned an HTTP error status')
+    expect(markdown).toContain('| https://example.com/gone | 404 |')
+    expect(markdown).toContain('1 pages with an HTTP error status')
   })
 
   it('passes through hard-page entries unchanged', () => {

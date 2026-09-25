@@ -42,10 +42,16 @@ export interface SuspiciousActionUrl {
   matchedVerb: string
 }
 
+export interface OffOriginRedirect {
+  url: string
+  finalUrl: string
+}
+
 export interface CrawlResult {
   hostnameMismatches: HostnameMismatch[]
   abortedAt?: { url: string; reason: 'auth-expired' }
   deniedUrlCount: number
+  offOriginRedirects: OffOriginRedirect[]
   suspiciousActionUrls: SuspiciousActionUrl[]
 }
 

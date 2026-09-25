@@ -48,6 +48,8 @@ describe('crawl — sampledEndpoints threading', () => {
       const path = new URL(url).pathname
       return {
         url,
+        finalUrl: url,
+        httpStatus: 200,
         title: 'mock',
         ariaSnapshot: '',
         links: (linksByPath[path] ?? []).map((p) => `${baseUrl}${p}`),
@@ -92,6 +94,8 @@ describe('crawl — sampledEndpoints threading', () => {
       const path = new URL(url).pathname
       return {
         url,
+        finalUrl: url,
+        httpStatus: 200,
         title: 'mock',
         ariaSnapshot: '',
         links: (linksByPath[path] ?? []).map((p) => `${baseUrl}${p}`),
