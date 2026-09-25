@@ -212,21 +212,38 @@ ${accessorsBlock}
 `
 }
 
-function buildPOM(page: CrawledPage, className: string, fileName: string): { pom: GeneratedPOM; skipped: SkippedElement[] } {
-  const { rows, consumed } = buildRowComponents(page.interactiveElements)
-  const remainingElements = page.interactiveElements.filter((element) => !consumed.has(element))
-  const candidatesByElement = computeSelectorCandidates(page.interactiveElements)
-  const skipped: SkippedElement[] = []
+function planPageFields(elements: DomInteractiveElement[]): {
+  rows: RowComponent[]
+  candidatesByElement: Map<DomInteractiveElement, SelectorCandidate[]>
+  chosen: { element: DomInteractiveElement; candidate: SelectorCandidate; propertyName: string }[]
+  unselectable: DomInteractiveElement[]
+} {
+  const { rows, consumed } = buildRowComponents(elements)
+  const candidatesByElement = computeSelectorCandidates(elements)
   const chosen: { element: DomInteractiveElement; candidate: SelectorCandidate; propertyName: string }[] = []
-  for (const element of remainingElements) {
-    const candidates = candidatesByElement.get(element)!
-    const selected = selectStableCandidate(candidates)
+  const unselectable: DomInteractiveElement[] = []
+  for (const element of elements.filter((el) => !consumed.has(el))) {
+    const selected = selectStableCandidate(candidatesByElement.get(element)!)
     if (!selected) {
-      skipped.push({ url: page.url, elementDescription: elementToPropertyName(element), reason: 'no stable selector candidate available' })
+      unselectable.push(element)
       continue
     }
     chosen.push({ element, candidate: selected, propertyName: elementToPropertyName(element) })
   }
+  return { rows, candidatesByElement, chosen, unselectable }
+}
+
+export function elementsLocatedByRoleInGeneratedPom(elements: DomInteractiveElement[]): Set<DomInteractiveElement> {
+  return new Set(planPageFields(elements).chosen.filter((c) => c.candidate.strategy === 'role').map((c) => c.element))
+}
+
+function buildPOM(page: CrawledPage, className: string, fileName: string): { pom: GeneratedPOM; skipped: SkippedElement[] } {
+  const { rows, candidatesByElement, chosen, unselectable } = planPageFields(page.interactiveElements)
+  const skipped: SkippedElement[] = unselectable.map((element) => ({
+    url: page.url,
+    elementDescription: elementToPropertyName(element),
+    reason: 'no stable selector candidate available',
+  }))
   const dedupedNames = deduplicatePropertyNamesWithHref(chosen.map((c) => ({ propertyName: c.propertyName, href: c.element.href })))
   const fields = chosen.map((c, index) => {
     const matching = page.interactiveElements.filter((el) => {

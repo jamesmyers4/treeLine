@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { CrawlDiff, SelectorCandidateChange, TimingChange, VisualChange } from '@treeline/core'
 import { urlHash } from '@treeline/core'
-import { classifyChange, classifyTimingChange, renderDiffReportMarkdown } from './diff-report.js'
+import { classifyChange, classifyRemovedElement, classifyTimingChange, renderDiffReportMarkdown } from './diff-report.js'
 
 function makeDiff(overrides: Partial<CrawlDiff>): CrawlDiff {
   return {
@@ -9,8 +9,10 @@ function makeDiff(overrides: Partial<CrawlDiff>): CrawlDiff {
     currentDbPath: 'current.db',
     pagesAdded: [],
     pagesRemoved: [],
+    captureFailures: [],
     titleChanges: [],
     selectorCandidateChanges: [],
+    removedElements: [],
     visualChanges: [],
     timingChanges: [],
     ...overrides,
@@ -84,8 +86,10 @@ describe('renderDiffReportMarkdown', () => {
     expect(markdown).toContain('No selector candidate changes found.')
     expect(markdown).not.toContain('| URL | Element | Before | After |')
     expect(markdown).toContain(
-      '0 pages added, 0 pages removed, 0 title changes, 0 selector regressions, 0 selector improvements, 0 other selector changes, 0 visual changes, 0 timing regressions, 0 timing improvements',
+      '0 pages added, 0 pages removed, 0 capture failures, 0 title changes, 0 selector regressions, 0 selector improvements, 0 other selector changes, 0 removed/renamed elements (0 regressions), 0 visual changes, 0 timing regressions, 0 timing improvements',
     )
+    expect(markdown).toContain('No capture failures in either crawl.')
+    expect(markdown).toContain('No removed or renamed elements found.')
     expect(markdown).toContain('No visual changes found.')
     expect(markdown).not.toContain('### Changed')
     expect(markdown).not.toContain('### Could Not Compare')
@@ -278,5 +282,32 @@ describe('renderDiffReportMarkdown — timing changes', () => {
     const tableLines = timingSection.split('\n').filter((line) => line.startsWith('| https://example.com'))
     expect(tableLines).toHaveLength(1)
     expect(tableLines[0]).toContain('| 800 | 1600 | +100% |')
+  })
+})
+
+describe('removed/renamed elements and capture failures in the diff report', () => {
+  const removedByRole = { url: 'https://example.com/signup', role: 'button', accessibleName: 'Create Account', occurrenceIndex: 0, locatedByRoleInBaselinePom: true }
+  const removedOther = { url: 'https://example.com/', role: 'link', accessibleName: 'Story about | pipes', occurrenceIndex: 2, locatedByRoleInBaselinePom: false }
+
+  it('classifies a removed element as a regression only when the baseline POM located it by role+name', () => {
+    expect(classifyRemovedElement(removedByRole)).toBe('regression')
+    expect(classifyRemovedElement(removedOther)).toBe('other')
+  })
+
+  it('renders removed elements split into regressions and other, with safe table cells and counts in the summary', () => {
+    const markdown = renderDiffReportMarkdown(makeDiff({ removedElements: [removedByRole, removedOther] }))
+    expect(markdown).toContain('## Removed or Renamed Elements')
+    expect(markdown).toContain("2 removed/renamed elements (1 regressions)")
+    const regressionsSection = markdown.slice(markdown.indexOf('## Removed or Renamed Elements'), markdown.indexOf('### Other', markdown.indexOf('## Removed or Renamed Elements')))
+    expect(regressionsSection).toContain("| https://example.com/signup | button 'Create Account' |")
+    expect(regressionsSection).not.toContain('Story about')
+    expect(markdown).toContain("link 'Story about \\| pipes' [2]")
+  })
+
+  it('renders capture failures in their own section and counts them in the summary', () => {
+    const markdown = renderDiffReportMarkdown(makeDiff({ captureFailures: [{ url: 'https://example.com/slow', side: 'current', status: 'timeout' }] }))
+    expect(markdown).toContain('1 capture failures')
+    expect(markdown).toContain('## Capture Failures')
+    expect(markdown).toContain('| https://example.com/slow | current | timeout |')
   })
 })

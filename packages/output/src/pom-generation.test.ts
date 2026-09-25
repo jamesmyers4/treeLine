@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { DomInteractiveElement } from '@treeline/acquire'
 import type { CrawledPage } from './input.js'
-import { generatePOM, generateSpec, generatePOMsAndSpecs } from './pom-generation.js'
+import { elementsLocatedByRoleInGeneratedPom, generatePOM, generateSpec, generatePOMsAndSpecs } from './pom-generation.js'
 
 function makeElement(overrides: Partial<DomInteractiveElement>): DomInteractiveElement {
   return {
@@ -358,5 +358,16 @@ describe('generatePOMsAndSpecs', () => {
     const result = generatePOMsAndSpecs([aboutPage, contactPage])
     expect(result.collisions).toEqual([])
     expect(result.poms.map((p) => p.fileName).sort()).toEqual(['about.page.ts', 'contact.page.ts'])
+  })
+})
+
+describe('elementsLocatedByRoleInGeneratedPom', () => {
+  it('returns exactly the elements the generated POM locates by role+name — not testid/CSS fields, row members, or unselectable elements', () => {
+    const roleLocated = makeElement({ role: 'button', accessibleName: 'Create Account', cssPath: 'form > button.create' })
+    const testIdLocated = makeElement({ role: 'generic', accessibleName: '', testId: 'save-draft', cssPath: 'form > div:nth-of-type(2)' })
+    const unselectable = makeElement({ role: 'generic', accessibleName: '', cssPath: 'form > div:nth-of-type(3)' })
+    const rowMembers = [1, 2, 3].map((i) => makeElement({ role: 'link', tagName: 'a', accessibleName: 'upvote', elementId: `up_${1000000 + i}`, cssPath: `#up_${1000000 + i}`, xpath: `/x${i}` }))
+    const located = elementsLocatedByRoleInGeneratedPom([roleLocated, testIdLocated, unselectable, ...rowMembers])
+    expect([...located]).toEqual([roleLocated])
   })
 })

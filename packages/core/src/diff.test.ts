@@ -293,6 +293,69 @@ describe('selectorCandidateChanges', () => {
   })
 })
 
+describe('diffCrawls — removed/renamed elements', () => {
+  const button = (name: string) => makeElement({ role: 'button', accessibleName: name, tagName: 'button', cssPath: 'form > button', xpath: '/html/body/form/button' })
+
+  it('reports a baseline element with no current counterpart, flagged by the injected POM predicate', () => {
+    seedDb(baselinePath, [makePage('https://example.com/', 'Home', [button('Create Account'), button('Cancel')])])
+    seedDb(currentPath, [makePage('https://example.com/', 'Home', [button('Cancel')])])
+    const result = diffCrawls(baselinePath, currentPath, {
+      baselinePomRoleLocatedElements: (elements) => new Set(elements.filter((el) => el.accessibleName === 'Create Account')),
+    })
+    expect(result.removedElements).toEqual([
+      { url: 'https://example.com/', role: 'button', accessibleName: 'Create Account', occurrenceIndex: 0, locatedByRoleInBaselinePom: true },
+    ])
+  })
+
+  it('reports a renamed element under its old name', () => {
+    seedDb(baselinePath, [makePage('https://example.com/', 'Home', [button('Sign up')])])
+    seedDb(currentPath, [makePage('https://example.com/', 'Home', [button('Create account')])])
+    const result = diffCrawls(baselinePath, currentPath)
+    expect(result.removedElements.map((r) => r.accessibleName)).toEqual(['Sign up'])
+  })
+
+  it('reports the last occurrence as removed when one of several same-name elements disappears', () => {
+    seedDb(baselinePath, [makePage('https://example.com/', 'Home', [button('Read more'), button('Read more')])])
+    seedDb(currentPath, [makePage('https://example.com/', 'Home', [button('Read more')])])
+    const result = diffCrawls(baselinePath, currentPath)
+    expect(result.removedElements.map((r) => r.occurrenceIndex)).toEqual([1])
+  })
+
+  it('marks every removal as not role-located when no POM predicate is supplied', () => {
+    seedDb(baselinePath, [makePage('https://example.com/', 'Home', [button('Create Account')])])
+    seedDb(currentPath, [makePage('https://example.com/', 'Home', [])])
+    const result = diffCrawls(baselinePath, currentPath)
+    expect(result.removedElements[0]!.locatedByRoleInBaselinePom).toBe(false)
+  })
+})
+
+describe('diffCrawls — capture failures', () => {
+  it('reports a page that failed capture in current as a capture failure, not as a title change or removed elements', () => {
+    const button = makeElement({ role: 'button', accessibleName: 'Create Account', tagName: 'button' })
+    seedDb(baselinePath, [makePage('https://example.com/slow', 'Slow Page', [button])])
+    const currentDb = openCrawlDb(currentPath)
+    currentDb.markFailed('https://example.com/slow', 'timeout')
+    currentDb.close()
+    const result = diffCrawls(baselinePath, currentPath, { baselinePomRoleLocatedElements: (elements) => new Set(elements) })
+    expect(result.captureFailures).toEqual([{ url: 'https://example.com/slow', side: 'current', status: 'timeout' }])
+    expect(result.titleChanges).toEqual([])
+    expect(result.removedElements).toEqual([])
+    expect(result.pagesRemoved).toEqual([])
+    expect(result.timingChanges).toEqual([])
+  })
+
+  it('reports a page that failed capture in baseline as a capture failure on the baseline side', () => {
+    const baselineDb = openCrawlDb(baselinePath)
+    baselineDb.markFailed('https://example.com/slow', 'parse-error')
+    baselineDb.close()
+    seedDb(currentPath, [makePage('https://example.com/slow', 'Slow Page')])
+    const result = diffCrawls(baselinePath, currentPath)
+    expect(result.captureFailures).toEqual([{ url: 'https://example.com/slow', side: 'baseline', status: 'parse-error' }])
+    expect(result.titleChanges).toEqual([])
+    expect(result.pagesAdded).toEqual([])
+  })
+})
+
 describe('diffSelectorCandidates', () => {
   it('is independently callable and returns the same result as diffCrawls.selectorCandidateChanges', () => {
     const baselineEl = makeElement({ cssPath: 'body > div.card', xpath: '/html/body/div[1]' })

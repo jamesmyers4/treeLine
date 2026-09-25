@@ -464,6 +464,47 @@ describe('runTreelineDiff', () => {
     expect(report).toContain(`${summary.selectorRegressions} selector regressions`)
   })
 
+  it('counts a removed element the baseline POM located by role+name as a regression, so --fail-on-regression trips', async () => {
+    const createAccount = makeElement({ accessibleName: 'Create Account', cssPath: 'form > button.create' })
+    const cancel = makeElement({ accessibleName: 'Cancel', cssPath: 'form > button.cancel' })
+    seedDb(join(baselineDir, 'crawl.sqlite'), [makePage('https://example.com/signup', 'Signup', [createAccount, cancel])])
+    seedDb(join(currentDir, 'crawl.sqlite'), [makePage('https://example.com/signup', 'Signup', [cancel])])
+
+    const summary = await runTreelineDiff({ baselineDir, currentDir })
+
+    expect(summary.selectorRegressions).toBe(0)
+    expect(summary.removedElementRegressions).toBe(1)
+    expect(summary.hasRegressions).toBe(true)
+    const report = readFileSync(summary.reportPath, 'utf-8')
+    expect(report).toContain("| https://example.com/signup | button 'Create Account' |")
+  })
+
+  it('reports a removed repeating-row member as informational only, without tripping --fail-on-regression', async () => {
+    const upvote = (i: number) => makeElement({ role: 'link', tagName: 'a', accessibleName: 'upvote', elementId: `up_${1000000 + i}`, cssPath: `#up_${1000000 + i}`, xpath: `/html/body/a[${i}]` })
+    seedDb(join(baselineDir, 'crawl.sqlite'), [makePage('https://example.com/', 'Home', [1, 2, 3, 4].map(upvote))])
+    seedDb(join(currentDir, 'crawl.sqlite'), [makePage('https://example.com/', 'Home', [1, 2, 3].map(upvote))])
+
+    const summary = await runTreelineDiff({ baselineDir, currentDir })
+
+    expect(summary.removedElementRegressions).toBe(0)
+    expect(summary.removedElementsOther).toBe(1)
+    expect(summary.hasRegressions).toBe(false)
+  })
+
+  it('reports a page that failed capture in the current crawl as a capture failure, not a regression or title change', async () => {
+    seedDb(join(baselineDir, 'crawl.sqlite'), [makePage('https://example.com/slow', 'Slow', [makeElement({ accessibleName: 'Create Account' })])])
+    mkdirSync(currentDir, { recursive: true })
+    const currentDb = openCrawlDb(join(currentDir, 'crawl.sqlite'))
+    currentDb.markFailed('https://example.com/slow', 'timeout')
+    currentDb.close()
+
+    const summary = await runTreelineDiff({ baselineDir, currentDir })
+
+    expect(summary.captureFailures).toBe(1)
+    expect(summary.titleChanges).toBe(0)
+    expect(summary.hasRegressions).toBe(false)
+  })
+
   it('writes the report under the given --output dir instead of currentDir', async () => {
     seedDb(join(baselineDir, 'crawl.sqlite'), [makePage('https://example.com/', 'Home')])
     seedDb(join(currentDir, 'crawl.sqlite'), [makePage('https://example.com/', 'Home')])

@@ -1895,7 +1895,10 @@ Built as both a library and a network-callable API from day one.
 7. **Diff mode** — ✅ done. Page-level diff (added/removed/title changes)
    plus selector-candidate regression/improvement/other classification
    between two crawl output directories, rendered as a markdown report with
-   regressions surfaced first. Exposed via `treeline diff <baselineDir>
+   regressions surfaced first. Since session 70 it also reports removed/
+   renamed elements (counted as regressions only when the baseline POM
+   located them by role+name) and capture failures (excluded from every
+   comparison) — see "Open items." Exposed via `treeline diff <baselineDir>
 <currentDir> [--output dir] [--fail-on-regression]`.
 8. **Form & flow map** — ✅ done. Forms captured as grouped structures
    (fields, `action`, `method`) in `@treeline/acquire` (session 16),
@@ -2351,6 +2354,72 @@ locked-decision brief there; this section is the outcome summary. See
 
 **Known gaps worth fixing eventually, not blocking:**
 
+- **Open (found session 70) — POM generation trusts volatile text.** The
+  generated POM for a fast-changing page bakes in role+name locators built
+  from content that changes on its own: relative timestamps (`_0MinutesAgoLink
+  = getByRole('link', { name: '0 minutes ago', exact: true })`), story
+  titles, comment counts. Found via a real two-crawl diff of HN's `/newest`
+  150s apart: 14 removed role-located elements, all relative-time links
+  plus one `1 comment`. Diff mode is correct to flag them, since those
+  locators really broke. The fix belongs in selector stability
+  (`computeSelectorCandidates`/`isCssStable`'s role-candidate equivalent):
+  treat a name that looks like a relative time or a count as unstable, or
+  prefer the element's `assertableAttributes` (HN's `.age` `title` carries
+  the absolute timestamp) over its text. Not built — needs its own design
+  pass, since "looks volatile" is a heuristic with false positives.
+- **Closed (session 70) — network request/response pairing, and diff mode
+  missing removed elements and capture failures.** Same repo-wide audit as
+  sessions 68-69:
+  1. **`networkLog` paired responses to requests by URL string**
+     (`packages/acquire/src/capture.ts`), so two overlapping requests to
+     one URL overwrote each other's pending record — a response was logged
+     with the *other* request's method, headers, query params, and body
+     fields. Requests that failed with no response were silently dropped.
+     Fix: pending records keyed by Playwright's `Request` object and
+     deleted once used; a `requestfailed` handler logs failures with the
+     new `NetworkEntry.failureText` and `status: null` (`status` is now
+     `number | null`; no existing report reads it). Proven by a real
+     fixture-server test (`capture-network.test.ts`): a POST and a GET to
+     the same URL issued back to back, with the POST answered first, came
+     out as `['GET','GET']` before the fix and `['GET','POST']` after; a
+     fetch to a closed port is logged with a real failure text. Both tests
+     confirmed to fail against the pre-fix `capture.ts`. Not handled: a
+     request still pending when capture finishes is still not logged.
+  2. **Diff mode silently skipped a baseline element with no current
+     counterpart** (`packages/core/src/diff.ts`), so a removed or renamed
+     button — which breaks the generated role locator — produced no change
+     at all and `--fail-on-regression` stayed green. Fix: new
+     `CrawlDiff.removedElements` (`url`, `role`, `accessibleName`,
+     `occurrenceIndex`, `locatedByRoleInBaselinePom`). A removal is a
+     regression only when `locatedByRoleInBaselinePom` is true, decided by
+     output's `elementsLocatedByRoleInGeneratedPom` (which reuses POM
+     generation's own field-selection logic, extracted as `planPageFields`)
+     and injected via `DiffOptions.baselinePomRoleLocatedElements`, since
+     core can't depend on output. That keeps repeating-row members (e.g.
+     HN story rows, located structurally by index) and testid/CSS-located
+     fields informational only. A renamed element appears under its old
+     name. Added elements are still not reported at element level
+     (unchanged from session 12).
+  3. **A page whose capture failed in one crawl showed up as a title change
+     to `""`** (and its elements as silently missing). Fix: new
+     `CrawlDiff.captureFailures` (`url`, `side`, `status`); pages with a
+     non-`ok` status on either side are excluded from the title, selector,
+     removed-element, visual, and timing comparisons. Report-only, never
+     trips `--fail-on-regression`.
+  `diff-report.md` gains "Capture Failures" and "Removed or Renamed
+  Elements" (Regressions / Other) sections and two summary counts; the CLI
+  prints three new summary lines. Also replaced `diff.ts`'s four literal
+  NUL-byte key separators with the equivalent `\u0000` escape, so git
+  diffs the file as text again (identical runtime value). **Verification:**
+  core tests (removal flagged via the predicate, rename, occurrence-index
+  removal, no-predicate default, capture failure on each side), a unit
+  test of `elementsLocatedByRoleInGeneratedPom` (role-located only — not
+  testid, unselectable, or row members), report-rendering tests, and CLI
+  tests proving `hasRegressions` flips for a removed role-located button
+  but not for a removed row member or a capture failure. Real-data check:
+  two live `httpbin.org/forms/post` crawls diff to 0 removals/0
+  regressions; two live HN `/newest` crawls 150s apart surfaced the
+  volatile-text finding above.
 - **Closed (session 69) — resuming a crawl, redirects/HTTP status, and
   stale hard-pages entries.** Three bugs from the same repo-wide audit as
   session 68, all in the crawl/persistence path:

@@ -64,7 +64,11 @@ selectors regressed between runs, "did this deploy break my locators" as
 an actual command, with `--fail-on-regression` for CI. Diff mode also
 surfaces visual changes (pixel-diff screenshots) and page-load timing
 regressions, but neither of those affects the `--fail-on-regression` exit
-code. That guarantee is driven solely by selector-candidate regressions.
+code. That guarantee is driven solely by selector regressions: a locator
+that became unstable or non-unique, or an element the baseline's generated
+POM located by role and name that no longer exists (removed or renamed).
+Pages whose capture failed in either run are listed separately and left out
+of the comparison.
 
 Treeline can also crawl behind a login (`--login-url`, `--username`,
 `--success-indicator`). Session state is captured once via a real login

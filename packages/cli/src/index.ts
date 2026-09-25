@@ -125,7 +125,7 @@ program
   .command('diff <baselineDir> <currentDir>')
   .description('Compare two crawl output directories and generate a diff report')
   .option('--output <dir>', 'output directory for the diff report')
-  .option('--fail-on-regression', 'exit with code 1 if selector regressions are found', false)
+  .option('--fail-on-regression', 'exit with code 1 if selector regressions are found (including a removed/renamed element the baseline POM located by role+name)', false)
   .action(async (baselineDir: string, currentDir: string, rawOptions: RawDiffOptions) => {
     const options: TreelineDiffOptions = {
       baselineDir,
@@ -140,6 +140,9 @@ program
       console.log(`Selector regressions: ${summary.selectorRegressions}`)
       console.log(`Selector improvements: ${summary.selectorImprovements}`)
       console.log(`Other selector changes: ${summary.selectorOther}`)
+      console.log(`Removed/renamed elements located by role in the baseline POM (regressions): ${summary.removedElementRegressions}`)
+      console.log(`Other removed/renamed elements: ${summary.removedElementsOther}`)
+      console.log(`Capture failures (excluded from comparison): ${summary.captureFailures}`)
       console.log(`Visual changes: ${summary.visualChanges}`)
       console.log(`Report: ${summary.reportPath}`)
       if (rawOptions.failOnRegression && summary.hasRegressions) {

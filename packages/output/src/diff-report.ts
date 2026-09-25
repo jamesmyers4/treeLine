@@ -1,4 +1,4 @@
-import type { CrawlDiff, SelectorCandidateChange, TimingChange, VisualChange } from '@treeline/core'
+import type { CaptureFailure, CrawlDiff, RemovedElement, SelectorCandidateChange, TimingChange, VisualChange } from '@treeline/core'
 import { urlHash } from '@treeline/core'
 import { sanitizeMarkdownTableCell, sanitizeMarkdownText } from './markdown-safety.js'
 
@@ -12,7 +12,11 @@ export function classifyChange(change: SelectorCandidateChange): SelectorChangeC
   return 'other'
 }
 
-function describeChange(change: SelectorCandidateChange): string {
+export function classifyRemovedElement(removed: RemovedElement): SelectorChangeClassification {
+  return removed.locatedByRoleInBaselinePom ? 'regression' : 'other'
+}
+
+function describeChange(change: SelectorCandidateChange | RemovedElement): string {
   const suffix = change.occurrenceIndex > 0 ? ` [${change.occurrenceIndex}]` : ''
   return `${sanitizeMarkdownTableCell(change.role)} '${sanitizeMarkdownTableCell(change.accessibleName)}'${suffix}`
 }
@@ -74,6 +78,64 @@ function renderSelectorCandidateSection(selectorCandidateChanges: SelectorCandid
     ...renderChangesTable(otherChanges, 'No other selector changes found.'),
   )
 
+  return lines
+}
+
+function renderRemovedElementsTable(removed: RemovedElement[], emptyMessage: string): string[] {
+  if (removed.length === 0) return [emptyMessage, '']
+  const lines: string[] = ['| URL | Element |', '| --- | --- |']
+  for (const element of removed) {
+    lines.push(`| ${sanitizeMarkdownTableCell(element.url)} | ${describeChange(element)} |`)
+  }
+  lines.push('')
+  return lines
+}
+
+function renderRemovedElementsSection(removedElements: RemovedElement[]): string[] {
+  const lines: string[] = [
+    '## Removed or Renamed Elements',
+    '',
+    'Baseline elements with no current element of the same role and accessible name at the same occurrence index. ' +
+      'A renamed element shows up here under its old name.',
+    '',
+  ]
+  if (removedElements.length === 0) {
+    lines.push('No removed or renamed elements found.', '')
+    return lines
+  }
+  const regressions = removedElements.filter((removed) => classifyRemovedElement(removed) === 'regression')
+  const other = removedElements.filter((removed) => classifyRemovedElement(removed) === 'other')
+  lines.push(
+    '### Regressions',
+    '',
+    "The baseline's generated POM located these by role and accessible name, so that locator no longer matches — these count toward `--fail-on-regression`.",
+    '',
+    ...renderRemovedElementsTable(regressions, 'No removed elements were located by role in the baseline POM.'),
+    '### Other',
+    '',
+    'Not located by role+name in the baseline POM (a repeating-row member, a testid/CSS-located field, or an element with no stable selector) — informational only.',
+    '',
+    ...renderRemovedElementsTable(other, 'No other removed elements.'),
+  )
+  return lines
+}
+
+function renderCaptureFailuresSection(captureFailures: CaptureFailure[]): string[] {
+  const lines: string[] = [
+    '## Capture Failures',
+    '',
+    "Pages present in both crawls whose capture failed in one of them. They're left out of the title, selector, visual, and timing comparisons, since there's nothing to compare against.",
+    '',
+  ]
+  if (captureFailures.length === 0) {
+    lines.push('No capture failures in either crawl.', '')
+    return lines
+  }
+  lines.push('| URL | Failed In | Status |', '| --- | --- | --- |')
+  for (const failure of captureFailures) {
+    lines.push(`| ${sanitizeMarkdownTableCell(failure.url)} | ${failure.side} | ${sanitizeMarkdownTableCell(failure.status)} |`)
+  }
+  lines.push('')
   return lines
 }
 
@@ -167,6 +229,7 @@ export function renderDiffReportMarkdown(diff: CrawlDiff): string {
   const regressions = diff.selectorCandidateChanges.filter((change) => classifyChange(change) === 'regression')
   const improvements = diff.selectorCandidateChanges.filter((change) => classifyChange(change) === 'improvement')
   const otherChanges = diff.selectorCandidateChanges.filter((change) => classifyChange(change) === 'other')
+  const removedRegressions = diff.removedElements.filter((removed) => classifyRemovedElement(removed) === 'regression')
   const visualChangedCount = diff.visualChanges.filter((change) => change.status === 'changed').length
   const timingRegressions = diff.timingChanges.filter((change) => classifyTimingChange(change) === 'regression')
   const timingImprovements = diff.timingChanges.filter((change) => classifyTimingChange(change) === 'improvement')
@@ -180,7 +243,7 @@ export function renderDiffReportMarkdown(diff: CrawlDiff): string {
     '',
     '## Summary',
     '',
-    `${diff.pagesAdded.length} pages added, ${diff.pagesRemoved.length} pages removed, ${diff.titleChanges.length} title changes, ${regressions.length} selector regressions, ${improvements.length} selector improvements, ${otherChanges.length} other selector changes, ${visualChangedCount} visual changes, ${timingRegressions.length} timing regressions, ${timingImprovements.length} timing improvements`,
+    `${diff.pagesAdded.length} pages added, ${diff.pagesRemoved.length} pages removed, ${diff.captureFailures.length} capture failures, ${diff.titleChanges.length} title changes, ${regressions.length} selector regressions, ${improvements.length} selector improvements, ${otherChanges.length} other selector changes, ${diff.removedElements.length} removed/renamed elements (${removedRegressions.length} regressions), ${visualChangedCount} visual changes, ${timingRegressions.length} timing regressions, ${timingImprovements.length} timing improvements`,
     '',
     '## Pages Added',
     '',
@@ -188,10 +251,12 @@ export function renderDiffReportMarkdown(diff: CrawlDiff): string {
     '## Pages Removed',
     '',
     ...renderUrlList(diff.pagesRemoved, 'No pages removed.'),
+    ...renderCaptureFailuresSection(diff.captureFailures),
     '## Title Changes',
     '',
     ...renderTitleChangesTable(diff.titleChanges),
     ...renderSelectorCandidateSection(diff.selectorCandidateChanges),
+    ...renderRemovedElementsSection(diff.removedElements),
     ...renderVisualChangesSection(diff.visualChanges),
     ...renderTimingChangesSection(diff.timingChanges),
   ]

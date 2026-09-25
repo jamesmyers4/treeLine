@@ -6,7 +6,8 @@ export type ResponseBodyContentTypeCategory = 'json' | 'other'
 export interface NetworkEntry {
   url: string
   method: string
-  status: number
+  status: number | null
+  failureText: string | null
   resourceType: string
   durationMs: number
   responseBodySample: string | null

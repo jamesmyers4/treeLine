@@ -1,6 +1,6 @@
 # CLAUDE.md — treeline
 
-_Last updated after session 69._
+_Last updated after session 70._
 
 Full design rationale lives in `CONTEXT.md` - read that first for the "why."
 This file is the operational guide: conventions, commands, and hard-won
@@ -316,9 +316,24 @@ change, written automatically with no new CLI flag required — and print a
 summary of pages added/removed, title changes, and selector regressions/
 improvements/other. Try it once with `--fail-on-regression` too and confirm
 with `echo $?` that the exit code behaves as documented above. **Guarantee:**
-`--fail-on-regression`'s exit code is driven solely by selector-candidate
-regressions — a visual change alone, however large, never trips it. Confirm
-this holds if you touch diff mode again.
+`--fail-on-regression`'s exit code is driven solely by selector regressions
+— a visual change, a timing change, or a capture failure alone, however
+large, never trips it. Since session 70 "selector regression" means either
+of two things: a matched element's primary candidate flipping from safe to
+unsafe (the original meaning), **or** a baseline element that no longer
+exists (removed, or renamed — matching is by role + accessible name +
+occurrence index) *and* that the baseline's generated POM located by
+role+name, so its generated locator provably no longer matches. Removed
+elements the POM didn't locate by role+name (repeating-row members,
+testid/CSS-located fields, unselectable elements) are reported but never
+trip the flag. Which elements count is decided by
+`elementsLocatedByRoleInGeneratedPom` (`packages/output/src/
+pom-generation.ts`, sharing POM generation's own field-selection logic),
+injected into core's `diffCrawls` as `DiffOptions.
+baselinePomRoleLocatedElements` since `core` can't depend on `output`.
+Pages whose capture failed on either side are listed under "Capture
+Failures" and excluded from every comparison. Confirm this holds if you
+touch diff mode again.
 
 If any of this doesn't match what CONTEXT.md's "Status" section claims,
 stop and figure out why before writing new code — something regressed.
@@ -529,6 +544,30 @@ types.ts`) and `VerifyRunOptions.authValidIndicator?: string`
   (esbuild's `__name` helper leaks into the browser-evaluated callbacks →
   `ReferenceError: __name is not defined`); import from the built
   `dist/` in a plain `.mjs` throwaway script instead.
+- **`networkLog` pairs each response with its own request object, never by
+  URL (session 70).** `capture.ts` used to key in-flight requests by URL
+  string, so two overlapping requests to one URL (a CORS preflight plus the
+  real call, or a POST and a GET to the same endpoint) overwrote each other
+  and a response got logged with the other request's method, headers, and
+  body fields. Now keyed by Playwright's `Request` object
+  (`res.request()`), and each entry is removed once used. Requests that fail
+  with no response (DNS error, connection refused, blocked) are now logged
+  too, via `requestfailed`, with `status: null` and the real
+  `failureText` — previously they vanished silently. `NetworkEntry.status`
+  is therefore `number | null`; no report reads it today, but check for
+  `null` before using it in a new one. A request still pending when capture
+  finishes (a long poll, say) is still not logged.
+- **Generated POMs bake in volatile link text, and diff mode now says so
+  loudly (found session 70, not fixed).** On a fast-changing page such as
+  HN's `/newest`, the generated POM includes fields like
+  `_0MinutesAgoLink = getByRole('link', { name: '0 minutes ago', exact: true })`
+  and one per story title. Those locators really do break minutes later, so
+  a real two-crawl diff 150s apart reported 14 removed role-located elements
+  as regressions (on top of 3 pre-existing selector-candidate regressions,
+  which already made `--fail-on-regression` exit 1 on that page). The diff
+  is telling the truth; the fix belongs in POM generation (treat
+  relative-time/content-derived names as unstable), not in diff mode — see
+  CONTEXT.md "Open items."
 - **`tsx` is not hoisted to the workspace root.** Each package that needs to
   run a script directly (throwaway sanity scripts, `dev` scripts) needs
   `tsx` as its own devDependency: `pnpm add -D tsx --filter @treeline/<pkg>`.

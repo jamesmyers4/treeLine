@@ -41,6 +41,7 @@ function makeNetworkEntry(overrides: Partial<NetworkEntry>): NetworkEntry {
     requestHeaderNames: [],
     queryParams: {},
     requiresAuth: false,
+    failureText: null,
     ...overrides,
   }
 }

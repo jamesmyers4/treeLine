@@ -60,6 +60,17 @@ interface RequestBodyExtractionResult {
   requestBodyExceededSizeCap: boolean
 }
 
+interface PendingRequest {
+  method: string
+  resourceType: string
+  startedAt: number
+  requestHeaderNames: string[]
+  queryParams: Record<string, string>
+  requestBody: string[] | null
+  requestBodyContentTypeCategory: RequestBodyContentTypeCategory | null
+  requestBodyExceededSizeCap: boolean
+}
+
 const NO_BODY_RESULT: RequestBodyExtractionResult = { requestBody: null, requestBodyContentTypeCategory: null, requestBodyExceededSizeCap: false }
 
 function extractRequestBodyFieldNames(req: Request, maxBytes: number, sampledEndpoints: Set<string>): RequestBodyExtractionResult {
@@ -445,19 +456,7 @@ export async function resolveSeedUrlWithBrowser(url: string, browser: Browser, o
 async function captureWithContext(url: string, context: BrowserContext, options?: AcquireOptions): Promise<PageState> {
   const page = await context.newPage()
   const networkLog: NetworkEntry[] = []
-  const pending = new Map<
-    string,
-    {
-      method: string
-      resourceType: string
-      startedAt: number
-      requestHeaderNames: string[]
-      queryParams: Record<string, string>
-      requestBody: string[] | null
-      requestBodyContentTypeCategory: RequestBodyContentTypeCategory | null
-      requestBodyExceededSizeCap: boolean
-    }
-  >()
+  const pending = new Map<Request, PendingRequest>()
   const bodyReads: Promise<void>[] = []
   const sampledEndpoints = options?.sampledEndpoints ?? new Set<string>()
   const maxResponseBodyBytes = options?.maxResponseBodyBytes ?? DEFAULT_MAX_RESPONSE_BODY_BYTES
@@ -467,7 +466,7 @@ async function captureWithContext(url: string, context: BrowserContext, options?
     const bodyExtraction = options?.captureRequestBodies
       ? extractRequestBodyFieldNames(req, maxRequestBodyBytes, sampledEndpoints)
       : NO_BODY_RESULT
-    pending.set(req.url(), {
+    pending.set(req, {
       method: req.method(),
       resourceType: req.resourceType(),
       startedAt: Date.now(),
@@ -478,26 +477,36 @@ async function captureWithContext(url: string, context: BrowserContext, options?
       requestBodyExceededSizeCap: bodyExtraction.requestBodyExceededSizeCap,
     })
   })
-  page.on('response', (res) => {
-    const req = pending.get(res.url())
+  const toEntry = (url: string, req: PendingRequest, status: number | null, failureText: string | null): NetworkEntry => ({
+    url,
+    method: req.method,
+    status,
+    failureText,
+    resourceType: req.resourceType,
+    durationMs: Date.now() - req.startedAt,
+    responseBodySample: null,
+    responseBodySchema: null,
+    responseBodyContentTypeCategory: null,
+    responseBodyExceededSizeCap: false,
+    requestBody: req.requestBody,
+    requestBodyContentTypeCategory: req.requestBodyContentTypeCategory,
+    requestBodyExceededSizeCap: req.requestBodyExceededSizeCap,
+    requestHeaderNames: req.requestHeaderNames,
+    queryParams: req.queryParams,
+    requiresAuth,
+  })
+  page.on('requestfailed', (request) => {
+    const req = pending.get(request)
     if (!req) return
-    const entry: NetworkEntry = {
-      url: res.url(),
-      method: req.method,
-      status: res.status(),
-      resourceType: req.resourceType,
-      durationMs: Date.now() - req.startedAt,
-      responseBodySample: null,
-      responseBodySchema: null,
-      responseBodyContentTypeCategory: null,
-      responseBodyExceededSizeCap: false,
-      requestBody: req.requestBody,
-      requestBodyContentTypeCategory: req.requestBodyContentTypeCategory,
-      requestBodyExceededSizeCap: req.requestBodyExceededSizeCap,
-      requestHeaderNames: req.requestHeaderNames,
-      queryParams: req.queryParams,
-      requiresAuth,
-    }
+    pending.delete(request)
+    networkLog.push(toEntry(request.url(), req, null, request.failure()?.errorText ?? 'unknown failure'))
+  })
+  page.on('response', (res) => {
+    const request = res.request()
+    const req = pending.get(request)
+    if (!req) return
+    pending.delete(request)
+    const entry = toEntry(res.url(), req, res.status(), null)
     networkLog.push(entry)
     if (!options?.captureResponseBodies) return
     // Derived from the Content-Type header directly, regardless of resourceType, so a

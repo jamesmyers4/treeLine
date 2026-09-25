@@ -32,6 +32,8 @@ import {
   generateApiTestScaffold,
   renderApiTestScaffoldMarkdown,
   classifyChange,
+  classifyRemovedElement,
+  elementsLocatedByRoleInGeneratedPom,
   renderDiffReportMarkdown,
 } from '@treeline/output'
 
@@ -279,6 +281,9 @@ export interface TreelineDiffSummary {
   selectorRegressions: number
   selectorImprovements: number
   selectorOther: number
+  removedElementRegressions: number
+  removedElementsOther: number
+  captureFailures: number
   hasRegressions: boolean
   visualChanges: number
 }
@@ -292,10 +297,11 @@ export async function runTreelineDiff(options: TreelineDiffOptions): Promise<Tre
   if (!existsSync(currentDbPath)) {
     throw new Error(`Current crawl not found: no crawl.sqlite in ${options.currentDir}`)
   }
-  const diff = diffCrawls(baselineDbPath, currentDbPath)
+  const diff = diffCrawls(baselineDbPath, currentDbPath, { baselinePomRoleLocatedElements: elementsLocatedByRoleInGeneratedPom })
   const regressions = diff.selectorCandidateChanges.filter((change) => classifyChange(change) === 'regression')
   const improvements = diff.selectorCandidateChanges.filter((change) => classifyChange(change) === 'improvement')
   const other = diff.selectorCandidateChanges.filter((change) => classifyChange(change) === 'other')
+  const removedRegressions = diff.removedElements.filter((removed) => classifyRemovedElement(removed) === 'regression')
   const resolvedOutputDir = options.outputDir ?? options.currentDir
   const reportsDir = join(resolvedOutputDir, 'reports')
   await mkdir(reportsDir, { recursive: true })
@@ -317,7 +323,10 @@ export async function runTreelineDiff(options: TreelineDiffOptions): Promise<Tre
     selectorRegressions: regressions.length,
     selectorImprovements: improvements.length,
     selectorOther: other.length,
-    hasRegressions: regressions.length > 0,
+    removedElementRegressions: removedRegressions.length,
+    removedElementsOther: diff.removedElements.length - removedRegressions.length,
+    captureFailures: diff.captureFailures.length,
+    hasRegressions: regressions.length > 0 || removedRegressions.length > 0,
     visualChanges: changedVisuals.length,
   }
 }
