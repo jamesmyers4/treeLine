@@ -1,6 +1,6 @@
 # CLAUDE.md — treeline
 
-_Last updated after session 72._
+_Last updated after session 73._
 
 Full design rationale lives in `CONTEXT.md` - read that first for the "why."
 This file is the operational guide: conventions, commands, and hard-won
@@ -14,20 +14,13 @@ interpretation, and emits test artifacts (POMs, selector reports) plus docs,
 accessibility findings, and structured data. Claude Code's role in this repo
 is escalation (fixing `hard-pages/` entries), not the crawl runtime.
 
-## Next up (handoff after session 72)
+## Next up (handoff after session 73)
 
-One known, unbuilt item, written up in full at the top of CONTEXT.md's
-"Open items" under "**Next up**":
-
-- **POM generation trusts volatile text** (relative timestamps, story
-  titles, comment counts become role+name locators that break within
-  minutes; found via a real HN `/newest` diff in session 70). Needs a
-  design pass before code.
-
-Session 72 built the other session-71 handoff item — one shared browser
-per crawl instead of one per page (see "Browser cleanup must be in a
-`finally` block" below, and the "Closed (session 72)" entry in
-CONTEXT.md's "Open items").
+Nothing queued. Both session-71 handoff items are built — one shared
+browser per crawl (session 72) and volatile relative-time/count text in
+POM generation (session 73). What's left of the second, content-derived
+names like story titles, is a documented gap in CONTEXT.md's "Known gaps"
+("Partly closed (session 73)"), not a planned next step.
 
 ## Monorepo layout
 
@@ -572,17 +565,23 @@ types.ts`) and `VerifyRunOptions.authValidIndicator?: string`
   is therefore `number | null`; no report reads it today, but check for
   `null` before using it in a new one. A request still pending when capture
   finishes (a long poll, say) is still not logged.
-- **Generated POMs bake in volatile link text, and diff mode now says so
-  loudly (found session 70, not fixed).** On a fast-changing page such as
-  HN's `/newest`, the generated POM includes fields like
-  `_0MinutesAgoLink = getByRole('link', { name: '0 minutes ago', exact: true })`
-  and one per story title. Those locators really do break minutes later, so
-  a real two-crawl diff 150s apart reported 14 removed role-located elements
-  as regressions (on top of 3 pre-existing selector-candidate regressions,
-  which already made `--fail-on-regression` exit 1 on that page). The diff
-  is telling the truth; the fix belongs in POM generation (treat
-  relative-time/content-derived names as unstable), not in diff mode — see
-  CONTEXT.md "Open items."
+- **Relative-time and count names never become role locators (session
+  73) — but content names like story titles still do.**
+  `isVolatileAccessibleName` (`packages/core/src/selector-candidates.ts`)
+  marks a role candidate `stable: false` when its name looks like a
+  relative time (`0 minutes ago`, `an hour ago`, `5m ago`, `just now`) or
+  a count (`389 comments`, `92k+ stargazers`, `15 entries` — a fixed noun
+  list, not any number + word). POM generation then falls back to
+  testid/CSS or skips the element with a specific `skipped-elements.json`
+  reason; `selector-report.md` shows `No (volatile name)`; diff mode stops
+  counting their disappearance as a regression. A real HN `/newest` diff
+  150s apart went from 37 role-located removal regressions to 14 — the 14
+  left are story titles, domains and usernames, which no text heuristic
+  can catch, so `--fail-on-regression` still exits 1 on a feed page. That
+  diff is telling the truth; don't "fix" it in diff mode. If you widen the
+  pattern, re-run it over the real names in `packages/cli/
+  treeline-output/*/crawl.sqlite` first (session 73 found zero false
+  positives in 1,242) — a false positive silently drops a good locator.
 - **`tsx` is not hoisted to the workspace root.** Each package that needs to
   run a script directly (throwaway sanity scripts, `dev` scripts) needs
   `tsx` as its own devDependency: `pnpm add -D tsx --filter @treeline/<pkg>`.

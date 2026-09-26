@@ -371,3 +371,39 @@ describe('elementsLocatedByRoleInGeneratedPom', () => {
     expect([...located]).toEqual([roleLocated])
   })
 })
+
+describe('generatePOM — volatile accessible names', () => {
+  it('never bakes a relative-time or count name into a getByRole locator, and records why an element was skipped', () => {
+    const age = makeElement({ role: 'link', accessibleName: '0 minutes ago', cssPath: 'tr:nth-of-type(2) > td.subtext > span.age > a', xpath: '/html/body/table/tr[2]/td/span/a' })
+    const comments = makeElement({ role: 'link', accessibleName: '1 comment', cssPath: 'tr:nth-of-type(2) > td.subtext > a:nth-of-type(3)', xpath: '/html/body/table/tr[2]/td/a[3]' })
+    const login = makeElement({ role: 'link', accessibleName: 'login', cssPath: 'span.pagetop > a', xpath: '/html/body/span/a' })
+    const { pom, skipped } = generatePOM(makePage({ interactiveElements: [age, comments, login] }))
+    expect(pom.code).not.toContain('minutes ago')
+    expect(pom.code).not.toContain('1 comment')
+    expect(pom.code).toContain('getByRole("link", { name: "login", exact: true })')
+    expect(skipped.map((s) => s.reason)).toEqual([
+      'accessible name looks volatile (relative time or count) and no other stable selector candidate available',
+      'accessible name looks volatile (relative time or count) and no other stable selector candidate available',
+    ])
+  })
+
+  it('falls back to a stable testid for an element with a volatile name', () => {
+    const el = makeElement({ role: 'link', accessibleName: '12 comments', testId: 'comment-count', cssPath: 'div:nth-of-type(4) > a', xpath: '/html/body/div[4]/a' })
+    const { pom, skipped } = generatePOM(makePage({ interactiveElements: [el] }))
+    expect(skipped).toEqual([])
+    expect(pom.code).toContain('page.locator("[data-testid=\\"comment-count\\"]")')
+    expect(pom.code).not.toContain('getByRole')
+  })
+
+  it('does not build a role-rooted repeating row from a shared volatile name', () => {
+    const members = [1, 2, 3].map((i) => makeElement({ role: 'link', tagName: 'a', accessibleName: '2 comments', elementId: `c_${1000000 + i}`, cssPath: `#c_${1000000 + i}`, xpath: `/x${i}` }))
+    const { pom } = generatePOM(makePage({ interactiveElements: members }))
+    expect(pom.code).not.toContain('2 comments')
+  })
+
+  it('does not count a volatile-named element as role-located, so diff mode reports its disappearance without calling it a regression', () => {
+    const age = makeElement({ role: 'link', accessibleName: '3 minutes ago', cssPath: 'span.age > a' })
+    const button = makeElement({ role: 'button', accessibleName: 'Create Account', cssPath: 'form > button.create' })
+    expect([...elementsLocatedByRoleInGeneratedPom([age, button])]).toEqual([button])
+  })
+})

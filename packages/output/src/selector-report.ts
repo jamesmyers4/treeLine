@@ -53,6 +53,11 @@ export function generateSelectorReport(pages: CrawledPage[]): SelectorReport {
   return { generatedAt: new Date().toISOString(), pages: reportPages }
 }
 
+function stableCell(candidate: SelectorCandidate): string {
+  if (candidate.stable) return 'Yes'
+  return candidate.strategy === 'role' ? 'No (volatile name)' : 'No'
+}
+
 export function renderSelectorReportMarkdown(report: SelectorReport): string {
   const lines: string[] = ['# Selector Stability Report', '', `Generated: ${report.generatedAt}`, '']
   for (const page of report.pages) {
@@ -66,7 +71,7 @@ export function renderSelectorReportMarkdown(report: SelectorReport): string {
       const instancesCell = entry.instanceCount > 1 ? `${entry.instanceCount} (1 shown)` : '1'
       for (const candidate of entry.candidates) {
         lines.push(
-          `| ${sanitizeMarkdownTableCell(entry.elementDescription)} | ${instancesCell} | ${candidate.strategy} | ${sanitizeMarkdownTableCell(candidate.value)} | ${candidate.stable ? 'Yes' : 'No'} | ${candidate.uniqueOnPage ? 'Yes' : 'No'} |`,
+          `| ${sanitizeMarkdownTableCell(entry.elementDescription)} | ${instancesCell} | ${candidate.strategy} | ${sanitizeMarkdownTableCell(candidate.value)} | ${stableCell(candidate)} | ${candidate.uniqueOnPage ? 'Yes' : 'No'} |`,
         )
       }
     }

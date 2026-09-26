@@ -1,5 +1,5 @@
 import type { DomInteractiveElement } from '@treeline/acquire'
-import { computeSelectorCandidates } from '@treeline/core'
+import { computeSelectorCandidates, isVolatileAccessibleName } from '@treeline/core'
 import { isHttpErrorPage } from './input.js'
 import type { CrawledPage } from './input.js'
 import { urlToClassName, urlToFileBaseName, elementToPropertyName, deduplicatePropertyNames, deduplicatePropertyNamesWithHref, assignUniqueNames, sanitizeIdentifier, capitalize } from './naming.js'
@@ -124,6 +124,7 @@ function buildFlatEntityRows(groups: RepeatingPatternGroup[], usedClassNames: Se
     if (anchorKey(group.structuralSignature) !== null) continue
     const representative = group.members[0]!
     if (NON_ROLE_VALUES.has(representative.role) || representative.accessibleName.trim() === '') continue
+    if (isVolatileAccessibleName(representative.accessibleName)) continue
     if (!group.members.every((member) => member.accessibleName === representative.accessibleName)) continue
     const fieldName = elementToPropertyName(representative)
     const className = reserveClassName(usedClassNames, sanitizeIdentifier(`${capitalize(fieldName)}Row`))
@@ -242,7 +243,9 @@ function buildPOM(page: CrawledPage, className: string, fileName: string): { pom
   const skipped: SkippedElement[] = unselectable.map((element) => ({
     url: page.url,
     elementDescription: elementToPropertyName(element),
-    reason: 'no stable selector candidate available',
+    reason: isVolatileAccessibleName(element.accessibleName)
+      ? 'accessible name looks volatile (relative time or count) and no other stable selector candidate available'
+      : 'no stable selector candidate available',
   }))
   const dedupedNames = deduplicatePropertyNamesWithHref(chosen.map((c) => ({ propertyName: c.propertyName, href: c.element.href })))
   const fields = chosen.map((c, index) => {

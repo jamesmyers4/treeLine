@@ -138,6 +138,12 @@ describe('renderSelectorReportMarkdown', () => {
     expect(rowLines).toHaveLength(candidateCount)
   })
 
+  it('labels a role candidate that is unstable because of a volatile name', () => {
+    const el = makeElement({ role: 'link', accessibleName: '5 minutes ago', tagName: 'a' })
+    const markdown = renderSelectorReportMarkdown(generateSelectorReport([makePage('https://example.com', [el])]))
+    expect(markdown).toContain('| role | role=link[name="5 minutes ago"] | No (volatile name) |')
+  })
+
   it('marks a non-repeating entry with an Instances value of 1', () => {
     const el = makeElement({ testId: 'submit-btn' })
     const report = generateSelectorReport([makePage('https://example.com', [el])])

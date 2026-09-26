@@ -41,6 +41,15 @@ export function normalizeAccessibleName(name: string): string {
   return name.replace(/\s+/g, ' ').trim()
 }
 
+const RELATIVE_TIME_NAME = /\b(?:\d+|an?)\s*(?:s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?|d|days?|w|wks?|weeks?|mos?|months?|y|yrs?|years?)\s+ago\b/i
+const JUST_NOW_NAME = /\bjust now\b/i
+const COUNT_NAME = /\b\d[\d,.]*\s*[km]?\+?\s+(?:comments?|points?|votes?|replies|reply|reviews?|stars?|stargazers?|likes?|views?|followers?|results?|entries|entry|answers?|shares?|downloads?|subscribers?|notifications?)\b/i
+
+export function isVolatileAccessibleName(name: string): boolean {
+  const normalized = normalizeAccessibleName(name)
+  return RELATIVE_TIME_NAME.test(normalized) || JUST_NOW_NAME.test(normalized) || COUNT_NAME.test(normalized)
+}
+
 function isRoleUnique(el: DomInteractiveElement, allElements: DomInteractiveElement[]): boolean {
   const name = normalizeAccessibleName(el.accessibleName)
   return !allElements.some((other) => other !== el && other.role === el.role && normalizeAccessibleName(other.accessibleName) === name)
@@ -61,7 +70,7 @@ function buildCandidates(el: DomInteractiveElement, allElements: DomInteractiveE
     candidates.push({
       strategy: 'role',
       value: `role=${el.role}[name=${JSON.stringify(normalizeAccessibleName(el.accessibleName))}]`,
-      stable: true,
+      stable: !isVolatileAccessibleName(el.accessibleName),
       uniqueOnPage: isRoleUnique(el, allElements),
     })
   }

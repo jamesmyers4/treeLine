@@ -2354,10 +2354,10 @@ locked-decision brief there; this section is the outcome summary. See
 **Remaining v1 work:** none. All 8 v1 output-set items are done — see
 "Status" above.
 
-**Next up — one known item handed off at the end of session 71, not yet
-built** (the other, reuse one browser per crawl, was built in session 72 —
-see just below). Written for a fresh session; everything below was
-confirmed by reading the code at the time of writing, not assumed.
+**Next up — nothing queued.** Both items handed off at the end of session
+71 are built: reuse one browser per crawl (session 72) and volatile text in
+POM generation (session 73, which leaves story titles as an open gap — see
+"Known gaps" below). Both write-ups follow.
 
 - **Closed (session 72) — one browser per crawl, not one per page.**
   - **What changed:** `crawl()` (`packages/core/src/crawler.ts`) now owns a
@@ -2418,24 +2418,71 @@ confirmed by reading the code at the time of writing, not assumed.
     same 10 reports. One "before" sample only, over a live network, so
     treat the exact figure as indicative.
 
-- **Next up #2 — POM generation trusts volatile text.** Full finding under
-  "Open (found session 70) — POM generation trusts volatile text" just
-  below. In short: `computeSelectorCandidates` marks every role candidate
-  `stable: true`, so text that changes by itself (`0 minutes ago`,
-  `1 comment`, story titles) becomes a hard-coded `getByRole(..., { name,
-  exact: true })` field that breaks within minutes, and diff mode (since
-  session 70) correctly reports those as regressions. Design questions to
-  settle before coding:
-  - Which heuristics mark a role name volatile. Relative-time patterns
-    (`\d+ (seconds?|minutes?|hours?|days?) ago`) and counts
-    (`\d+ (comments?|points?|votes?)`) are clear; content titles are not.
-  - Whether a volatile element should fall back to testid/CSS, be skipped
-    (reported in `skipped-elements.json`), or be located through its
-    `assertableAttributes` (HN's `.age` span carries the absolute
-    timestamp in `title`).
-  - That the change lives in `@treeline/core`'s
-    `selector-candidates.ts`, so it also changes `selector-report.md` and
-    diff classification, and golden files will move.
+- **Closed (session 73) — POM generation no longer trusts relative-time or
+  count text.**
+  - **What changed:** `isVolatileAccessibleName` (new, exported from
+    `packages/core/src/selector-candidates.ts`) matches three patterns on
+    the whitespace-normalized name, anywhere in it: a relative time
+    (`\d+|a|an` + a unit from `s`/`sec`/`seconds` up to `y`/`yrs`/`years`
+    + `ago`, so `0 minutes ago`, `an hour ago`, `5m ago`), `just now`, and
+    a count (a number, optionally with `,`/`.`, `k`/`m` and `+`, followed
+    by one of a fixed noun list: comments, points, votes, replies, reviews,
+    stars, stargazers, likes, views, followers, results, entries, answers,
+    shares, downloads, subscribers, notifications — so `389 comments`,
+    `92k+ stargazers on GitHub`, `Showing 1 to 10 of 15 entries`). A role
+    candidate for such a name is now `stable: false`. The name is still
+    captured and shown everywhere, and `uniqueOnPage` is unchanged.
+  - **Design decisions settled here:**
+    - **Heuristics:** only relative times and counts. **Content titles
+      are deliberately not handled** — no text pattern separates a story
+      title from a stable link name. Checked against every role+name
+      element in the 24 real crawl dbs under `packages/cli/
+      treeline-output/` (1,242 distinct names: HN, OpenEMR, playwright.dev,
+      GPB, httpbin, ...): 94 flagged, all genuinely volatile, **zero false
+      positives**. Non-matches worth noting as correctly stable: `Playwright
+      v1.56`, schedule slots like `8:00`, `Fields Medals 2026`, a bare
+      `comments` nav link. A noun list, not "any number + word", keeps
+      things like `Top 10 stories` and `CMS 1500 PDF` stable. A false
+      positive only costs a role locator (the element falls back or is
+      skipped); it never produces a wrong locator.
+    - **Fallback:** no new mechanism — POM generation's existing ranking
+      (`role` → `testid` → CSS, stable-only) simply moves past the unstable
+      role candidate. An element with no other stable candidate goes to
+      `skipped-elements.json` with the new reason `accessible name looks
+      volatile (relative time or count) and no other stable selector
+      candidate available`, instead of the generic one.
+      `buildFlatEntityRows` also refuses to root a repeating row on a
+      volatile shared name. Locating via `assertableAttributes` was
+      rejected: HN's `.age` `title` is a per-story absolute timestamp, so
+      a locator built from it is just as tied to one story; it stays what
+      `assertable-data-report.md` already offers it as — a value to
+      assert on.
+    - **Knock-on:** because it lives in `computeSelectorCandidates`,
+      `selector-report.md` shows these role candidates as `No (volatile
+      name)` in the Stable column (only role candidates can be unstable for
+      this reason), and diff mode's `elementsLocatedByRoleInGeneratedPom`
+      no longer counts them, so their disappearance is listed under "Other"
+      removed elements, not "Regressions". None of the golden-master
+      fixtures contain such names, so no golden file moved.
+  - **Tests:** `selector-candidates.test.ts` (16 real volatile names
+    flagged, 11 real/near-miss stable names not, role candidate
+    stability), `pom-generation.test.ts` (no volatile name reaches a
+    `getByRole`, the specific skip reason, testid fallback, no role-rooted
+    row from a shared volatile name, excluded from
+    `elementsLocatedByRoleInGeneratedPom`), `selector-report.test.ts`
+    (the `No (volatile name)` cell).
+  - **Real-data check — a repeat of session 70's finding:** two real crawls
+    of `https://news.ycombinator.com/newest` 150s apart (`--max-pages 1
+    --skip-interpretation --headless`), then `diff`, and the same two dbs
+    diffed with the pre-change code (a `git worktree` at the previous
+    commit). **Before: 37 role-located removal regressions plus 1 selector
+    regression (`23 minutes ago` losing uniqueness). After: 14 and 0.**
+    All 23 relative-time removals moved to informational. The new POM
+    skipped 38 elements with the volatile-name reason. **The 14 that remain
+    are the content gap, reported truthfully:** story titles, their
+    domains, usernames, and two `discuss` links whose occurrence index
+    shifted — all from stories that scrolled off `/newest`. So
+    `--fail-on-regression` still exits 1 on that page; see "Known gaps."
 
 **Known gaps worth fixing eventually, not blocking:**
 
@@ -2463,19 +2510,19 @@ confirmed by reading the code at the time of writing, not assumed.
   left as-is, since the real message now says what actually happened.
   Interpretation-failure entries are still capped at 200 characters rather
   than 500.
-- **Open (found session 70) — POM generation trusts volatile text.** The
-  generated POM for a fast-changing page bakes in role+name locators built
-  from content that changes on its own: relative timestamps (`_0MinutesAgoLink
-  = getByRole('link', { name: '0 minutes ago', exact: true })`), story
-  titles, comment counts. Found via a real two-crawl diff of HN's `/newest`
-  150s apart: 14 removed role-located elements, all relative-time links
-  plus one `1 comment`. Diff mode is correct to flag them, since those
-  locators really broke. The fix belongs in selector stability
-  (`computeSelectorCandidates`/`isCssStable`'s role-candidate equivalent):
-  treat a name that looks like a relative time or a count as unstable, or
-  prefer the element's `assertableAttributes` (HN's `.age` `title` carries
-  the absolute timestamp) over its text. Not built — needs its own design
-  pass, since "looks volatile" is a heuristic with false positives.
+- **Partly closed (session 73) — POM generation trusts volatile text.**
+  Relative times and counts are handled (see "Closed (session 73)" above).
+  **Still open: content-derived names** — story titles, their domains and
+  submitter usernames on a feed like HN `/newest`. They get role+name
+  locators that break as soon as the story scrolls off, and diff mode
+  correctly reports them (14 on a real 150s-apart `/newest` diff). No text
+  heuristic can tell them apart from stable names. Possible directions,
+  none designed: treat names inside a detected repeating region as
+  content (the structural-row path already absorbs some layouts, but
+  these HN title/domain/user links evidently weren't absorbed — not
+  investigated why), or compare names across two crawls and mark those
+  that change as volatile. Not
+  urgent — the diff output is honest, it's just noisy on feed pages.
 - **Closed (session 70) — network request/response pairing, and diff mode
   missing removed elements and capture failures.** Same repo-wide audit as
   sessions 68-69:

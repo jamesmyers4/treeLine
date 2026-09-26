@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { DomInteractiveElement } from '@treeline/acquire'
-import { computeSelectorCandidates } from './selector-candidates.js'
+import { computeSelectorCandidates, isVolatileAccessibleName } from './selector-candidates.js'
 
 function makeElement(overrides: Partial<DomInteractiveElement>): DomInteractiveElement {
   return {
@@ -105,5 +105,62 @@ describe('role candidate uniqueness — matches Playwright getByRole exact: true
   it('JSON-escapes quotes in the role selector value and collapses whitespace', () => {
     const el = makeElement({ accessibleName: 'Say  "hi"\n' })
     expect(roleCandidate(el, [el]).value).toBe('role=link[name="Say \\"hi\\""]')
+  })
+})
+
+describe('isVolatileAccessibleName', () => {
+  it.each([
+    '0 minutes ago',
+    '1 minute ago',
+    '23 hours ago',
+    '8 days ago',
+    'an hour ago',
+    'a minute ago',
+    '5m ago',
+    '3h ago',
+    'posted 2 weeks ago',
+    'just now',
+    '1 comment',
+    '389 comments',
+    '1,204 points',
+    '12 votes',
+    '92k+ stargazers on GitHub',
+    'Showing 1 to 10 of 15 entries',
+  ])('flags %j', (name) => {
+    expect(isVolatileAccessibleName(name)).toBe(true)
+  })
+
+  it.each([
+    'upvote',
+    'Playwright v1.56',
+    '8:00',
+    'Fields Medals 2026',
+    'Ten Steps Towards Happiness (2015)',
+    "Big Tech Isn't Hiding $1.65T of Debt",
+    'CMS 1500 PDF',
+    'No Minimum 4 5 6 7 8 9 10',
+    'comments',
+    'Top 10 stories',
+    'Agomez',
+  ])('does not flag %j', (name) => {
+    expect(isVolatileAccessibleName(name)).toBe(false)
+  })
+})
+
+describe('role candidate stability — volatile accessible names', () => {
+  function roleCandidate(el: DomInteractiveElement) {
+    return computeSelectorCandidates([el]).get(el)!.find((c) => c.strategy === 'role')!
+  }
+
+  it('marks a relative-time link name unstable', () => {
+    expect(roleCandidate(makeElement({ accessibleName: '3 minutes ago' })).stable).toBe(false)
+  })
+
+  it('marks a comment-count link name unstable', () => {
+    expect(roleCandidate(makeElement({ accessibleName: '49 comments' })).stable).toBe(false)
+  })
+
+  it('keeps an ordinary link name stable', () => {
+    expect(roleCandidate(makeElement({ accessibleName: 'upvote' })).stable).toBe(true)
   })
 })
