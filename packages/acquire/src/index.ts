@@ -9,6 +9,7 @@ export {
   categorizeResponseBodyContentType,
 } from './capture.js'
 export { launchHardened } from './launch.js'
+export type { Browser } from 'playwright'
 export {
   performLogin,
   performLoginSession,

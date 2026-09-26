@@ -1,5 +1,5 @@
-import { capturePage, AuthExpiredError, AuthWallError } from '@treeline/acquire'
-import type { AuthSession } from '@treeline/acquire'
+import { capturePageWithBrowser, AuthExpiredError, AuthWallError } from '@treeline/acquire'
+import type { AcquireOptions, AuthSession, PageState } from '@treeline/acquire'
 import type { CrawlConfig, CrawlResult, HardPageReasonCode } from './types.js'
 import { normalizeUrl, isSameOrigin, isUrlDenied, detectSuspiciousActionVerb } from './url-utils.js'
 import { fetchRobotsRules } from './robots.js'
@@ -7,6 +7,8 @@ import { fetchSitemapUrls } from './sitemap.js'
 import { fetchSeedPage, findCanonicalHref, detectHostnameMismatches } from './origin-scope.js'
 import { openCrawlDb } from './persistence.js'
 import { clearHardPageEntry, writeHardPageEntry } from './hard-pages.js'
+import { createSharedBrowser } from './shared-browser.js'
+import type { SharedBrowser } from './shared-browser.js'
 
 const MAX_CAPTURE_SNAPSHOT_LENGTH = 500
 const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g')
@@ -24,9 +26,25 @@ export async function crawl(
 ): Promise<CrawlResult> {
   const db = openCrawlDb(dbPath)
   try {
-    return await runCrawl(config, hardPagesDir, authSession, db)
+    const sharedBrowser = createSharedBrowser({ stealth: config.stealth, headless: config.headless })
+    try {
+      return await runCrawl(config, hardPagesDir, authSession, db, sharedBrowser)
+    } finally {
+      await sharedBrowser.close()
+    }
   } finally {
     db.close()
+  }
+}
+
+async function capturePageWithRecovery(url: string, sharedBrowser: SharedBrowser, options: AcquireOptions): Promise<PageState> {
+  const browser = await sharedBrowser.get()
+  try {
+    return await capturePageWithBrowser(url, browser, options)
+  } catch (err) {
+    if (browser.isConnected()) throw err
+    console.warn(`[treeline] Browser disconnected while capturing ${url} — relaunching and retrying once.`)
+    return await capturePageWithBrowser(url, await sharedBrowser.get(), options)
   }
 }
 
@@ -35,9 +53,15 @@ async function runCrawl(
   hardPagesDir: string,
   authSession: AuthSession | undefined,
   db: ReturnType<typeof openCrawlDb>,
+  sharedBrowser: SharedBrowser,
 ): Promise<CrawlResult> {
   db.insertMeta(config.seedUrl, config)
-  const { resolvedUrl, html } = await fetchSeedPage(config.seedUrl, authSession, config.insecureCerts, config.headless)
+  const { resolvedUrl, html } = await fetchSeedPage(config.seedUrl, authSession, {
+    insecureCerts: config.insecureCerts,
+    headless: config.headless,
+    stealth: config.stealth,
+    getBrowser: () => sharedBrowser.get(),
+  })
   const seedNorm = normalizeUrl(resolvedUrl)
   const seedOrigin = new URL(seedNorm).origin
   const isAllowed = config.respectRobotsTxt ? await fetchRobotsRules(seedOrigin) : () => true
@@ -130,7 +154,7 @@ async function runCrawl(
     }
     lastRequestAt = Date.now()
     try {
-      const pageState = await capturePage(url, {
+      const pageState = await capturePageWithRecovery(url, sharedBrowser, {
         stealth: config.stealth,
         headless: config.headless,
         captureResponseBodies: config.captureResponseBodies,

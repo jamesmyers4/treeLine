@@ -2354,6 +2354,89 @@ locked-decision brief there; this section is the outcome summary. See
 **Remaining v1 work:** none. All 8 v1 output-set items are done — see
 "Status" above.
 
+**Next up — one known item handed off at the end of session 71, not yet
+built** (the other, reuse one browser per crawl, was built in session 72 —
+see just below). Written for a fresh session; everything below was
+confirmed by reading the code at the time of writing, not assumed.
+
+- **Closed (session 72) — one browser per crawl, not one per page.**
+  - **What changed:** `crawl()` (`packages/core/src/crawler.ts`) now owns a
+    `SharedBrowser` (`packages/core/src/shared-browser.ts`,
+    `createSharedBrowser({ stealth, headless })`) that launches lazily via
+    `launchHardened` on first use and is closed in a `finally` wrapped
+    around the whole crawl, so it closes on every exit — normal
+    completion, a thrown error, and the `auth-expired` `break`. Each
+    frontier URL is captured with `capturePageWithBrowser`, which still
+    creates and closes its own `BrowserContext` per page
+    (`browser.newContext()` → `context.newPage()`, so axe and
+    cookie/storage isolation behave exactly as before). `capturePage`
+    itself is unchanged — `server.ts` and `defaultCaptureHandler` still
+    use it. `@treeline/acquire` now also re-exports the `Browser` type so
+    `core` can name it without its own `playwright` dependency. A crawl
+    with nothing left to capture (fully resumed, no-auth) never launches
+    a browser at all.
+  - **Browser crash recovery:** `capturePageWithRecovery` in `crawler.ts`
+    — if a capture throws and the shared browser is no longer
+    `isConnected()`, it warns, relaunches (via `SharedBrowser.get()`,
+    which replaces a disconnected browser), and retries that URL once.
+    A retry that fails again goes through the normal `markFailed` path,
+    and the next URL gets a fresh browser, so one bad page can't poison
+    the rest of the frontier. An error with the browser still connected
+    (a timeout, a connection reset, `AuthExpiredError`, `AuthWallError`)
+    is never retried — behavior there is identical to before.
+  - **Seed resolution shares the browser too:** `fetchSeedPage`
+    (`origin-scope.ts`) now takes an options object
+    (`{ insecureCerts, headless, stealth, getBrowser }`); with
+    `getBrowser` it uses `resolveSeedUrlWithBrowser` on the shared
+    browser, so an authenticated crawl launches once in total, not
+    once for the seed plus once per page. **The stealth bug found in
+    session 71 is fixed in the same change** — `stealth` is now passed to
+    seed resolution on both paths (it previously never reached it, so an
+    authenticated `--stealth` crawl resolved its seed in a non-stealth
+    browser). The login launch in `packages/cli/src/orchestrate.ts`
+    (`resolveAuthSession` → `performLogin`) is unchanged, as planned.
+  - **Tests:** `crawler-hard-pages.test.ts` and
+    `crawler-sampled-endpoints.test.ts` now mock `launchHardened` (a fake
+    `Browser` with `isConnected`/`close`) and `capturePageWithBrowser`
+    instead of `capturePage`. New `crawler-shared-browser.test.ts` runs
+    real browsers against a fixture server, with the `@treeline/acquire`
+    exports wrapped in spies: a multi-page crawl with a socket-destroying
+    page launches exactly once and every launched browser is disconnected
+    afterwards; same after an `auth-expired` abort; a page that kills the
+    browser once is relaunched and captured normally (2 launches, no
+    hard-pages entry for it); a page that kills the relaunched browser too
+    is `markFailed` and the next page still captures (3 launches); an
+    authenticated crawl resolves its seed on the same browser instance
+    every page is captured with; and `fetchSeedPage` passes `stealth`
+    through. The CLI golden-master tests pass unchanged.
+  - **Real-data check (not the estimate):** the same
+    `crawl https://books.toscrape.com --max-pages 10 --skip-interpretation
+    --headless` (wall-clock via `time`, including report generation),
+    before vs. after, on one Windows 11 machine: **32.1s before; 21.4s and
+    21.3s after** (two runs) — about 1.1s saved per page, a ~33% cut on
+    this crawl. Both runs captured the identical 10 URLs and wrote the
+    same 10 reports. One "before" sample only, over a live network, so
+    treat the exact figure as indicative.
+
+- **Next up #2 — POM generation trusts volatile text.** Full finding under
+  "Open (found session 70) — POM generation trusts volatile text" just
+  below. In short: `computeSelectorCandidates` marks every role candidate
+  `stable: true`, so text that changes by itself (`0 minutes ago`,
+  `1 comment`, story titles) becomes a hard-coded `getByRole(..., { name,
+  exact: true })` field that breaks within minutes, and diff mode (since
+  session 70) correctly reports those as regressions. Design questions to
+  settle before coding:
+  - Which heuristics mark a role name volatile. Relative-time patterns
+    (`\d+ (seconds?|minutes?|hours?|days?) ago`) and counts
+    (`\d+ (comments?|points?|votes?)`) are clear; content titles are not.
+  - Whether a volatile element should fall back to testid/CSS, be skipped
+    (reported in `skipped-elements.json`), or be located through its
+    `assertableAttributes` (HN's `.age` span carries the absolute
+    timestamp in `title`).
+  - That the change lives in `@treeline/core`'s
+    `selector-candidates.ts`, so it also changes `selector-report.md` and
+    diff classification, and golden files will move.
+
 **Known gaps worth fixing eventually, not blocking:**
 
 - **Closed (session 71) — capture-failure hard-pages entries now carry the

@@ -8,7 +8,8 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 const capturePageMock = vi.fn()
 
 vi.mock('@treeline/acquire', () => ({
-  capturePage: (...args: unknown[]) => capturePageMock(...args),
+  capturePageWithBrowser: (...args: unknown[]) => capturePageMock(...args),
+  launchHardened: async () => ({ isConnected: () => true, close: async () => undefined }),
 }))
 
 const { crawl } = await import('./crawler.js')
@@ -79,11 +80,11 @@ describe('crawl — sampledEndpoints threading', () => {
       join(tmpDir, 'hard-pages'),
     )
     expect(capturePageMock).toHaveBeenCalledTimes(3)
-    const sampledEndpointsSets = capturePageMock.mock.calls.map((call) => (call[1] as { sampledEndpoints: Set<string> }).sampledEndpoints)
+    const sampledEndpointsSets = capturePageMock.mock.calls.map((call) => (call[2] as { sampledEndpoints: Set<string> }).sampledEndpoints)
     expect(sampledEndpointsSets.every((set) => set === sampledEndpointsSets[0])).toBe(true)
     expect(sampledEndpointsSets[0]).toBeInstanceOf(Set)
     for (const call of capturePageMock.mock.calls) {
-      expect((call[1] as { captureResponseBodies: boolean }).captureResponseBodies).toBe(true)
+      expect((call[2] as { captureResponseBodies: boolean }).captureResponseBodies).toBe(true)
     }
   }, 30_000)
 
@@ -127,7 +128,7 @@ describe('crawl — sampledEndpoints threading', () => {
     )
     expect(capturePageMock).toHaveBeenCalledTimes(3)
     for (const call of capturePageMock.mock.calls) {
-      const opts = call[1] as { captureRequestBodies: boolean; maxRequestBodyBytes: number }
+      const opts = call[2] as { captureRequestBodies: boolean; maxRequestBodyBytes: number }
       expect(opts.captureRequestBodies).toBe(true)
       expect(opts.maxRequestBodyBytes).toBe(65536)
     }

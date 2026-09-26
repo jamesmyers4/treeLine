@@ -1,11 +1,21 @@
-import { resolveSeedUrl, SeedAuthenticationError } from '@treeline/acquire'
-import type { AuthSession } from '@treeline/acquire'
+import { resolveSeedUrl, resolveSeedUrlWithBrowser, SeedAuthenticationError } from '@treeline/acquire'
+import type { AuthSession, Browser } from '@treeline/acquire'
 import type { HostnameMismatch } from './types.js'
 
-export async function fetchSeedPage(seedUrl: string, authSession?: AuthSession, insecureCerts?: boolean, headless?: boolean): Promise<{ resolvedUrl: string; html: string | null }> {
+export interface SeedFetchOptions {
+  insecureCerts?: boolean
+  headless?: boolean
+  stealth?: boolean
+  getBrowser?: () => Promise<Browser>
+}
+
+export async function fetchSeedPage(seedUrl: string, authSession?: AuthSession, options: SeedFetchOptions = {}): Promise<{ resolvedUrl: string; html: string | null }> {
   if (authSession) {
+    const acquireOptions = { authSession, insecureCerts: options.insecureCerts, headless: options.headless, stealth: options.stealth }
     try {
-      return await resolveSeedUrl(seedUrl, { authSession, insecureCerts, headless })
+      return options.getBrowser
+        ? await resolveSeedUrlWithBrowser(seedUrl, await options.getBrowser(), acquireOptions)
+        : await resolveSeedUrl(seedUrl, acquireOptions)
     } catch (err) {
       if (err instanceof SeedAuthenticationError) throw err
       return { resolvedUrl: seedUrl, html: null }

@@ -7,7 +7,8 @@ import type { HardPageEntry } from './types.js'
 const capturePageMock = vi.fn()
 
 vi.mock('@treeline/acquire', () => ({
-  capturePage: (...args: unknown[]) => capturePageMock(...args),
+  capturePageWithBrowser: (...args: unknown[]) => capturePageMock(...args),
+  launchHardened: async () => ({ isConnected: () => true, close: async () => undefined }),
   AuthExpiredError: class AuthExpiredError extends Error {},
   AuthWallError: class AuthWallError extends Error {},
 }))

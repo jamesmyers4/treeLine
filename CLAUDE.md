@@ -1,6 +1,6 @@
 # CLAUDE.md — treeline
 
-_Last updated after session 71._
+_Last updated after session 72._
 
 Full design rationale lives in `CONTEXT.md` - read that first for the "why."
 This file is the operational guide: conventions, commands, and hard-won
@@ -13,6 +13,21 @@ real DOM state via a hardened Playwright layer, runs tiered AI
 interpretation, and emits test artifacts (POMs, selector reports) plus docs,
 accessibility findings, and structured data. Claude Code's role in this repo
 is escalation (fixing `hard-pages/` entries), not the crawl runtime.
+
+## Next up (handoff after session 72)
+
+One known, unbuilt item, written up in full at the top of CONTEXT.md's
+"Open items" under "**Next up**":
+
+- **POM generation trusts volatile text** (relative timestamps, story
+  titles, comment counts become role+name locators that break within
+  minutes; found via a real HN `/newest` diff in session 70). Needs a
+  design pass before code.
+
+Session 72 built the other session-71 handoff item — one shared browser
+per crawl instead of one per page (see "Browser cleanup must be in a
+`finally` block" below, and the "Closed (session 72)" entry in
+CONTEXT.md's "Open items").
 
 ## Monorepo layout
 
@@ -733,7 +748,16 @@ status` / look for the `[new branch]`-style confirmation line rather than
   logic) orphaned the browser process and kept Node's event loop alive
   indefinitely (session 29). If you're touching capture code, confirm the
   browser/context genuinely closes on every path, including error paths —
-  don't assume the happy-path close is sufficient. **The same "always close
+  don't assume the happy-path close is sufficient. **Since session 72 the
+  crawler shares one browser across the whole crawl** (`createSharedBrowser`,
+  `packages/core/src/shared-browser.ts`), closed in the `finally` in
+  `crawl()` — so a leak there would now outlive every page, not one. Pages
+  are captured with `capturePageWithBrowser` (still a fresh
+  `BrowserContext` per page); if a capture fails *and* the browser is no
+  longer connected, `capturePageWithRecovery` relaunches and retries that
+  URL once before falling through to `markFailed`. `capturePage` (one
+  launch per call) is still what `server.ts` and `defaultCaptureHandler`
+  use. **The same "always close
   in `finally`" discipline was reapplied in session 34-35b to a different
   resource, a SQLite db handle** (`packages/pages/src/meta.ts`'s
   `buildRunMeta`) — same principle, any resource with a lifecycle, not
